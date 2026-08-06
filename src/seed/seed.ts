@@ -446,10 +446,11 @@ async function seed() {
     userByName.set(p.name, doc._id);
   }
 
+  const adminPasswordHash = await bcrypt.hash('Test@123', 10);
   await userModel.create({
     fullName: 'Ayuva Admin',
-    email: 'admin@ayuva.health',
-    passwordHash,
+    email: 'tanwarricky915@gmail.com',
+    passwordHash: adminPasswordHash,
     role: UserRole.ADMIN,
     status: UserStatus.ACTIVE,
     consent: SEED_CONSENT,

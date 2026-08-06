@@ -6,7 +6,7 @@ export class CreateEmergencyContactDto {
   @IsString()
   name: string;
 
-  @ApiProperty({ example: '+44 7700 900123' })
-  @IsPhoneNumber()
+  @ApiProperty({ example: '9876543210' })
+  @IsPhoneNumber('IN')
   phone: string;
 }
