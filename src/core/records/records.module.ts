@@ -8,6 +8,10 @@ import {
   Appointment,
   AppointmentSchema,
 } from '../appointments/schemas/appointment.schema';
+import {
+  ReportInterpretation,
+  ReportInterpretationSchema,
+} from '../../ai/report-interpreter/schemas/report-interpretation.schema';
 import { RecordsController } from './records.controller';
 import { RecordsService } from './records.service';
 import { AuthModule } from '../../auth/auth.module';
@@ -20,6 +24,7 @@ import { StorageModule } from '../../storage/storage.module';
     MongooseModule.forFeature([
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
       { name: Appointment.name, schema: AppointmentSchema },
+      { name: ReportInterpretation.name, schema: ReportInterpretationSchema },
     ]),
   ],
   controllers: [RecordsController],

@@ -28,6 +28,7 @@ import { UploadRecordDto } from './dto/upload-record.dto';
 import { QueryRecordsDto } from './dto/query-records.dto';
 import { AttachAppointmentDto } from './dto/attach-appointment.dto';
 import { MedicalRecordResponseDto } from './dto/medical-record-response.dto';
+import { MedicalRecordDetailResponseDto } from './dto/medical-record-detail-response.dto';
 import { MedicalRecordType } from './schemas/medical-record.schema';
 
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // 15MB
@@ -83,6 +84,19 @@ export class RecordsController {
     @Query() query: QueryRecordsDto,
   ): Promise<MedicalRecordResponseDto[]> {
     return this.recordsService.findAll(user.sub, query.type);
+  }
+
+  @Get(':id')
+  @ApiOperation({
+    summary:
+      'Get a single record with its AI interpretation status (FR-8.4, FR-9.2)',
+  })
+  @ApiOkResponse({ type: MedicalRecordDetailResponseDto })
+  findOne(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ): Promise<MedicalRecordDetailResponseDto> {
+    return this.recordsService.findOne(user.sub, id);
   }
 
   @Post(':id/attach-appointment')

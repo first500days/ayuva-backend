@@ -14,8 +14,14 @@ import {
   Appointment,
   AppointmentDocument,
 } from '../appointments/schemas/appointment.schema';
+import {
+  ReportInterpretation,
+  ReportInterpretationDocument,
+  ReportAiStatus,
+} from '../../ai/report-interpreter/schemas/report-interpretation.schema';
 import { StorageService } from '../../storage/storage.service';
 import { MedicalRecordResponseDto } from './dto/medical-record-response.dto';
+import { MedicalRecordDetailResponseDto } from './dto/medical-record-detail-response.dto';
 
 export const ALLOWED_RECORD_MIME_TYPES = [
   'application/pdf',
@@ -51,6 +57,8 @@ export class RecordsService {
     private readonly recordModel: Model<MedicalRecordDocument>,
     @InjectModel(Appointment.name)
     private readonly appointmentModel: Model<AppointmentDocument>,
+    @InjectModel(ReportInterpretation.name)
+    private readonly reportInterpretationModel: Model<ReportInterpretationDocument>,
     private readonly storageService: StorageService,
   ) {}
 
@@ -98,6 +106,35 @@ export class RecordsService {
       .sort({ uploadedAt: -1 })
       .exec();
     return records.map((r) => this.toResponse(r));
+  }
+
+  async findOne(
+    userId: string,
+    id: string,
+  ): Promise<MedicalRecordDetailResponseDto> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Record not found');
+    }
+
+    const record = await this.recordModel.findOne({
+      _id: id,
+      patientId: new Types.ObjectId(userId),
+    });
+    if (!record) {
+      throw new NotFoundException('Record not found');
+    }
+
+    // ReportInterpretation is Phase-3-owned and may not exist yet — a record with
+    // no matching doc is honestly reported as "queued", not a 404 or a fake status.
+    const interpretation = await this.reportInterpretationModel
+      .findOne({ recordId: record._id })
+      .exec();
+
+    return {
+      ...this.toResponse(record),
+      aiStatus: interpretation?.aiStatus ?? ReportAiStatus.QUEUED,
+      summaryText: interpretation?.summaryText,
+    };
   }
 
   async attachToAppointment(

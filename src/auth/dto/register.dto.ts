@@ -1,6 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEmail, IsString, MinLength, ValidateNested } from 'class-validator';
+import {
+  IsDefined,
+  IsEmail,
+  IsObject,
+  IsString,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
 import { IsStrongPassword } from '../../common/validators/is-strong-password.decorator';
 import { ConsentDto } from './consent.dto';
 
@@ -22,7 +29,13 @@ export class RegisterDto {
   @IsStrongPassword()
   password: string;
 
-  @ApiProperty({ type: ConsentDto })
+  @ApiProperty({
+    type: ConsentDto,
+    description:
+      'Explicit consent capture (FR-1.5) — required, not just each inner flag',
+  })
+  @IsDefined({ message: 'consent is required' })
+  @IsObject({ message: 'consent must be an object' })
   @ValidateNested()
   @Type(() => ConsentDto)
   consent: ConsentDto;

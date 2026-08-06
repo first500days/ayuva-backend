@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { RecordsService } from './records.service';
 import { MedicalRecordType } from './schemas/medical-record.schema';
+import { ReportAiStatus } from '../../ai/report-interpreter/schemas/report-interpretation.schema';
 
 function buildService() {
   const recordModel = {
@@ -12,15 +13,25 @@ function buildService() {
   const appointmentModel = {
     findOne: jest.fn(),
   };
+  const reportInterpretationModel = {
+    findOne: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(null) }),
+  };
   const storageService = {
     upload: jest.fn().mockResolvedValue('records/user-1/file-key.pdf'),
   };
   const service = new RecordsService(
     recordModel as any,
     appointmentModel as any,
+    reportInterpretationModel as any,
     storageService as any,
   );
-  return { service, recordModel, appointmentModel, storageService };
+  return {
+    service,
+    recordModel,
+    appointmentModel,
+    reportInterpretationModel,
+    storageService,
+  };
 }
 
 function fakeFile(
@@ -111,6 +122,70 @@ describe('RecordsService', () => {
 
       expect(recordModel.create).toHaveBeenCalledWith(
         expect.objectContaining({ type: MedicalRecordType.IMAGING }),
+      );
+    });
+  });
+
+  describe('findOne (FR-8.4, FR-9.2)', () => {
+    const USER_ID = new Types.ObjectId().toString();
+    const RECORD_ID = new Types.ObjectId().toString();
+
+    it('throws NotFoundException for a syntactically invalid id', async () => {
+      const { service } = buildService();
+      await expect(
+        service.findOne(USER_ID, 'not-an-id'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('throws NotFoundException when the record does not belong to the caller', async () => {
+      const { service, recordModel } = buildService();
+      recordModel.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.findOne(USER_ID, RECORD_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('defaults aiStatus to "queued" when no ReportInterpretation exists yet', async () => {
+      const { service, recordModel, reportInterpretationModel } =
+        buildService();
+      recordModel.findOne.mockResolvedValue({
+        id: RECORD_ID,
+        originalFileName: 'lipid-panel.pdf',
+        type: MedicalRecordType.BLOOD,
+        uploadedAt: new Date('2026-08-01T00:00:00.000Z'),
+      });
+      reportInterpretationModel.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(null),
+      });
+
+      const result = await service.findOne(USER_ID, RECORD_ID);
+
+      expect(result.aiStatus).toBe(ReportAiStatus.QUEUED);
+      expect(result.summaryText).toBeUndefined();
+    });
+
+    it('surfaces the real aiStatus and summary once an interpretation exists', async () => {
+      const { service, recordModel, reportInterpretationModel } =
+        buildService();
+      recordModel.findOne.mockResolvedValue({
+        id: RECORD_ID,
+        originalFileName: 'lipid-panel.pdf',
+        type: MedicalRecordType.BLOOD,
+        uploadedAt: new Date('2026-08-01T00:00:00.000Z'),
+      });
+      reportInterpretationModel.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({
+          aiStatus: ReportAiStatus.INTERPRETED,
+          summaryText: 'Your lipid panel looks normal overall.',
+        }),
+      });
+
+      const result = await service.findOne(USER_ID, RECORD_ID);
+
+      expect(result.aiStatus).toBe(ReportAiStatus.INTERPRETED);
+      expect(result.summaryText).toBe(
+        'Your lipid panel looks normal overall.',
       );
     });
   });
