@@ -21,7 +21,9 @@ import {
   Provider,
   ProviderCategory,
   ProviderStatus,
+  WorkingDay,
 } from '../core/providers/schemas/provider.schema';
+import { AdminProvidersService } from '../admin/providers/admin-providers.service';
 import {
   AppointmentSlot,
   AppointmentSlotStatus,
@@ -398,6 +400,7 @@ async function seed() {
   const feedbackItemModel = app.get<Model<FeedbackItem>>(
     getModelToken(FeedbackItem.name),
   );
+  const adminProvidersService = app.get(AdminProvidersService);
 
   console.log('Clearing existing seed data...');
   const allModels: Model<any>[] = [
@@ -526,17 +529,31 @@ async function seed() {
     });
   }
 
-  // A handful of open slots so Provider Discovery -> booking has something to select (FR-7.1/7.2).
-  for (const [, providerId] of providerByKey) {
-    for (const time of ['09:00', '11:30', '15:00']) {
-      await appointmentSlotModel.create({
-        providerId,
-        date: new Date('2026-08-20'),
-        time,
-        durationMin: 30,
-        status: AppointmentSlotStatus.OPEN,
-      });
-    }
+  // Real, non-stale bookable slots for Provider Discovery -> booking (FR-7.1/7.2,
+  // FR-14.1-14.3) — routed through AdminProvidersService.updateSchedule so it's
+  // the exact same schedule-set + slot-regeneration path an admin uses (Session 7),
+  // not a hand-inserted slot with a hardcoded date that goes stale after ~2 weeks.
+  // Computed relative to seed-run time, so re-seeding always yields a fresh
+  // rolling window regardless of when the demo actually happens.
+  console.log('Configuring provider schedules (generates real open slots)...');
+  for (const [key, providerId] of providerByKey) {
+    // Diagnostics run extended/weekend hours; everyone else Mon-Fri business hours.
+    const isDiagnostic = key === 'p3';
+    await adminProvidersService.updateSchedule(providerId.toString(), {
+      workingDays: isDiagnostic
+        ? [
+            WorkingDay.MON,
+            WorkingDay.TUE,
+            WorkingDay.WED,
+            WorkingDay.THU,
+            WorkingDay.FRI,
+            WorkingDay.SAT,
+          ]
+        : [WorkingDay.MON, WorkingDay.TUE, WorkingDay.WED, WorkingDay.THU, WorkingDay.FRI],
+      startTime: '09:00',
+      endTime: '17:00',
+      slotDurationMin: 30,
+    });
   }
 
   console.log('Seeding medical records + report interpretations...');
