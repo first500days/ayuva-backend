@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { AnyBulkWriteOperation, Model, QueryFilter, Types } from 'mongoose';
 import {
   Provider,
@@ -36,12 +37,38 @@ const DOW_TO_WORKING_DAY: WorkingDay[] = [
 
 @Injectable()
 export class AdminProvidersService {
+  private readonly logger = new Logger(AdminProvidersService.name);
+
   constructor(
     @InjectModel(Provider.name)
     private readonly providerModel: Model<ProviderDocument>,
     @InjectModel(AppointmentSlot.name)
     private readonly slotModel: Model<AppointmentSlotDocument>,
   ) {}
+
+  /**
+   * regenerateSlots only ever runs as a side effect of an admin PUT'ing a
+   * schedule (FR-14.3 window is relative to "now" at that moment) — with no
+   * further admin action the rolling SLOT_GENERATION_WINDOW_DAYS window goes
+   * stale and never advances. This keeps every provider with a configured
+   * schedule bookable indefinitely, not just for 14 days after the last edit.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_2AM)
+  async regenerateAllProviderSlots(): Promise<void> {
+    const providers = await this.providerModel
+      .find({ schedule: { $exists: true } })
+      .exec();
+    for (const provider of providers) {
+      try {
+        await this.regenerateSlots(provider);
+      } catch (err) {
+        this.logger.error(
+          `Failed to regenerate slots for provider ${provider.id}`,
+          err as Error,
+        );
+      }
+    }
+  }
 
   async findAll(
     query: QueryAdminProvidersDto,
@@ -162,6 +189,30 @@ export class AdminProvidersService {
         },
       },
     );
+
+    return this.toResponse(provider);
+  }
+
+  async removeBlockedDate(
+    id: string,
+    dateIso: string,
+  ): Promise<AdminProviderResponseDto> {
+    const provider = await this.getProviderOrThrow(id);
+    const date = this.parseDateOnly(dateIso);
+
+    const hadEntry = provider.blockedDates.some((b) =>
+      this.isSameDay(b.date, date),
+    );
+    if (hadEntry) {
+      provider.blockedDates = provider.blockedDates.filter(
+        (b) => !this.isSameDay(b.date, date),
+      );
+      await provider.save();
+      // Re-derive slot status from the now-shorter blockedDates list — if the
+      // day is still a working day, regenerateSlots flips its BLOCKED slots
+      // back to OPEN; a BOOKED slot is still never touched either way.
+      await this.regenerateSlots(provider);
+    }
 
     return this.toResponse(provider);
   }

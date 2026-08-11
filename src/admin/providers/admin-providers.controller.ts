@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -94,5 +95,18 @@ export class AdminProvidersController {
     @Body() dto: BlockedDateDto,
   ): Promise<AdminProviderResponseDto> {
     return this.adminProvidersService.addBlockedDate(id, dto);
+  }
+
+  @Delete(':id/blocked-dates/:date')
+  @ApiOperation({
+    summary:
+      'Remove a blocked/holiday date — re-opens slots on that date if it is still a configured working day',
+  })
+  @ApiOkResponse({ type: AdminProviderResponseDto })
+  removeBlockedDate(
+    @Param('id') id: string,
+    @Param('date') date: string,
+  ): Promise<AdminProviderResponseDto> {
+    return this.adminProvidersService.removeBlockedDate(id, date);
   }
 }

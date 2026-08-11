@@ -192,6 +192,79 @@ export class AppointmentsService {
     );
   }
 
+  /** Admin-wide listing (PRD Admin Portal Appointment Slot Management) — not scoped to a single patient. */
+  async adminFindAll(filters: {
+    providerId?: string;
+    status?: AppointmentStatus;
+  }): Promise<AppointmentResponseDto[]> {
+    const query: Record<string, unknown> = {};
+    if (filters.providerId) {
+      query.providerId = new Types.ObjectId(filters.providerId);
+    }
+    if (filters.status) {
+      query.status = filters.status;
+    }
+
+    const appointments = await this.appointmentModel
+      .find(query)
+      .sort({ createdAt: -1 })
+      .exec();
+    if (appointments.length === 0) return [];
+
+    const slotIds = appointments.map((a) => a.slotId);
+    const providerIds = appointments.map((a) => a.providerId);
+    const [slots, providers] = await Promise.all([
+      this.slotModel.find({ _id: { $in: slotIds } }).exec(),
+      this.providerModel.find({ _id: { $in: providerIds } }).exec(),
+    ]);
+    const slotById = new Map(slots.map((s) => [s.id, s]));
+    const providerById = new Map(providers.map((p) => [p.id, p]));
+
+    return appointments.map((a) =>
+      this.toResponse(
+        a,
+        providerById.get(a.providerId.toString()),
+        slotById.get(a.slotId.toString()),
+      ),
+    );
+  }
+
+  /**
+   * Admin-side reschedule/cancel (PRD Admin Portal Appointment Slot
+   * Management) — same reschedule()/cancel() logic as the patient path,
+   * just without the ownership check (admin operates cross-patient by design).
+   */
+  async adminUpdate(
+    id: string,
+    dto: PatchAppointmentDto,
+  ): Promise<AppointmentResponseDto> {
+    if (!dto.status && !dto.newSlotId) {
+      throw new BadRequestException(
+        'Provide status: "cancelled" to cancel, or newSlotId to reschedule',
+      );
+    }
+
+    const appointment = await this.getAppointmentOrThrow(id);
+
+    if (appointment.status !== AppointmentStatus.CONFIRMED) {
+      throw new BadRequestException(
+        'Only a confirmed appointment can be modified',
+      );
+    }
+
+    if (dto.newSlotId) {
+      return this.reschedule(appointment, dto.newSlotId);
+    }
+
+    if (dto.status === PatientAppointmentAction.CANCELLED) {
+      return this.cancel(appointment);
+    }
+
+    throw new BadRequestException(
+      'Provide status: "cancelled" to cancel, or newSlotId to reschedule',
+    );
+  }
+
   private async reschedule(
     appointment: AppointmentDocument,
     newSlotId: string,
@@ -323,6 +396,17 @@ export class AppointmentsService {
     }
     const appointment = await this.appointmentModel.findById(id);
     if (!appointment || appointment.patientId.toString() !== userId) {
+      throw new NotFoundException('Appointment not found');
+    }
+    return appointment;
+  }
+
+  private async getAppointmentOrThrow(id: string): Promise<AppointmentDocument> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Appointment not found');
+    }
+    const appointment = await this.appointmentModel.findById(id);
+    if (!appointment) {
       throw new NotFoundException('Appointment not found');
     }
     return appointment;

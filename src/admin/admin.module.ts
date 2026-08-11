@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AdminAnalyticsModule } from './analytics/admin-analytics.module';
 import { AdminUsersModule } from './users/admin-users.module';
 import { AdminProvidersModule } from './providers/admin-providers.module';
+import { AdminAppointmentsModule } from './appointments/admin-appointments.module';
 import { AdminAiModule } from './ai/admin-ai.module';
 import { AdminReportsModule } from './reports/admin-reports.module';
 import { AdminFeedbackModule } from './feedback/admin-feedback.module';
@@ -17,6 +18,7 @@ import { AdminFeedbackModule } from './feedback/admin-feedback.module';
     AdminAnalyticsModule,
     AdminUsersModule,
     AdminProvidersModule,
+    AdminAppointmentsModule,
     AdminAiModule,
     AdminReportsModule,
     AdminFeedbackModule,
