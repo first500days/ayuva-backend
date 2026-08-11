@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  Res,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import {
   ApiBearerAuth,
@@ -13,6 +21,9 @@ import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminReportsService } from './admin-reports.service';
 import { QueryAdminReportsDto } from './dto/query-admin-reports.dto';
 import { AdminReportResponseDto } from './dto/admin-report-response.dto';
+import { AuditLogInterceptor } from '../../audit-log/interceptors/audit-log.interceptor';
+import { AuditEvent } from '../../audit-log/decorators/audit-event.decorator';
+import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 
 @ApiTags('Admin - Reports')
 @ApiBearerAuth()
@@ -48,6 +59,8 @@ export class AdminReportsController {
   @ApiOperation({
     summary: 'Stream the decrypted source file for a report (FR-16.2)',
   })
+  @AuditEvent(AuditAction.RECORD_DOWNLOAD, 'MedicalRecord')
+  @UseInterceptors(AuditLogInterceptor)
   async getFile(
     @Param('id') id: string,
     @Res({ passthrough: true }) res: Response,

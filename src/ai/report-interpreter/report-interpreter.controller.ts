@@ -7,6 +7,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ConsentGuard } from '../../auth/guards/consent.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { ReportInterpreterService } from './report-interpreter.service';
@@ -17,7 +18,7 @@ import { ReportInterpretationResponseDto } from './dto/report-interpretation-res
 // document-understanding model is owned by a separate team.
 @ApiTags('AI - Report Interpreter')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ConsentGuard)
 @Controller('report-interpreter')
 export class ReportInterpreterController {
   constructor(private readonly reportInterpreterService: ReportInterpreterService) {}

@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -24,8 +25,12 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GoogleOAuthDto } from './dto/google-oauth.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ConsentDto } from './dto/consent.dto';
 import { AuthTokensResponseDto } from './dto/auth-tokens-response.dto';
+import { ConsentStatusResponseDto } from './dto/consent-status-response.dto';
 import { GoogleAuthService } from './services/google-auth.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../audit-log/schemas/audit-log.schema';
 
 const BCRYPT_ROUNDS = 10;
 const MONGO_DUPLICATE_KEY_ERROR = 11000;
@@ -39,6 +44,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly googleAuthService: GoogleAuthService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthTokensResponseDto> {
@@ -70,6 +76,13 @@ export class AuthService {
       throw err;
     }
 
+    await this.auditLogService.record({
+      actorId: user.id,
+      action: AuditAction.REGISTER,
+      targetType: 'User',
+      targetId: user.id,
+    });
+
     return this.issueTokens(user, false);
   }
 
@@ -87,6 +100,13 @@ export class AuthService {
       throw new UnauthorizedException('This account has been deactivated');
     }
 
+    await this.auditLogService.record({
+      actorId: user.id,
+      action: AuditAction.LOGIN,
+      targetType: 'User',
+      targetId: user.id,
+    });
+
     return this.issueTokens(user, await this.hasHealthProfile(user.id));
   }
 
@@ -95,7 +115,9 @@ export class AuthService {
     const email = profile.email.toLowerCase();
 
     let user = await this.userModel.findOne({ email });
+    let isNewUser = false;
     if (!user) {
+      isNewUser = true;
       try {
         user = await this.userModel.create({
           fullName: profile.name ?? email,
@@ -130,7 +152,45 @@ export class AuthService {
       }
     }
 
+    await this.auditLogService.record({
+      actorId: user.id,
+      action: isNewUser ? AuditAction.REGISTER : AuditAction.LOGIN,
+      targetType: 'User',
+      targetId: user.id,
+    });
+
     return this.issueTokens(user, await this.hasHealthProfile(user.id));
+  }
+
+  /**
+   * Lets an authenticated user re-accept consent when CURRENT_CONSENT_VERSION
+   * has moved past what they accepted at signup — the only way to recover
+   * from ConsentGuard rejecting their requests (see auth/guards/consent.guard.ts).
+   */
+  async updateConsent(
+    userId: string,
+    dto: ConsentDto,
+  ): Promise<ConsentStatusResponseDto> {
+    const acceptedAt = new Date();
+    const user = await this.userModel.findByIdAndUpdate(
+      userId,
+      {
+        $set: {
+          consent: {
+            termsAccepted: dto.termsAccepted,
+            privacyAccepted: dto.privacyAccepted,
+            healthDataProcessingAccepted: dto.healthDataProcessingAccepted,
+            version: CURRENT_CONSENT_VERSION,
+            acceptedAt,
+          },
+        },
+      },
+      { returnDocument: 'after' },
+    );
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return { version: CURRENT_CONSENT_VERSION, acceptedAt: acceptedAt.toISOString() };
   }
 
   async refresh(dto: RefreshTokenDto): Promise<AuthTokensResponseDto> {

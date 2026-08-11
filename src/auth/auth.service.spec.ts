@@ -21,6 +21,7 @@ function buildService() {
   };
   const configService = { get: jest.fn().mockReturnValue('secret-or-value') };
   const googleAuthService = { verify: jest.fn() };
+  const auditLogService = { record: jest.fn().mockResolvedValue(undefined) };
 
   const service = new AuthService(
     userModel as any,
@@ -28,6 +29,7 @@ function buildService() {
     jwtService as any,
     configService as any,
     googleAuthService as any,
+    auditLogService as any,
   );
 
   return {
@@ -37,6 +39,7 @@ function buildService() {
     jwtService,
     configService,
     googleAuthService,
+    auditLogService,
   };
 }
 
@@ -78,7 +81,7 @@ describe('AuthService', () => {
     });
 
     it('issues tokens with onboardingComplete=false for a freshly registered user', async () => {
-      const { service, userModel } = buildService();
+      const { service, userModel, auditLogService } = buildService();
       userModel.create.mockResolvedValue({
         id: 'user-1',
         fullName: 'Amara Okafor',
@@ -95,6 +98,9 @@ describe('AuthService', () => {
 
       expect(result.user.onboardingComplete).toBe(false);
       expect(result.accessToken).toBe('signed-token');
+      expect(auditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ actorId: 'user-1', action: 'register' }),
+      );
     });
   });
 

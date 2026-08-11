@@ -21,6 +21,7 @@ import {
 } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ConsentGuard } from '../../auth/guards/consent.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { RecordsService } from './records.service';
@@ -30,12 +31,15 @@ import { AttachAppointmentDto } from './dto/attach-appointment.dto';
 import { MedicalRecordResponseDto } from './dto/medical-record-response.dto';
 import { MedicalRecordDetailResponseDto } from './dto/medical-record-detail-response.dto';
 import { MedicalRecordType } from './schemas/medical-record.schema';
+import { AuditLogInterceptor } from '../../audit-log/interceptors/audit-log.interceptor';
+import { AuditEvent } from '../../audit-log/decorators/audit-event.decorator';
+import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // 15MB
 
 @ApiTags('Records')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ConsentGuard)
 @Controller('records')
 export class RecordsController {
   constructor(private readonly recordsService: RecordsService) {}
@@ -60,11 +64,13 @@ export class RecordsController {
     },
   })
   @ApiCreatedResponse({ type: MedicalRecordResponseDto })
+  @AuditEvent(AuditAction.RECORD_UPLOAD, 'MedicalRecord')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
       limits: { fileSize: MAX_UPLOAD_BYTES },
     }),
+    AuditLogInterceptor,
   )
   upload(
     @CurrentUser() user: JwtPayload,
@@ -92,6 +98,8 @@ export class RecordsController {
       'Get a single record with its AI interpretation status (FR-8.4, FR-9.2)',
   })
   @ApiOkResponse({ type: MedicalRecordDetailResponseDto })
+  @AuditEvent(AuditAction.RECORD_VIEW, 'MedicalRecord')
+  @UseInterceptors(AuditLogInterceptor)
   findOne(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,

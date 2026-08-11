@@ -1,5 +1,6 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, Put, UseGuards } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
@@ -10,7 +11,12 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GoogleOAuthDto } from './dto/google-oauth.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ConsentDto } from './dto/consent.dto';
 import { AuthTokensResponseDto } from './dto/auth-tokens-response.dto';
+import { ConsentStatusResponseDto } from './dto/consent-status-response.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { JwtPayload } from './interfaces/jwt-payload.interface';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -46,5 +52,20 @@ export class AuthController {
   @ApiOkResponse({ type: AuthTokensResponseDto })
   refresh(@Body() dto: RefreshTokenDto): Promise<AuthTokensResponseDto> {
     return this.authService.refresh(dto);
+  }
+
+  @Put('consent')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary:
+      'Re-accept the current consent version (FR-1.5) — the only recovery path when ConsentGuard rejects a stale-consent user',
+  })
+  @ApiOkResponse({ type: ConsentStatusResponseDto })
+  updateConsent(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ConsentDto,
+  ): Promise<ConsentStatusResponseDto> {
+    return this.authService.updateConsent(user.sub, dto);
   }
 }

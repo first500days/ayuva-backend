@@ -30,12 +30,14 @@ import {
   MedicalRecordSchema,
 } from '../../core/records/schemas/medical-record.schema';
 import { AuthModule } from '../../auth/auth.module';
+import { AuditLogModule } from '../../audit-log/audit-log.module';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
 
 @Module({
   imports: [
     AuthModule,
+    AuditLogModule,
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },

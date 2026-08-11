@@ -10,12 +10,14 @@ import {
 } from '../../ai/report-interpreter/schemas/report-interpretation.schema';
 import { User, UserSchema } from '../../core/users/schemas/user.schema';
 import { AuthModule } from '../../auth/auth.module';
+import { AuditLogModule } from '../../audit-log/audit-log.module';
 import { AdminReportsController } from './admin-reports.controller';
 import { AdminReportsService } from './admin-reports.service';
 
 @Module({
   imports: [
     AuthModule,
+    AuditLogModule,
     MongooseModule.forFeature([
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
       { name: ReportInterpretation.name, schema: ReportInterpretationSchema },

@@ -18,6 +18,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ConsentGuard } from '../../auth/guards/consent.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { MedicationsService } from './medications.service';
@@ -30,7 +31,7 @@ import { MedicationResponseDto } from './dto/medication-response.dto';
 
 @ApiTags('Medications')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ConsentGuard)
 @Controller('medications')
 export class MedicationsController {
   constructor(private readonly medicationsService: MedicationsService) {}

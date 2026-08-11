@@ -7,6 +7,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ConsentGuard } from '../../auth/guards/consent.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { CareJourneyService } from './care-journey.service';
@@ -18,7 +19,7 @@ import { CareJourneyResponseDto } from './dto/care-journey-response.dto';
 // progress updates below are real persisted state, not AI output.
 @ApiTags('AI - Care Journey')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ConsentGuard)
 @Controller('care-journey')
 export class CareJourneyController {
   constructor(private readonly careJourneyService: CareJourneyService) {}

@@ -5,6 +5,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { ConsentGuard } from './guards/consent.guard';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { GoogleAuthService } from './services/google-auth.service';
@@ -13,10 +14,12 @@ import {
   HealthProfile,
   HealthProfileSchema,
 } from '../core/health-profile/schemas/health-profile.schema';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
   imports: [
     PassportModule,
+    AuditLogModule,
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },
@@ -33,7 +36,7 @@ import {
     }),
   ],
   controllers: [AuthController],
-  providers: [JwtStrategy, JwtAuthGuard, AuthService, GoogleAuthService],
-  exports: [JwtModule, PassportModule, JwtAuthGuard],
+  providers: [JwtStrategy, JwtAuthGuard, ConsentGuard, AuthService, GoogleAuthService],
+  exports: [JwtModule, PassportModule, JwtAuthGuard, ConsentGuard],
 })
 export class AuthModule {}

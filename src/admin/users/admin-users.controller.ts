@@ -6,6 +6,7 @@ import {
   Patch,
   Query,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -22,6 +23,9 @@ import { QueryAdminUsersDto } from './dto/query-admin-users.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { AdminUserResponseDto } from './dto/admin-user-response.dto';
 import { AdminUserActivityItemDto } from './dto/admin-user-activity-item.dto';
+import { AuditLogInterceptor } from '../../audit-log/interceptors/audit-log.interceptor';
+import { AuditEvent } from '../../audit-log/decorators/audit-event.decorator';
+import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 
 @ApiTags('Admin - Users')
 @ApiBearerAuth()
@@ -43,6 +47,8 @@ export class AdminUsersController {
   @Patch(':id/status')
   @ApiOperation({ summary: 'Activate/deactivate a patient account (FR-12.2)' })
   @ApiOkResponse({ type: AdminUserResponseDto })
+  @AuditEvent(AuditAction.ADMIN_USER_STATUS_CHANGE, 'User')
+  @UseInterceptors(AuditLogInterceptor)
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateUserStatusDto,

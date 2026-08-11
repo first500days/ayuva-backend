@@ -7,6 +7,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ConsentGuard } from '../../auth/guards/consent.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { SymptomNavService } from './symptom-nav.service';
@@ -17,7 +18,7 @@ import { SymptomNavResponseDto } from './dto/symptom-nav-response.dto';
 // NLU + clinical rules engine is owned by a separate team.
 @ApiTags('AI - Symptom Navigation')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ConsentGuard)
 @Controller('symptom-nav')
 export class SymptomNavController {
   constructor(private readonly symptomNavService: SymptomNavService) {}
