@@ -141,6 +141,9 @@ Response (`ReportInterpretationResponseDto`, 201):
   "highlightedValues": [
     { "label": "Hemoglobin", "value": "11.2 g/dL", "status": "low" }
   ],
+  "glossaryTerms": [
+    { "term": "Hemoglobin", "definition": "The protein in red blood cells that carries oxygen around your body." }
+  ],
   "suggestedQuestions": ["What does this flagged value mean for my day-to-day health?"],
   "aiStatus": "interpreted",
   "source": "mock",

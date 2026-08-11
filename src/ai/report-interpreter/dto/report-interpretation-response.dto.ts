@@ -13,6 +13,16 @@ export class HighlightedValueResponseDto {
   status: HighlightedValueStatus;
 }
 
+export class GlossaryTermResponseDto {
+  @ApiProperty({ example: 'Hemoglobin' })
+  term: string;
+
+  @ApiProperty({
+    example: 'The protein in red blood cells that carries oxygen around your body.',
+  })
+  definition: string;
+}
+
 export class ReportInterpretationResponseDto {
   @ApiProperty({ example: '64f0c8e2b1a2c3d4e5f6a7bb' })
   id: string;
@@ -28,6 +38,9 @@ export class ReportInterpretationResponseDto {
 
   @ApiProperty({ type: [HighlightedValueResponseDto] })
   highlightedValues: HighlightedValueResponseDto[];
+
+  @ApiProperty({ type: [GlossaryTermResponseDto] })
+  glossaryTerms: GlossaryTermResponseDto[];
 
   @ApiProperty({
     type: [String],

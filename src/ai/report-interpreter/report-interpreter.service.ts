@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
+  GlossaryTerm,
   HighlightedValue,
   HighlightedValueStatus,
   ReportAiStatus,
@@ -23,6 +24,7 @@ import { AI_DISCLAIMER } from '../common/ai-disclaimer.constant';
 interface MockTemplate {
   summaryText: string;
   highlightedValues: Array<{ label: string; valueOptions: string[]; statusOptions: HighlightedValueStatus[] }>;
+  glossaryTerms: GlossaryTerm[];
   suggestedQuestions: string[];
 }
 
@@ -38,6 +40,12 @@ const TEMPLATES: Record<MedicalRecordType, MockTemplate> = {
       { label: 'LDL Cholesterol', valueOptions: ['98 mg/dL', '165 mg/dL', '110 mg/dL'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.HIGH, HighlightedValueStatus.NORMAL] },
       { label: 'Fasting Glucose', valueOptions: ['88 mg/dL', '104 mg/dL', '92 mg/dL'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.HIGH, HighlightedValueStatus.NORMAL] },
     ],
+    glossaryTerms: [
+      { term: 'Hemoglobin', definition: 'The protein in red blood cells that carries oxygen around your body.' },
+      { term: 'White Blood Cell Count', definition: 'A measure of the cells your immune system uses to fight infection.' },
+      { term: 'LDL Cholesterol', definition: 'Often called "bad" cholesterol — can build up in artery walls over time.' },
+      { term: 'Fasting Glucose', definition: 'Your blood sugar level measured after not eating for several hours.' },
+    ],
     suggestedQuestions: [
       'What does this flagged value mean for my day-to-day health?',
       'Should I repeat this test, and if so when?',
@@ -50,6 +58,10 @@ const TEMPLATES: Record<MedicalRecordType, MockTemplate> = {
     highlightedValues: [
       { label: 'Overall Impression', valueOptions: ['No acute abnormality noted', 'Mild degenerative changes noted', 'No acute abnormality noted'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.HIGH, HighlightedValueStatus.NORMAL] },
       { label: 'Comparison to Prior Imaging', valueOptions: ['Not available', 'Stable compared to prior study', 'Not available'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
+    ],
+    glossaryTerms: [
+      { term: 'Impression', definition: 'The radiologist\'s overall summary conclusion from the scan.' },
+      { term: 'Degenerative changes', definition: 'Gradual, often age-related wear noted on the scan — very common and not necessarily urgent.' },
     ],
     suggestedQuestions: [
       'What does this finding mean in practical terms?',
@@ -64,6 +76,10 @@ const TEMPLATES: Record<MedicalRecordType, MockTemplate> = {
       { label: 'Items Listed', valueOptions: ['1 medication', '2 medications', '3 medications'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
       { label: 'Refills Noted', valueOptions: ['0 refills', '2 refills', '1 refill'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
     ],
+    glossaryTerms: [
+      { term: 'Refill', definition: 'A repeat of this prescription that can be collected without a new consultation.' },
+      { term: 'Dosage', definition: 'How much of the medication to take at each scheduled time.' },
+    ],
     suggestedQuestions: [
       'What should I do if I miss a dose?',
       'Are there foods or other medications I should avoid with this?',
@@ -76,6 +92,10 @@ const TEMPLATES: Record<MedicalRecordType, MockTemplate> = {
     highlightedValues: [
       { label: 'Follow-up Required', valueOptions: ['Yes — within 1 week', 'Yes — within 2 weeks', 'No follow-up specified'], statusOptions: [HighlightedValueStatus.HIGH, HighlightedValueStatus.HIGH, HighlightedValueStatus.NORMAL] },
       { label: 'New Medications Noted', valueOptions: ['None', '1 new medication', '2 new medications'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
+    ],
+    glossaryTerms: [
+      { term: 'Discharge summary', definition: 'A record of your visit, what was done, and what to do next.' },
+      { term: 'Follow-up', definition: 'A planned next appointment to check how you\'re progressing.' },
     ],
     suggestedQuestions: [
       'What symptoms should prompt me to seek care again?',
@@ -126,6 +146,7 @@ export class ReportInterpreterService {
           $set: {
             summaryText: generated.summaryText,
             highlightedValues: generated.highlightedValues,
+            glossaryTerms: generated.glossaryTerms,
             suggestedQuestions: generated.suggestedQuestions,
             aiStatus: ReportAiStatus.INTERPRETED,
           },
@@ -178,6 +199,7 @@ export class ReportInterpreterService {
   private generateMockInterpretation(record: MedicalRecordDocument): {
     summaryText: string;
     highlightedValues: HighlightedValue[];
+    glossaryTerms: GlossaryTerm[];
     suggestedQuestions: string[];
   } {
     const template = TEMPLATES[record.type];
@@ -197,6 +219,7 @@ export class ReportInterpreterService {
     return {
       summaryText: template.summaryText,
       highlightedValues,
+      glossaryTerms: template.glossaryTerms,
       suggestedQuestions: template.suggestedQuestions,
     };
   }
@@ -222,6 +245,10 @@ export class ReportInterpreterService {
         label: v.label,
         value: v.value,
         status: v.status,
+      })),
+      glossaryTerms: interpretation.glossaryTerms.map((g) => ({
+        term: g.term,
+        definition: g.definition,
       })),
       suggestedQuestions: interpretation.suggestedQuestions,
       aiStatus: interpretation.aiStatus,

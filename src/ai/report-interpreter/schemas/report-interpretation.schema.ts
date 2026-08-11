@@ -29,6 +29,18 @@ export class HighlightedValue {
 export const HighlightedValueSchema =
   SchemaFactory.createForClass(HighlightedValue);
 
+// TRD §6 output spec: "glossary of terms/abbreviations" — separate from the
+// highlighted numeric values above.
+@Schema({ _id: false })
+export class GlossaryTerm {
+  @Prop({ required: true })
+  term: string;
+
+  @Prop({ required: true })
+  definition: string;
+}
+export const GlossaryTermSchema = SchemaFactory.createForClass(GlossaryTerm);
+
 export type ReportInterpretationDocument =
   HydratedDocument<ReportInterpretation>;
 
@@ -51,6 +63,9 @@ export class ReportInterpretation {
 
   @Prop({ type: [HighlightedValueSchema], default: [] })
   highlightedValues: HighlightedValue[];
+
+  @Prop({ type: [GlossaryTermSchema], default: [] })
+  glossaryTerms: GlossaryTerm[];
 
   @Prop({ type: [String], default: [] })
   suggestedQuestions: string[];
