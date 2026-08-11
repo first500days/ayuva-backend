@@ -17,12 +17,14 @@ import { RecordsService } from './records.service';
 import { AuthModule } from '../../auth/auth.module';
 import { StorageModule } from '../../storage/storage.module';
 import { AuditLogModule } from '../../audit-log/audit-log.module';
+import { NotificationsModule } from '../../notifications/notifications.module';
 
 @Module({
   imports: [
     AuthModule,
     StorageModule,
     AuditLogModule,
+    NotificationsModule,
     MongooseModule.forFeature([
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
       { name: Appointment.name, schema: AppointmentSchema },

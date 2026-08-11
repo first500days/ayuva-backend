@@ -63,18 +63,7 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
 
   private async handle(job: Job<ReminderJobData>): Promise<void> {
     const data = job.data;
-    const payload: FcmPayload =
-      data.type === ReminderJobName.MEDICATION
-        ? {
-            title: 'Time for your medication',
-            body: `${data.name} — ${data.dosage}, due at ${data.scheduleTime}`,
-            data: { medicationId: data.medicationId, type: data.type },
-          }
-        : {
-            title: 'Upcoming appointment reminder',
-            body: `Your appointment with ${data.providerName} is coming up at ${data.time}`,
-            data: { appointmentId: data.appointmentId, type: data.type },
-          };
+    const payload = this.buildPayload(data);
 
     const devices = await this.deviceTokenModel
       .find({ userId: data.userId })
@@ -94,5 +83,40 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
         ),
       ),
     );
+  }
+
+  private buildPayload(data: ReminderJobData): FcmPayload {
+    switch (data.type) {
+      case ReminderJobName.MEDICATION:
+        return {
+          title: 'Time for your medication',
+          body: `${data.name} — ${data.dosage}, due at ${data.scheduleTime}`,
+          data: { medicationId: data.medicationId, type: data.type },
+        };
+      case ReminderJobName.APPOINTMENT:
+        return {
+          title: 'Upcoming appointment reminder',
+          body: `Your appointment with ${data.providerName} is coming up at ${data.time}`,
+          data: { appointmentId: data.appointmentId, type: data.type },
+        };
+      case ReminderJobName.REFILL:
+        return {
+          title: 'Refill reminder',
+          body: `${data.name} — only ${data.suppliesRemainingDays} day${data.suppliesRemainingDays === 1 ? '' : 's'} of supply left`,
+          data: { medicationId: data.medicationId, type: data.type },
+        };
+      case ReminderJobName.DOCUMENT_UPLOAD:
+        return {
+          title: 'Document uploaded',
+          body: `${data.fileName} was uploaded to your medical record vault`,
+          data: { recordId: data.recordId, type: data.type },
+        };
+      case ReminderJobName.FOLLOW_UP:
+        return {
+          title: 'Follow-up reminder',
+          body: `How are you feeling after your visit with ${data.providerName}? Check your care journey for next steps.`,
+          data: { appointmentId: data.appointmentId, type: data.type },
+        };
+    }
   }
 }

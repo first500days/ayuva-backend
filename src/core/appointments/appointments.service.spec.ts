@@ -27,6 +27,8 @@ function buildService() {
   const reminderQueueService = {
     scheduleAppointmentReminder: jest.fn(),
     cancelAppointmentReminder: jest.fn(),
+    scheduleFollowUpReminder: jest.fn(),
+    cancelFollowUpReminder: jest.fn(),
   };
   const service = new AppointmentsService(
     appointmentModel as any,

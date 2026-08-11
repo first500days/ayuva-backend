@@ -1,5 +1,11 @@
 import { ReminderQueueService } from './reminder-queue.service';
-import { appointmentReminderJobId, medicationReminderJobId } from './reminder-queue.constants';
+import {
+  appointmentReminderJobId,
+  documentUploadJobId,
+  followUpReminderJobId,
+  medicationReminderJobId,
+  refillReminderJobId,
+} from './reminder-queue.constants';
 
 function buildService(configOverrides: Record<string, unknown> = {}) {
   const queue = {
@@ -207,6 +213,120 @@ describe('ReminderQueueService', () => {
 
       await expect(
         service.cancelAppointmentReminder('appt-1'),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('sendRefillReminder', () => {
+    it('adds an immediate job deduped by medicationId+today', async () => {
+      const { service, queue } = buildService();
+      const today = new Date().toISOString().slice(0, 10);
+
+      await service.sendRefillReminder({
+        medicationId: MEDICATION_ID,
+        userId: USER_ID,
+        name: 'Amlodipine',
+        suppliesRemainingDays: 2,
+      });
+
+      expect(queue.add).toHaveBeenCalledWith(
+        'refill-reminder',
+        expect.objectContaining({
+          medicationId: MEDICATION_ID,
+          suppliesRemainingDays: 2,
+        }),
+        expect.objectContaining({
+          jobId: refillReminderJobId(MEDICATION_ID, today),
+        }),
+      );
+    });
+  });
+
+  describe('sendDocumentUploadConfirmation', () => {
+    it('adds an immediate job keyed by recordId', async () => {
+      const { service, queue } = buildService();
+
+      await service.sendDocumentUploadConfirmation({
+        recordId: 'rec-1',
+        userId: USER_ID,
+        fileName: 'lipid-panel.pdf',
+      });
+
+      expect(queue.add).toHaveBeenCalledWith(
+        'document-upload-confirmation',
+        expect.objectContaining({ recordId: 'rec-1', fileName: 'lipid-panel.pdf' }),
+        expect.objectContaining({ jobId: documentUploadJobId('rec-1') }),
+      );
+    });
+  });
+
+  describe('scheduleFollowUpReminder', () => {
+    it('adds a one-off delayed job followUpLeadDays after the visit', async () => {
+      const { service, queue } = buildService({
+        'reminders.followUpLeadDays': 3,
+      });
+      const slotAt = new Date(Date.now() + 60 * 60 * 1000);
+      const date = slotAt.toISOString().slice(0, 10);
+      const time = `${String(slotAt.getHours()).padStart(2, '0')}:${String(slotAt.getMinutes()).padStart(2, '0')}`;
+
+      await service.scheduleFollowUpReminder({
+        id: 'appt-1',
+        userId: USER_ID,
+        providerName: 'Dr. Menon',
+        date,
+        time,
+      });
+
+      expect(queue.add).toHaveBeenCalledWith(
+        'follow-up-reminder',
+        expect.objectContaining({ appointmentId: 'appt-1' }),
+        expect.objectContaining({
+          jobId: followUpReminderJobId('appt-1'),
+          delay: expect.any(Number),
+        }),
+      );
+      const call = queue.add.mock.calls.find((c: unknown[]) => c[0] === 'follow-up-reminder');
+      expect(call?.[2].delay).toBeGreaterThan(0);
+    });
+
+    it('does not schedule when the follow-up moment has already passed', async () => {
+      const { service, queue } = buildService({
+        'reminders.followUpLeadDays': 3,
+      });
+      const pastSlot = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      const date = pastSlot.toISOString().slice(0, 10);
+      const time = `${String(pastSlot.getHours()).padStart(2, '0')}:${String(pastSlot.getMinutes()).padStart(2, '0')}`;
+
+      await service.scheduleFollowUpReminder({
+        id: 'appt-2',
+        userId: USER_ID,
+        providerName: 'Dr. Menon',
+        date,
+        time,
+      });
+
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancelFollowUpReminder', () => {
+    it('removes the pending job when found', async () => {
+      const { service, queue } = buildService();
+      const remove = jest.fn().mockResolvedValue(undefined);
+      queue.getJob.mockResolvedValue({ remove });
+
+      await service.cancelFollowUpReminder('appt-1');
+
+      expect(queue.getJob).toHaveBeenCalledWith(followUpReminderJobId('appt-1'));
+      expect(remove).toHaveBeenCalled();
+    });
+
+    it('is a no-op when there is no pending job', async () => {
+      const { service, queue } = buildService();
+      queue.getJob.mockResolvedValue(null);
+
+      await expect(
+        service.cancelFollowUpReminder('appt-1'),
       ).resolves.toBeUndefined();
     });
   });

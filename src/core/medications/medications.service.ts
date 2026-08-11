@@ -151,10 +151,24 @@ export class MedicationsService {
       dto.status === MedicationLogStatus.TAKEN &&
       previous?.status !== MedicationLogStatus.TAKEN
     ) {
-      await this.medicationModel.updateOne(
+      const updated = await this.medicationModel.findOneAndUpdate(
         { _id: medicationId, suppliesRemainingDays: { $gt: 0 } },
         { $inc: { suppliesRemainingDays: -1 } },
+        { returnDocument: 'after' },
       );
+      // Push a refill nudge the moment supply crosses the threshold — not on
+      // every dose logged afterward (dedupe is per medication+day in the queue).
+      if (
+        updated &&
+        updated.suppliesRemainingDays <= updated.refillThresholdDays
+      ) {
+        await this.reminderQueueService.sendRefillReminder({
+          medicationId: updated.id,
+          userId,
+          name: updated.name,
+          suppliesRemainingDays: updated.suppliesRemainingDays,
+        });
+      }
     }
 
     return {

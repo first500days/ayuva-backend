@@ -7,7 +7,7 @@ function buildService() {
   const medicationModel = {
     find: jest.fn(),
     findOne: jest.fn(),
-    updateOne: jest.fn(),
+    findOneAndUpdate: jest.fn(),
   };
   const medicationLogModel = {
     find: jest.fn(),
@@ -18,6 +18,7 @@ function buildService() {
     scheduleMedicationReminders: jest.fn(),
     cancelMedicationReminders: jest.fn(),
     rescheduleMedicationReminders: jest.fn(),
+    sendRefillReminder: jest.fn(),
   };
   const service = new MedicationsService(
     medicationModel as any,
@@ -85,6 +86,12 @@ describe('MedicationsService', () => {
     it('decrements suppliesRemainingDays only on a genuine transition into "taken"', async () => {
       const { service, medicationModel, medicationLogModel } = buildService();
       medicationModel.findOne.mockResolvedValue({ id: MEDICATION_ID });
+      medicationModel.findOneAndUpdate.mockResolvedValue({
+        id: MEDICATION_ID,
+        name: 'Amlodipine',
+        suppliesRemainingDays: 10,
+        refillThresholdDays: 3,
+      });
       medicationLogModel.findOne.mockResolvedValue({
         status: MedicationLogStatus.UPCOMING,
       });
@@ -100,9 +107,10 @@ describe('MedicationsService', () => {
         status: MedicationLogStatus.TAKEN,
       });
 
-      expect(medicationModel.updateOne).toHaveBeenCalledWith(
+      expect(medicationModel.findOneAndUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ suppliesRemainingDays: { $gt: 0 } }),
         { $inc: { suppliesRemainingDays: -1 } },
+        { returnDocument: 'after' },
       );
     });
 
@@ -124,7 +132,68 @@ describe('MedicationsService', () => {
         status: MedicationLogStatus.TAKEN,
       });
 
-      expect(medicationModel.updateOne).not.toHaveBeenCalled();
+      expect(medicationModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('sends a refill reminder push once supply drops to the refill threshold', async () => {
+      const { service, medicationModel, medicationLogModel, reminderQueueService } =
+        buildService();
+      medicationModel.findOne.mockResolvedValue({ id: MEDICATION_ID });
+      medicationModel.findOneAndUpdate.mockResolvedValue({
+        id: MEDICATION_ID,
+        name: 'Amlodipine',
+        suppliesRemainingDays: 3,
+        refillThresholdDays: 3,
+      });
+      medicationLogModel.findOne.mockResolvedValue({
+        status: MedicationLogStatus.UPCOMING,
+      });
+      medicationLogModel.findOneAndUpdate.mockResolvedValue({
+        id: 'log-1',
+        medicationId: { toString: () => MEDICATION_ID },
+        scheduledAt: new Date(),
+        status: MedicationLogStatus.TAKEN,
+      });
+
+      await service.logDose(USER_ID, MEDICATION_ID, {
+        scheduledAt: new Date().toISOString(),
+        status: MedicationLogStatus.TAKEN,
+      });
+
+      expect(reminderQueueService.sendRefillReminder).toHaveBeenCalledWith({
+        medicationId: MEDICATION_ID,
+        userId: USER_ID,
+        name: 'Amlodipine',
+        suppliesRemainingDays: 3,
+      });
+    });
+
+    it('does not send a refill reminder while supply is still above the threshold', async () => {
+      const { service, medicationModel, medicationLogModel, reminderQueueService } =
+        buildService();
+      medicationModel.findOne.mockResolvedValue({ id: MEDICATION_ID });
+      medicationModel.findOneAndUpdate.mockResolvedValue({
+        id: MEDICATION_ID,
+        name: 'Amlodipine',
+        suppliesRemainingDays: 10,
+        refillThresholdDays: 3,
+      });
+      medicationLogModel.findOne.mockResolvedValue({
+        status: MedicationLogStatus.UPCOMING,
+      });
+      medicationLogModel.findOneAndUpdate.mockResolvedValue({
+        id: 'log-1',
+        medicationId: { toString: () => MEDICATION_ID },
+        scheduledAt: new Date(),
+        status: MedicationLogStatus.TAKEN,
+      });
+
+      await service.logDose(USER_ID, MEDICATION_ID, {
+        scheduledAt: new Date().toISOString(),
+        status: MedicationLogStatus.TAKEN,
+      });
+
+      expect(reminderQueueService.sendRefillReminder).not.toHaveBeenCalled();
     });
   });
 

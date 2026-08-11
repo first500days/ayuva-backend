@@ -82,6 +82,10 @@ export class AppointmentsService {
         slotId: slot.id,
         status: AppointmentStatus.CONFIRMED,
       });
+      // System-initiated care-continuity nudge (PRD §7.1 Notifications) — not
+      // gated behind the "Set reminder" toggle, which is specifically the
+      // pre-visit reminder.
+      await this.scheduleFollowUp(appointment, provider, slot);
       return this.toResponse(appointment, provider, slot);
     } catch (err) {
       // Compensate: give the slot back if we booked it but couldn't persist the appointment.
@@ -315,6 +319,9 @@ export class AppointmentsService {
     if (appointment.reminderEnabled) {
       await this.scheduleReminder(appointment, provider ?? undefined, newSlot);
     }
+    // Same for the follow-up nudge — it's relative to the visit date, which just changed.
+    await this.reminderQueueService.cancelFollowUpReminder(appointment.id);
+    await this.scheduleFollowUp(appointment, provider ?? undefined, newSlot);
 
     return this.toResponse(appointment, provider ?? undefined, newSlot);
   }
@@ -339,6 +346,7 @@ export class AppointmentsService {
 
     // A stale job firing for a cancelled appointment is a real bug, not an edge case.
     await this.reminderQueueService.cancelAppointmentReminder(appointment.id);
+    await this.reminderQueueService.cancelFollowUpReminder(appointment.id);
 
     const [provider, slot] = await Promise.all([
       this.providerModel.findById(appointment.providerId),
@@ -379,6 +387,21 @@ export class AppointmentsService {
   ): Promise<void> {
     if (!slot) return;
     await this.reminderQueueService.scheduleAppointmentReminder({
+      id: appointment.id,
+      userId: appointment.patientId.toString(),
+      providerName: provider?.name ?? 'your provider',
+      date: slot.date.toISOString().slice(0, 10),
+      time: slot.time,
+    });
+  }
+
+  private async scheduleFollowUp(
+    appointment: AppointmentDocument,
+    provider?: ProviderDocument,
+    slot?: AppointmentSlotDocument,
+  ): Promise<void> {
+    if (!slot) return;
+    await this.reminderQueueService.scheduleFollowUpReminder({
       id: appointment.id,
       userId: appointment.patientId.toString(),
       providerName: provider?.name ?? 'your provider',

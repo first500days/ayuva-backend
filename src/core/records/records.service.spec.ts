@@ -19,11 +19,15 @@ function buildService() {
   const storageService = {
     upload: jest.fn().mockResolvedValue('records/user-1/file-key.pdf'),
   };
+  const reminderQueueService = {
+    sendDocumentUploadConfirmation: jest.fn().mockResolvedValue(undefined),
+  };
   const service = new RecordsService(
     recordModel as any,
     appointmentModel as any,
     reportInterpretationModel as any,
     storageService as any,
+    reminderQueueService as any,
   );
   return {
     service,
@@ -31,6 +35,7 @@ function buildService() {
     appointmentModel,
     reportInterpretationModel,
     storageService,
+    reminderQueueService,
   };
 }
 
@@ -105,6 +110,24 @@ describe('RecordsService', () => {
         );
       },
     );
+
+    it('sends a document-upload-confirmation push after a successful upload', async () => {
+      const { service, recordModel, reminderQueueService } = buildService();
+      recordModel.create.mockResolvedValue({
+        id: 'rec-1',
+        originalFileName: 'report.pdf',
+        type: MedicalRecordType.PRESCRIPTION,
+        uploadedAt: new Date(),
+      });
+
+      await service.upload('user-1', fakeFile());
+
+      expect(reminderQueueService.sendDocumentUploadConfirmation).toHaveBeenCalledWith({
+        recordId: 'rec-1',
+        userId: 'user-1',
+        fileName: 'report.pdf',
+      });
+    });
 
     it('falls back to imaging for an unnamed image with no filename hint', async () => {
       const { service, recordModel } = buildService();

@@ -73,6 +73,70 @@ describe('ReminderProcessor (BullMQ consumer)', () => {
     );
   });
 
+  it('dispatches a refill reminder with the supply count in the copy', async () => {
+    const { deviceTokenModel, fcmSender } = buildProcessor();
+    deviceTokenModel.find.mockReturnValue({
+      exec: jest.fn().mockResolvedValue([{ token: 'tok-1' }]),
+    });
+
+    await capturedProcessor!({
+      data: {
+        type: ReminderJobName.REFILL,
+        medicationId: 'med-1',
+        userId: 'user-1',
+        name: 'Amlodipine',
+        suppliesRemainingDays: 2,
+      },
+    });
+
+    expect(fcmSender.send).toHaveBeenCalledWith(
+      'tok-1',
+      expect.objectContaining({ body: expect.stringContaining('2 days') }),
+    );
+  });
+
+  it('dispatches a document-upload-confirmation with the file name in the copy', async () => {
+    const { deviceTokenModel, fcmSender } = buildProcessor();
+    deviceTokenModel.find.mockReturnValue({
+      exec: jest.fn().mockResolvedValue([{ token: 'tok-1' }]),
+    });
+
+    await capturedProcessor!({
+      data: {
+        type: ReminderJobName.DOCUMENT_UPLOAD,
+        recordId: 'rec-1',
+        userId: 'user-1',
+        fileName: 'lipid-panel.pdf',
+      },
+    });
+
+    expect(fcmSender.send).toHaveBeenCalledWith(
+      'tok-1',
+      expect.objectContaining({ body: expect.stringContaining('lipid-panel.pdf') }),
+    );
+  });
+
+  it('dispatches a follow-up reminder with the provider name in the copy', async () => {
+    const { deviceTokenModel, fcmSender } = buildProcessor();
+    deviceTokenModel.find.mockReturnValue({
+      exec: jest.fn().mockResolvedValue([{ token: 'tok-1' }]),
+    });
+
+    await capturedProcessor!({
+      data: {
+        type: ReminderJobName.FOLLOW_UP,
+        appointmentId: 'appt-1',
+        userId: 'user-1',
+        providerName: 'Dr. Menon',
+      },
+    });
+
+    expect(fcmSender.send).toHaveBeenCalledWith(
+      'tok-1',
+      expect.objectContaining({ body: expect.stringContaining('Dr. Menon') }),
+    );
+  });
+
   it('is a no-op (no FCM calls) when the user has no registered devices', async () => {
     const { deviceTokenModel, fcmSender } = buildProcessor();
     deviceTokenModel.find.mockReturnValue({

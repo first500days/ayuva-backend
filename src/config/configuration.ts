@@ -41,5 +41,10 @@ export default () => ({
       process.env.APPOINTMENT_REMINDER_LEAD_MINUTES ?? '60',
       10,
     ),
+    // How many days after a visit a follow-up reminder fires (PRD §7.1 Notifications).
+    followUpLeadDays: parseInt(
+      process.env.FOLLOW_UP_REMINDER_LEAD_DAYS ?? '3',
+      10,
+    ),
   },
 });

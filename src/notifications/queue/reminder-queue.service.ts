@@ -3,11 +3,17 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 import {
   AppointmentReminderJobData,
+  DocumentUploadJobData,
+  FollowUpReminderJobData,
   MedicationReminderJobData,
   REMINDER_QUEUE,
+  RefillReminderJobData,
   ReminderJobName,
   appointmentReminderJobId,
+  documentUploadJobId,
+  followUpReminderJobId,
   medicationReminderJobId,
+  refillReminderJobId,
 } from './reminder-queue.constants';
 
 export interface MedicationForReminder {
@@ -26,6 +32,19 @@ export interface AppointmentForReminder {
   date: string;
   /** HH:mm, 24h */
   time: string;
+}
+
+export interface RefillAlertForReminder {
+  medicationId: string;
+  userId: string;
+  name: string;
+  suppliesRemainingDays: number;
+}
+
+export interface DocumentUploadForConfirmation {
+  recordId: string;
+  userId: string;
+  fileName: string;
 }
 
 /**
@@ -143,6 +162,90 @@ export class ReminderQueueService {
       await job.remove().catch((err: unknown) =>
         this.logger.error(
           `Failed to remove appointment reminder job ${jobId}`,
+          err as Error,
+        ),
+      );
+    }
+  }
+
+  /**
+   * Immediate, at-most-once-per-day push when a dose log drops a medication's
+   * supply to/below its refill threshold. Deduped by medicationId+date so
+   * logging several doses the same day doesn't spam multiple pushes.
+   */
+  async sendRefillReminder(alert: RefillAlertForReminder): Promise<void> {
+    const isoDate = new Date().toISOString().slice(0, 10);
+    const jobId = refillReminderJobId(alert.medicationId, isoDate);
+    const data: RefillReminderJobData = {
+      type: ReminderJobName.REFILL,
+      medicationId: alert.medicationId,
+      userId: alert.userId,
+      name: alert.name,
+      suppliesRemainingDays: alert.suppliesRemainingDays,
+    };
+    await this.queue.add(ReminderJobName.REFILL, data, {
+      jobId,
+      removeOnComplete: true,
+      removeOnFail: true,
+    });
+  }
+
+  /** Immediate confirmation push that a medical record upload succeeded. */
+  async sendDocumentUploadConfirmation(
+    doc: DocumentUploadForConfirmation,
+  ): Promise<void> {
+    const data: DocumentUploadJobData = {
+      type: ReminderJobName.DOCUMENT_UPLOAD,
+      recordId: doc.recordId,
+      userId: doc.userId,
+      fileName: doc.fileName,
+    };
+    await this.queue.add(ReminderJobName.DOCUMENT_UPLOAD, data, {
+      jobId: documentUploadJobId(doc.recordId),
+      removeOnComplete: true,
+      removeOnFail: true,
+    });
+  }
+
+  /** Schedules a one-off nudge `followUpReminderLeadDays` after the visit — only if that moment is still in the future. */
+  async scheduleFollowUpReminder(
+    appointment: AppointmentForReminder,
+  ): Promise<void> {
+    const leadDays =
+      this.config.get<number>('reminders.followUpLeadDays') ?? 3;
+    const slotAt = new Date(`${appointment.date}T${appointment.time}:00`);
+    const fireAt = new Date(slotAt.getTime() + leadDays * 24 * 60 * 60_000);
+    const delay = fireAt.getTime() - Date.now();
+
+    if (delay <= 0) {
+      this.logger.warn(
+        `Skipped scheduling follow-up reminder ${appointment.id} — reminder time already in the past`,
+      );
+      return;
+    }
+
+    const data: FollowUpReminderJobData = {
+      type: ReminderJobName.FOLLOW_UP,
+      appointmentId: appointment.id,
+      userId: appointment.userId,
+      providerName: appointment.providerName,
+    };
+    await this.queue.add(ReminderJobName.FOLLOW_UP, data, {
+      jobId: followUpReminderJobId(appointment.id),
+      delay,
+      removeOnComplete: true,
+      removeOnFail: true,
+    });
+  }
+
+  /** Removes a pending follow-up reminder (appointment cancelled/rescheduled). */
+  async cancelFollowUpReminder(appointmentId: string): Promise<void> {
+    const jobId = followUpReminderJobId(appointmentId);
+    const job = await this.queue.getJob(jobId);
+    if (job) {
+      await job.remove().catch((err: unknown) =>
+        this.logger.error(
+          `Failed to remove follow-up reminder job ${jobId}`,
           err as Error,
         ),
       );

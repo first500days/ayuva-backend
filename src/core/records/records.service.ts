@@ -20,6 +20,7 @@ import {
   ReportAiStatus,
 } from '../../ai/report-interpreter/schemas/report-interpretation.schema';
 import { StorageService } from '../../storage/storage.service';
+import { ReminderQueueService } from '../../notifications/queue/reminder-queue.service';
 import { MedicalRecordResponseDto } from './dto/medical-record-response.dto';
 import { MedicalRecordDetailResponseDto } from './dto/medical-record-detail-response.dto';
 
@@ -60,6 +61,7 @@ export class RecordsService {
     @InjectModel(ReportInterpretation.name)
     private readonly reportInterpretationModel: Model<ReportInterpretationDocument>,
     private readonly storageService: StorageService,
+    private readonly reminderQueueService: ReminderQueueService,
   ) {}
 
   async upload(
@@ -89,6 +91,12 @@ export class RecordsService {
       fileRef,
       originalFileName: file.originalname,
       type,
+    });
+
+    await this.reminderQueueService.sendDocumentUploadConfirmation({
+      recordId: record.id,
+      userId,
+      fileName: record.originalFileName,
     });
 
     return this.toResponse(record);

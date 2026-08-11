@@ -33,4 +33,18 @@ describe('fcmSenderProvider', () => {
     });
     expect(sender).toBeInstanceOf(FirebaseFcmSender);
   });
+
+  it('throws instead of silently falling back to LogFcmSender when credentials are missing in production', () => {
+    expect(() => useFactory({ nodeEnv: 'production' })).toThrow(/FCM credentials missing/);
+  });
+
+  it('still constructs FirebaseFcmSender in production when credentials are present', () => {
+    const sender = useFactory({
+      nodeEnv: 'production',
+      'firebase.projectId': 'my-project',
+      'firebase.clientEmail': 'svc@my-project.iam.gserviceaccount.com',
+      'firebase.privateKey': '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----',
+    });
+    expect(sender).toBeInstanceOf(FirebaseFcmSender);
+  });
 });
