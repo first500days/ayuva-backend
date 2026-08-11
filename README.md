@@ -31,6 +31,22 @@
 $ npm install
 ```
 
+## Local dev prerequisites
+
+The app needs a MongoDB and a Redis instance. If you don't already run these
+locally, the fastest path is Docker:
+
+```bash
+$ docker compose -f docker-compose.dev.yml up -d
+```
+
+This starts Mongo on `27017` and Redis on `6379`, matching the defaults in
+`.env.example`. Copy `.env.example` to `.env`, then optionally seed demo data:
+
+```bash
+$ npm run seed   # see package.json for the exact script name
+```
+
 ## Compile and run the project
 
 ```bash
