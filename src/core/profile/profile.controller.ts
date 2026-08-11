@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -30,6 +30,24 @@ import {
 @Controller('profile')
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
+
+  @Get('health')
+  @ApiOperation({
+    summary:
+      'Get Health Profile — zeroed defaults (not a 404) if onboarding was skipped (FR-2.6)',
+  })
+  @ApiOkResponse({ type: HealthProfileResponseDto })
+  async getHealth(
+    @CurrentUser() user: JwtPayload,
+  ): Promise<HealthProfileResponseDto> {
+    const profile = await this.profileService.getHealthProfile(user.sub);
+    return {
+      age: profile?.age ?? 0,
+      gender: profile?.gender ?? '',
+      conditions: profile?.conditions ?? [],
+      allergies: profile?.allergies ?? [],
+    };
+  }
 
   @Put('health')
   @ApiOperation({ summary: 'Create/update Health Profile (FR-2.1-2.3)' })
@@ -68,6 +86,19 @@ export class ProfileController {
       scheduleTimes: medication.scheduleTimes,
       active: medication.active,
     };
+  }
+
+  @Get('emergency-contact')
+  @ApiOperation({
+    summary:
+      'Get emergency contact — zeroed defaults (not a 404) if not yet set (FR-2.6)',
+  })
+  @ApiOkResponse({ type: EmergencyContactResponseDto })
+  async getEmergencyContact(
+    @CurrentUser() user: JwtPayload,
+  ): Promise<EmergencyContactResponseDto> {
+    const contact = await this.profileService.getEmergencyContact(user.sub);
+    return { name: contact?.name ?? '', phone: contact?.phone ?? '' };
   }
 
   @Put('emergency-contact')

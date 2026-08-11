@@ -35,6 +35,20 @@ export class ProfileService {
     private readonly reminderQueueService: ReminderQueueService,
   ) {}
 
+  async getHealthProfile(userId: string): Promise<HealthProfileDocument | null> {
+    return this.healthProfileModel
+      .findOne({ userId: new Types.ObjectId(userId) })
+      .exec();
+  }
+
+  async getEmergencyContact(
+    userId: string,
+  ): Promise<EmergencyContactDocument | null> {
+    return this.emergencyContactModel
+      .findOne({ userId: new Types.ObjectId(userId) })
+      .exec();
+  }
+
   async upsertHealthProfile(
     userId: string,
     dto: CreateHealthProfileDto,
