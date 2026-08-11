@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import { User } from '../../../core/users/schemas/user.schema';
+import { AiSource } from '../../common/ai-source.enum';
 
 export enum AiService {
   SYMPTOM_NAV = 'symptomNav',
@@ -38,6 +39,11 @@ export class AIInteractionLog {
 
   @Prop({ required: true })
   latencyMs: number;
+
+  // mock until the AI-owning team's real service is dropped in (TRD §6) — every
+  // response and log entry must carry this so mock output is never mistaken for real.
+  @Prop({ type: String, enum: AiSource, required: true, default: AiSource.MOCK })
+  source: AiSource;
 
   // Auto-set when riskLevel >= Moderate-High (TRD §5.4); drives the escalation queue.
   @Prop({ default: false, index: true })

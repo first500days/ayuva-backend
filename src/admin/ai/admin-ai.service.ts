@@ -94,6 +94,7 @@ export class AdminAiService {
       id: log.id,
       userId: log.userId.toString(),
       service: log.service,
+      source: log.source,
       input: log.input,
       outcome: log.outcome,
       latencyMs: log.latencyMs,

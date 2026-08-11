@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AiService } from '../../../ai/ai-interaction-log/schemas/ai-interaction-log.schema';
+import { AiSource } from '../../../ai/common/ai-source.enum';
 
 export class AdminAiLogResponseDto {
   @ApiProperty({ example: '64f0c8e2b1a2c3d4e5f6a7b8' })
@@ -10,6 +11,14 @@ export class AdminAiLogResponseDto {
 
   @ApiProperty({ enum: AiService })
   service: AiService;
+
+  @ApiProperty({
+    enum: AiSource,
+    example: AiSource.MOCK,
+    description:
+      'mock until the AI-owning team\'s real service is dropped in (TRD §6)',
+  })
+  source: AiSource;
 
   @ApiProperty({ type: Object })
   input: Record<string, unknown>;

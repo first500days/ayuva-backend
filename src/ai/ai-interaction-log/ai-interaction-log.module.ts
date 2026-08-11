@@ -4,10 +4,11 @@ import {
   AIInteractionLog,
   AIInteractionLogSchema,
 } from './schemas/ai-interaction-log.schema';
+import { AiInteractionLogService } from './ai-interaction-log.service';
 
 /**
- * Shared by all three AI submodules (TRD §5.4) — every AI interaction,
- * regardless of service, is written here. Schema registration only.
+ * Shared by all four AI submodules (TRD §5.4) — every AI interaction,
+ * regardless of service, is written here via AiInteractionLogService.
  */
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import {
       { name: AIInteractionLog.name, schema: AIInteractionLogSchema },
     ]),
   ],
-  exports: [MongooseModule],
+  providers: [AiInteractionLogService],
+  exports: [MongooseModule, AiInteractionLogService],
 })
 export class AiInteractionLogModule {}
