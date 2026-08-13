@@ -37,6 +37,12 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
   ],
   controllers: [AuthController],
   providers: [JwtStrategy, JwtAuthGuard, ConsentGuard, AuthService, GoogleAuthService],
-  exports: [JwtModule, PassportModule, JwtAuthGuard, ConsentGuard],
+  exports: [
+    JwtModule,
+    PassportModule,
+    JwtAuthGuard,
+    ConsentGuard,
+    MongooseModule,
+  ],
 })
 export class AuthModule {}
