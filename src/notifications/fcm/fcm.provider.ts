@@ -23,9 +23,11 @@ export const fcmSenderProvider: Provider = {
     const privateKey = config.get<string>('firebase.privateKey');
 
     if (!projectId || !clientEmail || !privateKey) {
-      if (config.get<string>('nodeEnv') === 'production') {
+      const isProduction = config.get<string>('nodeEnv') === 'production';
+      const logOnlyAllowed = config.get<boolean>('firebase.logOnly');
+      if (isProduction && !logOnlyAllowed) {
         throw new Error(
-          'FCM credentials missing in a production build — set FCM_PROJECT_ID/FCM_CLIENT_EMAIL/FCM_PRIVATE_KEY. Refusing to silently fall back to the log-only sender in production.',
+          'FCM credentials missing in a production build — set FCM_PROJECT_ID/FCM_CLIENT_EMAIL/FCM_PRIVATE_KEY (or FCM_LOG_ONLY=true to allow the log-only sender). Refusing to silently fall back to the log-only sender in production.',
         );
       }
       logger.warn(

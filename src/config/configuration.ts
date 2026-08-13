@@ -60,6 +60,10 @@ export default () => ({
     projectId: process.env.FCM_PROJECT_ID,
     clientEmail: process.env.FCM_CLIENT_EMAIL,
     privateKey: process.env.FCM_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    // Set to true to allow the log-only push sender even in production (e.g. a
+    // free-tier staging deploy without real FCM). Unset/absent in production
+    // still fails fast at boot when credentials are missing (fcm.provider.ts).
+    logOnly: process.env.FCM_LOG_ONLY === 'true',
   },
   reminders: {
     // How long before a booked slot an appointment reminder fires (FR-7.6).
