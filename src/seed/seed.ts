@@ -329,7 +329,7 @@ const feedbackSeed = [
     type: FeedbackType.BUG,
     title: 'Sync issue',
     description: "BP log didn't sync after re-opening the app.",
-    status: FeedbackStatus.IN_REVIEW,
+    status: FeedbackStatus.IN_PROGRESS,
   },
   {
     patientName: 'Marcus Bell',

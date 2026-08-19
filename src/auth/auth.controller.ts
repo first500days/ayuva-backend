@@ -12,6 +12,8 @@ import { LoginDto } from './dto/login.dto';
 import { GoogleOAuthDto } from './dto/google-oauth.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ConsentDto } from './dto/consent.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AuthTokensResponseDto } from './dto/auth-tokens-response.dto';
 import { ConsentStatusResponseDto } from './dto/consent-status-response.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -52,6 +54,20 @@ export class AuthController {
   @ApiOkResponse({ type: AuthTokensResponseDto })
   refresh(@Body() dto: RefreshTokenDto): Promise<AuthTokensResponseDto> {
     return this.authService.refresh(dto);
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request a password reset email' })
+  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<void> {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password using a reset token' })
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
+    return this.authService.resetPassword(dto);
   }
 
   @Put('consent')

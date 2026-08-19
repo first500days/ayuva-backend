@@ -1,0 +1,56 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Resend } from 'resend';
+
+@Injectable()
+export class MailService {
+  private readonly logger = new Logger(MailService.name);
+  private readonly resend: Resend;
+
+  constructor(private readonly configService: ConfigService) {
+    const apiKey = this.configService.get<string>('resend.apiKey');
+    if (!apiKey) {
+      this.logger.warn('RESEND_API_KEY not configured - emails will not be sent');
+    }
+    this.resend = new Resend(apiKey);
+  }
+
+  async sendMail(
+    to: string,
+    subject: string,
+    html: string,
+  ): Promise<boolean> {
+    const from = this.configService.get<string>('mail.from') ?? 'noreply@ayuva.com';
+
+    try {
+      await this.resend.emails.send({
+        from,
+        to,
+        subject,
+        html,
+      });
+      this.logger.log(`Email sent to ${to}: ${subject}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to send email to ${to}: ${error.message}`);
+      return false;
+    }
+  }
+
+  async sendPasswordResetEmail(
+    to: string,
+    resetToken: string,
+    frontendUrl: string,
+  ): Promise<boolean> {
+    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
+    const subject = 'Reset your Ayuva password';
+    const html = `
+      <p>You requested a password reset for your Ayuva account.</p>
+      <p>Click the link below to set a new password:</p>
+      <p><a href="${resetUrl}">${resetUrl}</a></p>
+      <p>This link expires in 1 hour.</p>
+      <p>If you didn't request this, please ignore this email.</p>
+    `;
+    return this.sendMail(to, subject, html);
+  }
+}

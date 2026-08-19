@@ -80,4 +80,13 @@ export default () => ({
   // Comma-separated allowed origins for CORS (main.ts) — unset in production
   // means "reject all cross-origin requests" (logged loudly), not "allow all".
   corsAllowedOrigins: process.env.CORS_ALLOWED_ORIGINS,
+  mail: {
+    from: process.env.MAIL_FROM ?? 'noreply@ayuva.com',
+  },
+  resend: {
+    apiKey: process.env.RESEND_API_KEY,
+  },
+  frontend: {
+    url: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+  },
 });

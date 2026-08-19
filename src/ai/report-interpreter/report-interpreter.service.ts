@@ -103,6 +103,57 @@ const TEMPLATES: Record<MedicalRecordType, MockTemplate> = {
       'Is there anything I should avoid while recovering?',
     ],
   },
+  [MedicalRecordType.ECG]: {
+    summaryText:
+      'This ECG report records the heart\'s electrical activity. Below are key findings — please discuss any flagged items with your cardiologist or provider.',
+    highlightedValues: [
+      { label: 'Heart Rate', valueOptions: ['72 bpm', '110 bpm', '68 bpm'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.HIGH, HighlightedValueStatus.NORMAL] },
+      { label: 'Rhythm', valueOptions: ['Normal sinus rhythm', 'Irregular rhythm noted', 'Normal sinus rhythm'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.HIGH, HighlightedValueStatus.NORMAL] },
+    ],
+    glossaryTerms: [
+      { term: 'ECG', definition: 'A test that records the electrical signals in your heart.' },
+      { term: 'Sinus rhythm', definition: 'A normal heartbeat pattern originating from the heart\'s natural pacemaker.' },
+    ],
+    suggestedQuestions: [
+      'Do these findings explain any symptoms I\'ve had?',
+      'Will I need a repeat ECG, and if so when?',
+      'Should I see a cardiologist based on this result?',
+    ],
+  },
+  [MedicalRecordType.CONSULTATION]: {
+    summaryText:
+      'This consultation note summarizes your visit. Below are the key discussion points and agreed next steps — follow up with your provider if anything is unclear.',
+    highlightedValues: [
+      { label: 'Consultation Type', valueOptions: ['In-person', 'Video', 'Phone'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
+      { label: 'Follow-up Planned', valueOptions: ['Yes', 'No', 'Yes'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
+    ],
+    glossaryTerms: [
+      { term: 'Consultation', definition: 'A meeting with a healthcare provider to discuss symptoms, diagnosis, or treatment.' },
+      { term: 'Follow-up', definition: 'A planned next appointment to check progress or review results.' },
+    ],
+    suggestedQuestions: [
+      'What were the main takeaways from this consultation?',
+      'Are there any action items I should complete before the next visit?',
+      'Who should I contact if my symptoms change?',
+    ],
+  },
+  [MedicalRecordType.LAB_REPORT]: {
+    summaryText:
+      'This lab report contains test results from the diagnostic lab. Below are key findings — share any flagged items with your referring clinician.',
+    highlightedValues: [
+      { label: 'Report Status', valueOptions: ['Final', 'Preliminary', 'Final'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
+      { label: 'Abnormal Flags', valueOptions: ['None', '2 flagged', '1 flagged'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.HIGH, HighlightedValueStatus.NORMAL] },
+    ],
+    glossaryTerms: [
+      { term: 'Lab report', definition: 'A document summarizing results from laboratory tests ordered by a clinician.' },
+      { term: 'Reference range', definition: 'The expected values for a healthy person — used to interpret test results.' },
+    ],
+    suggestedQuestions: [
+      'What do the flagged values mean in my context?',
+      'Do I need to repeat any of these tests?',
+      'How should I share these results with my care team?',
+    ],
+  },
 };
 
 @Injectable()

@@ -10,6 +10,12 @@ export enum ProviderCategory {
 }
 
 export enum ProviderStatus {
+  PENDING = 'pending',
+  UNDER_REVIEW = 'under_review',
+  VERIFIED = 'verified',
+  REJECTED = 'rejected',
+  SUSPENDED = 'suspended',
+  EXPIRED = 'expired',
   ACTIVE = 'active',
   INACTIVE = 'inactive',
 }
@@ -120,6 +126,30 @@ export class Provider {
 
   @Prop()
   profileImageUrl?: string;
+
+  @Prop({ type: [SchemaTypes.ObjectId], ref: 'MedicalRecord' })
+  verificationDocuments?: Types.ObjectId[];
+
+  @Prop()
+  licenseExpiryAt?: Date;
+
+  @Prop({ default: 0 })
+  totalAppointments?: number;
+
+  @Prop({ default: 0 })
+  completedAppointments?: number;
+
+  @Prop({ default: 0 })
+  cancellationRate?: number;
+
+  @Prop({ default: 0 })
+  noShowRate?: number;
+
+  @Prop({ default: 0 })
+  averageRating?: number;
+
+  @Prop({ default: 0 })
+  feedbackCount?: number;
 }
 
 export const ProviderSchema = SchemaFactory.createForClass(Provider);

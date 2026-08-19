@@ -9,6 +9,8 @@ export enum UserRole {
 export enum UserStatus {
   ACTIVE = 'active',
   INACTIVE = 'inactive',
+  SUSPENDED = 'suspended',
+  DEACTIVATED = 'deactivated',
 }
 
 // Bump whenever ToS/Privacy/health-data-processing copy changes materially (PRD FR-1.5, TRD §6).
@@ -56,11 +58,29 @@ export class User {
   @Prop()
   oauthId?: string;
 
+  @Prop()
+  oauthProvider?: string;
+
   @Prop({ type: String, enum: UserRole, default: UserRole.PATIENT })
   role: UserRole;
 
   @Prop({ type: String, enum: UserStatus, default: UserStatus.ACTIVE })
   status: UserStatus;
+
+  @Prop()
+  suspendedAt?: Date;
+
+  @Prop()
+  deactivatedAt?: Date;
+
+  @Prop()
+  lastLoginAt?: Date;
+
+  @Prop()
+  resetPasswordToken?: string;
+
+  @Prop()
+  resetPasswordTokenExpiresAt?: Date;
 
   // Captured once at registration; required before an account can be created (PRD FR-1.5).
   @Prop({ type: UserConsentSchema, required: true })

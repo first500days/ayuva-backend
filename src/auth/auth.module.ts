@@ -15,11 +15,13 @@ import {
   HealthProfileSchema,
 } from '../core/health-profile/schemas/health-profile.schema';
 import { AuditLogModule } from '../audit-log/audit-log.module';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
     PassportModule,
     AuditLogModule,
+    MailModule,
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },

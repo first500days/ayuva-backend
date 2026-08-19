@@ -109,7 +109,7 @@ export class AdminAnalyticsService {
         status: AppointmentStatus.COMPLETED,
       }),
       this.appointmentModel.countDocuments({
-        status: AppointmentStatus.CANCELLED,
+        status: AppointmentStatus.CANCELLED_BY_PATIENT,
       }),
       this.slotModel.countDocuments({ status: AppointmentSlotStatus.BOOKED }),
       this.slotModel.countDocuments({ status: AppointmentSlotStatus.OPEN }),

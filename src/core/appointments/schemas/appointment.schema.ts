@@ -5,9 +5,16 @@ import { Provider } from '../../providers/schemas/provider.schema';
 import { AppointmentSlot } from '../../providers/schemas/appointment-slot.schema';
 
 export enum AppointmentStatus {
+  REQUESTED = 'requested',
+  PENDING = 'pending',
   CONFIRMED = 'confirmed',
+  RESCHEDULED = 'rescheduled',
   COMPLETED = 'completed',
-  CANCELLED = 'cancelled',
+  CANCELLED_BY_PATIENT = 'cancelled_by_patient',
+  CANCELLED_BY_PROVIDER = 'cancelled_by_provider',
+  NO_SHOW = 'no_show',
+  REFUNDED = 'refunded',
+  DISPUTED = 'disputed',
 }
 
 export type AppointmentDocument = HydratedDocument<Appointment>;
@@ -44,9 +51,26 @@ export class Appointment {
   })
   status: AppointmentStatus;
 
-  // "Set reminder" inline action (FR-7.6) — toggles a scheduled push reminder before the visit.
   @Prop({ default: false })
   reminderEnabled: boolean;
+
+  @Prop({ type: String, enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending' })
+  paymentStatus: string;
+
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Transaction' })
+  transactionId?: Types.ObjectId;
+
+  @Prop()
+  cancelledAt?: Date;
+
+  @Prop()
+  completedAt?: Date;
+
+  @Prop()
+  disputeReason?: string;
+
+  @Prop()
+  internalNotes?: string;
 }
 
 export const AppointmentSchema = SchemaFactory.createForClass(Appointment);

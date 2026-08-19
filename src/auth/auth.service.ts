@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 import { Model, Types } from 'mongoose';
 import {
   CURRENT_CONSENT_VERSION,
@@ -31,6 +32,7 @@ import { ConsentStatusResponseDto } from './dto/consent-status-response.dto';
 import { GoogleAuthService } from './services/google-auth.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/schemas/audit-log.schema';
+import { MailService } from '../mail/mail.service';
 
 const BCRYPT_ROUNDS = 10;
 const MONGO_DUPLICATE_KEY_ERROR = 11000;
@@ -45,6 +47,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly googleAuthService: GoogleAuthService,
     private readonly auditLogService: AuditLogService,
+    private readonly mailService: MailService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthTokensResponseDto> {
@@ -212,6 +215,60 @@ export class AuthService {
     }
 
     return this.issueTokens(user, await this.hasHealthProfile(user.id));
+  }
+
+  async forgotPassword(dto: { email: string }): Promise<void> {
+    const user = await this.userModel.findOne({
+      email: dto.email.toLowerCase(),
+    });
+
+    if (!user || !user.passwordHash) {
+      return;
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 3600000);
+
+    await this.userModel.findByIdAndUpdate(user.id, {
+      resetPasswordToken: resetToken,
+      resetPasswordTokenExpiresAt: expiresAt,
+    });
+
+    const frontendUrl = this.configService.get<string>('frontend.url') ?? 'http://localhost:3000';
+    await this.mailService.sendPasswordResetEmail(user.email, resetToken, frontendUrl);
+
+    await this.auditLogService.record({
+      actorId: user.id,
+      action: AuditAction.PASSWORD_RESET_REQUESTED,
+      targetType: 'User',
+      targetId: user.id,
+    });
+  }
+
+  async resetPassword(dto: { token: string; newPassword: string }): Promise<void> {
+    const user = await this.userModel.findOne({
+      resetPasswordToken: dto.token,
+      resetPasswordTokenExpiresAt: { $gt: new Date() },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS);
+
+    await this.userModel.findByIdAndUpdate(user.id, {
+      passwordHash,
+      resetPasswordToken: null,
+      resetPasswordTokenExpiresAt: null,
+    });
+
+    await this.auditLogService.record({
+      actorId: user.id,
+      action: AuditAction.PASSWORD_RESET_COMPLETED,
+      targetType: 'User',
+      targetId: user.id,
+    });
   }
 
   /** FR-2.6: onboarding is skippable — presence of a HealthProfile is informational only, never gates auth. */

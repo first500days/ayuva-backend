@@ -8,6 +8,19 @@ export enum MedicalRecordType {
   IMAGING = 'imaging',
   PRESCRIPTION = 'prescription',
   DISCHARGE = 'discharge',
+  ECG = 'ecg',
+  CONSULTATION = 'consultation',
+  LAB_REPORT = 'lab_report',
+}
+
+export enum RecordStatusEnhanced {
+  UPLOADED = 'uploaded',
+  QUEUED = 'queued',
+  PROCESSING = 'processing',
+  INTERPRETED = 'interpreted',
+  FAILED = 'failed',
+  NEEDS_REVIEW = 'needs_review',
+  ARCHIVED = 'archived',
 }
 
 export type MedicalRecordDocument = HydratedDocument<MedicalRecord>;
@@ -37,6 +50,27 @@ export class MedicalRecord {
   // Links this record/its interpretation to an upcoming booked appointment (PRD FR-9.5, TRD §4.4).
   @Prop({ type: SchemaTypes.ObjectId, ref: Appointment.name })
   attachedAppointmentId?: Types.ObjectId;
+
+  @Prop({ type: String, enum: RecordStatusEnhanced, default: RecordStatusEnhanced.UPLOADED, index: true })
+  status: RecordStatusEnhanced;
+
+  @Prop()
+  processingStartedAt?: Date;
+
+  @Prop()
+  processingCompletedAt?: Date;
+
+  @Prop({ type: [String], default: [] })
+  accessPermissions: string[];
+
+  @Prop({ type: [{ adminId: SchemaTypes.ObjectId, accessedAt: Date, action: String }], default: [] })
+  accessHistory: { adminId: Types.ObjectId; accessedAt: Date; action: string }[];
+
+  @Prop()
+  aiInterpretationId?: Types.ObjectId;
+
+  @Prop()
+  aiStatus?: string;
 
   uploadedAt?: Date;
 }

@@ -112,7 +112,7 @@ export class AppointmentsService {
       scope === 'upcoming'
         ? [AppointmentStatus.CONFIRMED]
         : scope === 'past'
-          ? [AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED]
+          ? [AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED_BY_PATIENT]
           : undefined;
 
     const appointments = await this.appointmentModel
@@ -329,7 +329,7 @@ export class AppointmentsService {
   private async cancel(
     appointment: AppointmentDocument,
   ): Promise<AppointmentResponseDto> {
-    appointment.status = AppointmentStatus.CANCELLED;
+    appointment.status = AppointmentStatus.CANCELLED_BY_PATIENT;
     await appointment.save();
 
     await this.slotModel
