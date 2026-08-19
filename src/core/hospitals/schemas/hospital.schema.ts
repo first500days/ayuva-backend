@@ -115,6 +115,12 @@ export class Hospital {
   @Prop({ type: [HospitalLocationSchema], default: [] })
   locations: HospitalLocation[];
 
+  @Prop()
+  email?: string;
+
+  @Prop()
+  phone?: string;
+
   @Prop({ type: [String], default: [] })
   languages: string[];
 

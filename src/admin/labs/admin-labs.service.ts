@@ -7,12 +7,14 @@ import { CreateLabDto } from './dto/create-lab.dto';
 import { UpdateLabDto } from './dto/update-lab.dto';
 import { AdminLabResponseDto } from './dto/admin-lab-response.dto';
 import { buildSafeRegex } from '../../common/utils/regex.util';
+import { MailService } from '../../mail/mail.service';
 
 @Injectable()
 export class AdminLabsService {
   constructor(
     @InjectModel(Lab.name)
     private readonly labModel: Model<LabDocument>,
+    private readonly mailService: MailService,
   ) {}
 
   async findAll(query: QueryAdminLabsDto): Promise<AdminLabResponseDto[]> {
@@ -44,6 +46,8 @@ export class AdminLabsService {
   async create(dto: CreateLabDto): Promise<AdminLabResponseDto> {
     const lab = await this.labModel.create({
       name: dto.name,
+      email: dto.email,
+      phone: dto.phone,
       specialty: dto.specialty,
       languages: dto.languages,
       locations: dto.locations,
@@ -51,6 +55,9 @@ export class AdminLabsService {
       profileImageUrl: dto.profileImageUrl,
       status: LabStatus.PENDING,
     });
+    if (lab.email) {
+      void this.mailService.sendWelcomeEmail(lab.email, lab.name, 'Lab');
+    }
     return this.toResponse(lab);
   }
 
@@ -58,6 +65,8 @@ export class AdminLabsService {
     const lab = await this.getLabOrThrow(id);
 
     if (dto.name !== undefined) lab.name = dto.name;
+    if (dto.email !== undefined) lab.email = dto.email;
+    if (dto.phone !== undefined) lab.phone = dto.phone;
     if (dto.specialty !== undefined) lab.specialty = dto.specialty;
     if (dto.languages !== undefined) lab.languages = dto.languages;
     if (dto.locations !== undefined) lab.locations = dto.locations;
@@ -112,6 +121,8 @@ export class AdminLabsService {
     return {
       id: lab.id,
       name: lab.name,
+      email: lab.email,
+      phone: lab.phone,
       specialty: lab.specialty,
       locations: lab.locations.map((l) => ({
         label: l.label,

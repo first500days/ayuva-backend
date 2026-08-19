@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsArray, IsOptional, IsNumber } from 'class-validator';
+import { IsString, IsArray, IsOptional, IsNumber, IsEmail } from 'class-validator';
 import { LabStatus } from '../../../core/labs/schemas/lab.schema';
 
 export class CreateLabDto {
@@ -10,6 +10,16 @@ export class CreateLabDto {
   @ApiPropertyOptional({ enum: LabStatus })
   @IsOptional()
   status?: LabStatus;
+
+  @ApiPropertyOptional({ example: 'contact@lab.com' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiPropertyOptional({ example: '+91 98765 43210' })
+  @IsOptional()
+  @IsString()
+  phone?: string;
 
   @ApiProperty({ type: [String] })
   @IsArray()

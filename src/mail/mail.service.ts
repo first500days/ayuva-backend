@@ -60,4 +60,20 @@ export class MailService {
     `;
     return this.sendMail(to, subject, html);
   }
+
+  async sendWelcomeEmail(
+    to: string,
+    entityName: string,
+    entityType: 'Hospital' | 'Lab',
+  ): Promise<boolean> {
+    const subject = `Welcome to Ayuva, ${entityName}!`;
+    const html = `
+      <h2>Welcome to Ayuva, ${entityName}!</h2>
+      <p>We're delighted to have your ${entityType.toLowerCase()} join the Ayuva platform.</p>
+      <p>Our team is reviewing your profile and will reach out shortly with the next steps to go live.</p>
+      <p>If you have any questions in the meantime, simply reply to this email.</p>
+      <p>— The Ayuva Team</p>
+    `;
+    return this.sendMail(to, subject, html);
+  }
 }

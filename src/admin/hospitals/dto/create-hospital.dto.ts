@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsString, IsArray, IsOptional, IsNumber } from 'class-validator';
+import { IsEnum, IsString, IsArray, IsOptional, IsNumber, IsEmail } from 'class-validator';
 import { HospitalType, HospitalStatus } from '../../../core/hospitals/schemas/hospital.schema';
 
 export class CreateHospitalDto {
@@ -15,6 +15,16 @@ export class CreateHospitalDto {
   @IsOptional()
   @IsEnum(HospitalStatus)
   status?: HospitalStatus;
+
+  @ApiPropertyOptional({ example: 'contact@hospital.com' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiPropertyOptional({ example: '+91 98765 43210' })
+  @IsOptional()
+  @IsString()
+  phone?: string;
 
   @ApiProperty({ type: [String] })
   @IsArray()
