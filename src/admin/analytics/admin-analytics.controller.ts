@@ -50,4 +50,12 @@ export class AdminAnalyticsController {
       (query.period as AiInteractionsPeriod) ?? 'weekly',
     );
   }
+
+  @Get('command-center')
+  @ApiOperation({
+    summary: 'Live ecosystem health, priority action queue, and command center metrics',
+  })
+  getCommandCenter() {
+    return this.adminAnalyticsService.getCommandCenterData();
+  }
 }

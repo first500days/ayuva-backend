@@ -71,4 +71,22 @@ export class AdminContentController {
   unpublish(@Param('id') id: string): Promise<AdminContentResponseDto> {
     return this.adminContentService.unpublish(id);
   }
+
+  @Get('studio/landing')
+  @ApiOperation({ summary: 'Get Website Studio landing page CMS sections & versions' })
+  getLandingStudio() {
+    return this.adminContentService.getLandingPageStudio();
+  }
+
+  @Post('studio/landing')
+  @ApiOperation({ summary: 'Save Website Studio landing page sections' })
+  saveLandingStudio(@Body() body: any) {
+    return this.adminContentService.saveLandingPageStudio(body);
+  }
+
+  @Post('studio/landing/rollback/:versionId')
+  @ApiOperation({ summary: 'Rollback landing page to specific historical version' })
+  rollbackLandingVersion(@Param('versionId') versionId: string) {
+    return this.adminContentService.rollbackLandingVersion(versionId);
+  }
 }

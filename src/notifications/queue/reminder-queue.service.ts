@@ -95,11 +95,11 @@ export class ReminderQueueService {
   async cancelMedicationReminders(medicationId: string): Promise<void> {
     const schedulers = await this.queue.getJobSchedulers();
     const prefix = `med-${medicationId}-`;
-    const toRemove = schedulers
-      .map((s) => s.id)
-      .filter((id): id is string => !!id && id.startsWith(prefix));
+    const toRemove = (schedulers as Array<{ id?: string }>)
+      .map((s: { id?: string }) => s.id)
+      .filter((id: string | undefined): id is string => !!id && id.startsWith(prefix));
     await Promise.all(
-      toRemove.map((id) =>
+      toRemove.map((id: string) =>
         this.queue.removeJobScheduler(id).catch((err: unknown) =>
           this.logger.error(
             `Failed to remove reminder scheduler ${id}`,

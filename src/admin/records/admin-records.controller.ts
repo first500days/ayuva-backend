@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -26,6 +26,30 @@ export class AdminRecordsController {
   @ApiOkResponse({ type: [AdminRecordResponseDto] })
   findAll(@Query() query: QueryAdminRecordsDto): Promise<AdminRecordResponseDto[]> {
     return this.adminRecordsService.findAll(query);
+  }
+
+  @Get('governance/consents')
+  @ApiOperation({ summary: 'Patient consent grants and revocations' })
+  getConsents() {
+    return this.adminRecordsService.getConsents();
+  }
+
+  @Get('governance/access-logs')
+  @ApiOperation({ summary: 'Provider record access audit logs' })
+  getAccessLogs() {
+    return this.adminRecordsService.getAccessLogs();
+  }
+
+  @Post(':id/archive')
+  @ApiOperation({ summary: 'Archive a medical record' })
+  archive(@Param('id') id: string) {
+    return this.adminRecordsService.archive(id);
+  }
+
+  @Post(':id/reprocess')
+  @ApiOperation({ summary: 'Reprocess a medical record OCR/pipeline' })
+  reprocess(@Param('id') id: string) {
+    return this.adminRecordsService.reprocess(id);
   }
 
   @Get(':id')

@@ -7,14 +7,12 @@ import { CreateHospitalDto } from './dto/create-hospital.dto';
 import { UpdateHospitalDto } from './dto/update-hospital.dto';
 import { AdminHospitalResponseDto } from './dto/admin-hospital-response.dto';
 import { buildSafeRegex } from '../../common/utils/regex.util';
-import { MailService } from '../../mail/mail.service';
 
 @Injectable()
 export class AdminHospitalsService {
   constructor(
     @InjectModel(Hospital.name)
     private readonly hospitalModel: Model<HospitalDocument>,
-    private readonly mailService: MailService,
   ) {}
 
   async findAll(query: QueryAdminHospitalsDto): Promise<AdminHospitalResponseDto[]> {
@@ -52,8 +50,6 @@ export class AdminHospitalsService {
     const hospital = await this.hospitalModel.create({
       name: dto.name,
       type: dto.type,
-      email: dto.email,
-      phone: dto.phone,
       specialty: dto.specialty,
       departments: dto.departments,
       facilities: dto.facilities,
@@ -64,9 +60,6 @@ export class AdminHospitalsService {
       profileImageUrl: dto.profileImageUrl,
       status: HospitalStatus.PENDING,
     });
-    if (hospital.email) {
-      void this.mailService.sendWelcomeEmail(hospital.email, hospital.name, 'Hospital');
-    }
     return this.toResponse(hospital);
   }
 
@@ -75,8 +68,6 @@ export class AdminHospitalsService {
 
     if (dto.name !== undefined) hospital.name = dto.name;
     if (dto.type !== undefined) hospital.type = dto.type;
-    if (dto.email !== undefined) hospital.email = dto.email;
-    if (dto.phone !== undefined) hospital.phone = dto.phone;
     if (dto.specialty !== undefined) hospital.specialty = dto.specialty;
     if (dto.departments !== undefined) hospital.departments = dto.departments;
     if (dto.facilities !== undefined) hospital.facilities = dto.facilities;
@@ -135,8 +126,6 @@ export class AdminHospitalsService {
       id: hospital.id,
       name: hospital.name,
       type: hospital.type,
-      email: hospital.email,
-      phone: hospital.phone,
       specialty: hospital.specialty,
       locations: hospital.locations.map((l) => ({
         label: l.label,

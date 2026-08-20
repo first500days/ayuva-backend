@@ -22,6 +22,10 @@ function buildService() {
   const configService = { get: jest.fn().mockReturnValue('secret-or-value') };
   const googleAuthService = { verify: jest.fn() };
   const auditLogService = { record: jest.fn().mockResolvedValue(undefined) };
+  const mailService = {
+    sendWelcomeEmail: jest.fn().mockResolvedValue(undefined),
+    sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
+  };
 
   const service = new AuthService(
     userModel as any,
@@ -30,6 +34,7 @@ function buildService() {
     configService as any,
     googleAuthService as any,
     auditLogService as any,
+    mailService as any,
   );
 
   return {
@@ -40,6 +45,7 @@ function buildService() {
     configService,
     googleAuthService,
     auditLogService,
+    mailService,
   };
 }
 

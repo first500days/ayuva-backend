@@ -13,13 +13,15 @@ import { AdminPaymentsModule } from './payments/admin-payments.module';
 import { AdminAdminUsersModule } from './admin-users/admin-admin-users.module';
 import { AdminRolesModule } from './roles/admin-roles.module';
 import { AdminContentModule } from './content/admin-content.module';
+import { AdminOperationsModule } from './operations/admin-operations.module';
+import { AdminMarketplaceModule } from './marketplace/admin-marketplace.module';
+import { AdminAiControlModule } from './ai-control/admin-ai-control.module';
+import { AdminGrowthModule } from './growth/admin-growth.module';
+import { AdminFounderModule } from './founder/admin-founder.module';
+import { AdminIntegrationsModule } from './integrations/admin-integrations.module';
+import { AdminAuditExplorerModule } from './audit-explorer/admin-audit-explorer.module';
+import { AdminSettingsModule } from './settings/admin-settings.module';
 
-/**
- * Admin Portal API surface (TRD §4.6-4.7, PRD FR-11-17). Every route here is
- * gated behind JwtAuthGuard + RolesGuard/@Roles(admin) — see each sub-module's
- * controller. Reads straight off Core/AI domain schemas; adds no new AI
- * business logic (the ai/ module tree stays Phase-3-owned).
- */
 @Module({
   imports: [
     AdminAnalyticsModule,
@@ -36,6 +38,14 @@ import { AdminContentModule } from './content/admin-content.module';
     AdminAdminUsersModule,
     AdminRolesModule,
     AdminContentModule,
+    AdminOperationsModule,
+    AdminMarketplaceModule,
+    AdminAiControlModule,
+    AdminGrowthModule,
+    AdminFounderModule,
+    AdminIntegrationsModule,
+    AdminAuditExplorerModule,
+    AdminSettingsModule,
   ],
 })
 export class AdminModule {}

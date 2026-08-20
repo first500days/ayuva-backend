@@ -18,12 +18,6 @@ export class AdminLabResponseDto {
   @ApiPropertyOptional({ type: [String] })
   specialty: string[];
 
-  @ApiPropertyOptional({ example: 'contact@lab.com' })
-  email?: string;
-
-  @ApiPropertyOptional({ example: '+91 98765 43210' })
-  phone?: string;
-
   @ApiPropertyOptional({ type: [AdminLabLocationResponseDto] })
   locations: AdminLabLocationResponseDto[];
 

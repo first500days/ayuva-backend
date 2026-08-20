@@ -121,7 +121,7 @@ describe('AppointmentsService', () => {
       const { service, appointmentModel } = buildService();
       appointmentModel.findById.mockResolvedValue({
         patientId: { toString: () => USER_ID },
-        status: AppointmentStatus.CANCELLED,
+        status: AppointmentStatus.CANCELLED_BY_PATIENT,
       });
 
       await expect(

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -30,6 +30,36 @@ export class AdminPaymentsController {
   @ApiOkResponse({ type: [AdminPaymentResponseDto] })
   findAll(@Query() query: QueryAdminPaymentsDto): Promise<AdminPaymentResponseDto[]> {
     return this.adminPaymentsService.findAll(query);
+  }
+
+  @Get('overview')
+  @ApiOperation({ summary: 'Finance overview with margin & revenue metrics' })
+  getFinanceOverview() {
+    return this.adminPaymentsService.getFinanceOverview();
+  }
+
+  @Get('settlements')
+  @ApiOperation({ summary: 'Provider and lab settlement payouts queue' })
+  getSettlements() {
+    return this.adminPaymentsService.getSettlements();
+  }
+
+  @Post('settlements/process-batch')
+  @ApiOperation({ summary: 'Batch process approved settlements' })
+  processSettlementBatch(@Body() body: { settlementIds: string[] }) {
+    return this.adminPaymentsService.processSettlementBatch(body.settlementIds || []);
+  }
+
+  @Get('invoices')
+  @ApiOperation({ summary: 'Provider and lab platform invoices' })
+  getInvoices() {
+    return this.adminPaymentsService.getInvoices();
+  }
+
+  @Post('adjustments')
+  @ApiOperation({ summary: 'Apply manual financial adjustment with audit reason' })
+  applyAdjustment(@Body() body: any) {
+    return this.adminPaymentsService.applyManualAdjustment(body);
   }
 
   @Patch(':id/refund')

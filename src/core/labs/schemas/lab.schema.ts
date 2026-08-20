@@ -117,12 +117,6 @@ export class Lab {
   @Prop({ type: [LabLocationSchema], default: [] })
   locations: LabLocation[];
 
-  @Prop()
-  email?: string;
-
-  @Prop()
-  phone?: string;
-
   @Prop({ type: [String], default: [], index: true })
   specialty: string[];
 

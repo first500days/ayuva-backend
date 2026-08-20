@@ -96,4 +96,22 @@ export class AdminLabsController {
   activate(@Param('id') id: string): Promise<AdminLabResponseDto> {
     return this.adminLabsService.activate(id);
   }
+
+  @Get('catalogue/tests')
+  @ApiOperation({ summary: 'Central diagnostic test catalogue with provider pricing' })
+  getCatalogue() {
+    return this.adminLabsService.getDiagnosticCatalogue();
+  }
+
+  @Get('delivery/pipeline')
+  @ApiOperation({ summary: 'Diagnostic report delivery pipeline monitor' })
+  getDeliveryPipeline() {
+    return this.adminLabsService.getDeliveryPipeline();
+  }
+
+  @Post('delivery/pipeline/:id/retry')
+  @ApiOperation({ summary: 'Retry failed report delivery' })
+  retryDelivery(@Param('id') id: string) {
+    return this.adminLabsService.retryDelivery(id);
+  }
 }

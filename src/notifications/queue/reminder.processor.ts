@@ -39,7 +39,7 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     this.worker = new Worker<ReminderJobData>(
       REMINDER_QUEUE_NAME,
-      (job) => this.handle(job),
+      (job: Job<ReminderJobData>) => this.handle(job),
       {
         connection: {
           host: this.config.get<string>('redis.host'),
@@ -49,7 +49,7 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
         },
       },
     );
-    this.worker.on('failed', (job, err) =>
+    this.worker.on('failed', (job: Job<ReminderJobData> | undefined, err: Error) =>
       this.logger.error(
         `Reminder job ${job?.id ?? '(unknown)'} failed`,
         err as Error,

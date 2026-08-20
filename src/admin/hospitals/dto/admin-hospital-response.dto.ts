@@ -28,12 +28,6 @@ export class AdminHospitalResponseDto {
   @ApiPropertyOptional({ type: [String] })
   specialty: string[];
 
-  @ApiPropertyOptional({ example: 'contact@hospital.com' })
-  email?: string;
-
-  @ApiPropertyOptional({ example: '+91 98765 43210' })
-  phone?: string;
-
   @ApiPropertyOptional({ type: [AdminHospitalLocationResponseDto] })
   locations: AdminHospitalLocationResponseDto[];
 
