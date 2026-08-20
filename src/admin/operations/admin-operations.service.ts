@@ -83,6 +83,7 @@ export class AdminOperationsService {
         },
         {
           title: 'Duplicate payment webhook received from Razorpay',
+          description: 'Razorpay dispatched the same payment webhook twice for transaction TXN-99120; idempotency layer must discard the duplicate without double-debiting the ledger.',
           domain: IssueDomain.BILLING,
           severity: IssueSeverity.MEDIUM,
           status: IssueStatus.RESOLVED,
