@@ -25,6 +25,9 @@ lerna-debug.log*
 /coverage
 /.nyc_output
 
+# build artifacts
+*.tsbuildinfo
+
 # IDEs
 .idea
 .vscode/*
