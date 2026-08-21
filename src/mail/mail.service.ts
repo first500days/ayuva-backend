@@ -5,14 +5,16 @@ import { Resend } from 'resend';
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private readonly resend: Resend;
+  private readonly resend: Resend | null;
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('resend.apiKey');
     if (!apiKey) {
       this.logger.warn('RESEND_API_KEY not configured - emails will not be sent');
+      this.resend = null;
+    } else {
+      this.resend = new Resend(apiKey);
     }
-    this.resend = new Resend(apiKey);
   }
 
   async sendMail(
@@ -20,6 +22,11 @@ export class MailService {
     subject: string,
     html: string,
   ): Promise<boolean> {
+    if (!this.resend) {
+      this.logger.log(`[log-only mail] -> to=${to} subject="${subject}"`);
+      return true;
+    }
+
     const from = this.configService.get<string>('mail.from') ?? 'noreply@ayuva.com';
 
     try {
