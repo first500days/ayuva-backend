@@ -76,11 +76,13 @@ export class User {
   @Prop()
   lastLoginAt?: Date;
 
+  // Short numeric code emailed for the mobile app's reset-password screen
+  // (entered alongside email + new password — no link/deep-link involved).
   @Prop()
-  resetPasswordToken?: string;
+  resetPasswordCode?: string;
 
   @Prop()
-  resetPasswordTokenExpiresAt?: Date;
+  resetPasswordCodeExpiresAt?: Date;
 
   // Captured once at registration; required before an account can be created (PRD FR-1.5).
   @Prop({ type: UserConsentSchema, required: true })

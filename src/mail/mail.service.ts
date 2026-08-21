@@ -37,18 +37,13 @@ export class MailService {
     }
   }
 
-  async sendPasswordResetEmail(
-    to: string,
-    resetToken: string,
-    frontendUrl: string,
-  ): Promise<boolean> {
-    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
+  async sendPasswordResetEmail(to: string, code: string): Promise<boolean> {
     const subject = 'Reset your Ayuva password';
     const html = `
       <p>You requested a password reset for your Ayuva account.</p>
-      <p>Click the link below to set a new password:</p>
-      <p><a href="${resetUrl}">${resetUrl}</a></p>
-      <p>This link expires in 1 hour.</p>
+      <p>Enter this code in the app to set a new password:</p>
+      <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px;">${code}</p>
+      <p>This code expires in 1 hour.</p>
       <p>If you didn't request this, please ignore this email.</p>
     `;
     return this.sendMail(to, subject, html);

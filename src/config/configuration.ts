@@ -37,8 +37,13 @@ export default () => ({
     accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
   },
+  // Verified against all three, since the mobile app mints an ID token
+  // against whichever OAuth client matches the platform it's running on
+  // (FR-1.3). iOS is left unset until that client is created.
   googleOAuth: {
-    clientId: process.env.GOOGLE_CLIENT_ID,
+    androidClientId: process.env.GOOGLE_ANDROID_CLIENT_ID,
+    webClientId: process.env.GOOGLE_WEB_CLIENT_ID,
+    iosClientId: process.env.GOOGLE_IOS_CLIENT_ID,
   },
   storage: {
     // Local-disk stand-in for the S3-compatible object store (TRD §2/§6);
@@ -85,8 +90,5 @@ export default () => ({
   },
   resend: {
     apiKey: process.env.RESEND_API_KEY,
-  },
-  frontend: {
-    url: process.env.FRONTEND_URL ?? 'http://localhost:3000',
   },
 });

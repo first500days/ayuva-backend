@@ -28,6 +28,7 @@ import { GoogleOAuthDto } from './dto/google-oauth.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ConsentDto } from './dto/consent.dto';
 import { AuthTokensResponseDto } from './dto/auth-tokens-response.dto';
+import { RefreshTokenResponseDto } from './dto/refresh-token-response.dto';
 import { ConsentStatusResponseDto } from './dto/consent-status-response.dto';
 import { GoogleAuthService } from './services/google-auth.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -126,6 +127,7 @@ export class AuthService {
           fullName: profile.name ?? email,
           email,
           oauthId: profile.sub,
+          oauthProvider: 'google',
           role: UserRole.PATIENT,
           status: UserStatus.ACTIVE,
           consent: {
@@ -150,7 +152,16 @@ export class AuthService {
         throw new UnauthorizedException('This account has been deactivated');
       }
       if (!user.oauthId) {
+        // Only link when Google has verified the email — otherwise anyone
+        // who controls an unverified address could hijack an existing
+        // password-based account by signing in with Google.
+        if (!profile.emailVerified) {
+          throw new ConflictException(
+            'Email not verified by Google; cannot link account',
+          );
+        }
         user.oauthId = profile.sub;
+        user.oauthProvider = 'google';
         await user.save();
       }
     }
@@ -196,7 +207,7 @@ export class AuthService {
     return { version: CURRENT_CONSENT_VERSION, acceptedAt: acceptedAt.toISOString() };
   }
 
-  async refresh(dto: RefreshTokenDto): Promise<AuthTokensResponseDto> {
+  async refresh(dto: RefreshTokenDto): Promise<RefreshTokenResponseDto> {
     let payload: JwtPayload;
     try {
       payload = await this.jwtService.verifyAsync<JwtPayload>(
@@ -214,7 +225,9 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    return this.issueTokens(user, await this.hasHealthProfile(user.id));
+    // No `user` in the response here — the client already has it cached and
+    // only calls this endpoint transparently on a 401 to mint a new pair.
+    return this.signTokenPair(user);
   }
 
   async forgotPassword(dto: { email: string }): Promise<void> {
@@ -222,20 +235,24 @@ export class AuthService {
       email: dto.email.toLowerCase(),
     });
 
+    // Silently no-op for unknown emails and OAuth-only accounts — the
+    // response is identical either way so this endpoint can't be used to
+    // enumerate registered addresses.
     if (!user || !user.passwordHash) {
       return;
     }
 
-    const resetToken = crypto.randomBytes(32).toString('hex');
+    // 6-digit code (not a link) — the mobile client has the user type this
+    // into a reset-password screen rather than following a deep link.
+    const code = crypto.randomInt(100000, 1000000).toString();
     const expiresAt = new Date(Date.now() + 3600000);
 
     await this.userModel.findByIdAndUpdate(user.id, {
-      resetPasswordToken: resetToken,
-      resetPasswordTokenExpiresAt: expiresAt,
+      resetPasswordCode: code,
+      resetPasswordCodeExpiresAt: expiresAt,
     });
 
-    const frontendUrl = this.configService.get<string>('frontend.url') ?? 'http://localhost:3000';
-    await this.mailService.sendPasswordResetEmail(user.email, resetToken, frontendUrl);
+    await this.mailService.sendPasswordResetEmail(user.email, code);
 
     await this.auditLogService.record({
       actorId: user.id,
@@ -245,22 +262,27 @@ export class AuthService {
     });
   }
 
-  async resetPassword(dto: { token: string; newPassword: string }): Promise<void> {
+  async resetPassword(dto: {
+    email: string;
+    code: string;
+    newPassword: string;
+  }): Promise<void> {
     const user = await this.userModel.findOne({
-      resetPasswordToken: dto.token,
-      resetPasswordTokenExpiresAt: { $gt: new Date() },
+      email: dto.email.toLowerCase(),
+      resetPasswordCode: dto.code,
+      resetPasswordCodeExpiresAt: { $gt: new Date() },
     });
 
     if (!user) {
-      throw new UnauthorizedException('Invalid or expired reset token');
+      throw new UnauthorizedException('Invalid or expired reset code');
     }
 
     const passwordHash = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS);
 
     await this.userModel.findByIdAndUpdate(user.id, {
       passwordHash,
-      resetPasswordToken: null,
-      resetPasswordTokenExpiresAt: null,
+      resetPasswordCode: null,
+      resetPasswordCodeExpiresAt: null,
     });
 
     await this.auditLogService.record({
@@ -279,10 +301,9 @@ export class AuthService {
     return count > 0;
   }
 
-  private async issueTokens(
+  private async signTokenPair(
     user: UserDocument,
-    onboardingComplete: boolean,
-  ): Promise<AuthTokensResponseDto> {
+  ): Promise<RefreshTokenResponseDto> {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
@@ -296,6 +317,15 @@ export class AuthService {
         expiresIn: this.configService.get<string>('jwt.refreshExpiresIn'),
       } as JwtSignOptions),
     ]);
+
+    return { accessToken, refreshToken };
+  }
+
+  private async issueTokens(
+    user: UserDocument,
+    onboardingComplete: boolean,
+  ): Promise<AuthTokensResponseDto> {
+    const { accessToken, refreshToken } = await this.signTokenPair(user);
 
     return {
       accessToken,

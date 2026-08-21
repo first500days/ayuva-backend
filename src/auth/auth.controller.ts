@@ -15,6 +15,7 @@ import { ConsentDto } from './dto/consent.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AuthTokensResponseDto } from './dto/auth-tokens-response.dto';
+import { RefreshTokenResponseDto } from './dto/refresh-token-response.dto';
 import { ConsentStatusResponseDto } from './dto/consent-status-response.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -51,8 +52,8 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Exchange a refresh token for a new token pair' })
-  @ApiOkResponse({ type: AuthTokensResponseDto })
-  refresh(@Body() dto: RefreshTokenDto): Promise<AuthTokensResponseDto> {
+  @ApiOkResponse({ type: RefreshTokenResponseDto })
+  refresh(@Body() dto: RefreshTokenDto): Promise<RefreshTokenResponseDto> {
     return this.authService.refresh(dto);
   }
 
