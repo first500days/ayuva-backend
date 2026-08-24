@@ -91,4 +91,7 @@ export default () => ({
   resend: {
     apiKey: process.env.RESEND_API_KEY,
   },
+  frontend: {
+    url: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+  },
 });

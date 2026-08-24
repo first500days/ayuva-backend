@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
   UseInterceptors,
@@ -97,21 +99,98 @@ export class AdminLabsController {
     return this.adminLabsService.activate(id);
   }
 
+  // Diagnostic Tests
   @Get('catalogue/tests')
   @ApiOperation({ summary: 'Central diagnostic test catalogue with provider pricing' })
-  getCatalogue() {
+  getCatalogue(@Query() query?: any) {
     return this.adminLabsService.getDiagnosticCatalogue();
   }
 
+  @Get('catalogue/tests/:id')
+  @ApiOperation({ summary: 'Get single diagnostic test' })
+  getDiagnosticTest(@Param('id') id: string) {
+    return this.adminLabsService.getDiagnosticTest(id);
+  }
+
+  @Post('catalogue/tests')
+  @ApiOperation({ summary: 'Create diagnostic test' })
+  @AuditEvent(AuditAction.ADMIN_LAB_CREATE, 'DiagnosticTest')
+  @UseInterceptors(AuditLogInterceptor)
+  createDiagnosticTest(@Body() dto: any) {
+    return this.adminLabsService.createDiagnosticTest(dto);
+  }
+
+  @Put('catalogue/tests/:id')
+  @ApiOperation({ summary: 'Update diagnostic test' })
+  @AuditEvent(AuditAction.ADMIN_LAB_UPDATE, 'DiagnosticTest')
+  @UseInterceptors(AuditLogInterceptor)
+  updateDiagnosticTest(@Param('id') id: string, @Body() dto: any) {
+    return this.adminLabsService.updateDiagnosticTest(id, dto);
+  }
+
+  @Delete('catalogue/tests/:id')
+  @ApiOperation({ summary: 'Delete diagnostic test' })
+  @AuditEvent(AuditAction.ADMIN_LAB_UPDATE, 'DiagnosticTest')
+  @UseInterceptors(AuditLogInterceptor)
+  deleteDiagnosticTest(@Param('id') id: string) {
+    return this.adminLabsService.deleteDiagnosticTest(id);
+  }
+
+  // Lab Deliveries
   @Get('delivery/pipeline')
   @ApiOperation({ summary: 'Diagnostic report delivery pipeline monitor' })
-  getDeliveryPipeline() {
-    return this.adminLabsService.getDeliveryPipeline();
+  getDeliveryPipeline(@Query() query?: any) {
+    return this.adminLabsService.getDeliveryPipeline(query);
+  }
+
+  @Get('delivery/stats')
+  @ApiOperation({ summary: 'Delivery statistics' })
+  getDeliveryStats() {
+    return this.adminLabsService.getDeliveryStats();
+  }
+
+  @Get('delivery/stuck')
+  @ApiOperation({ summary: 'Get stuck deliveries' })
+  getStuckDeliveries(@Query('hours') hours?: number) {
+    return this.adminLabsService.getStuckDeliveries(hours);
+  }
+
+  @Get('delivery/failed')
+  @ApiOperation({ summary: 'Get failed deliveries' })
+  getFailedDeliveries() {
+    return this.adminLabsService.getFailedDeliveries();
+  }
+
+  @Get('delivery/pipeline/:id')
+  @ApiOperation({ summary: 'Get delivery by ID' })
+  getDeliveryById(@Param('id') id: string) {
+    return this.adminLabsService.getDeliveryById(id);
+  }
+
+  @Put('delivery/pipeline/:id')
+  @ApiOperation({ summary: 'Update delivery' })
+  @AuditEvent(AuditAction.ADMIN_LAB_UPDATE, 'LabDelivery')
+  @UseInterceptors(AuditLogInterceptor)
+  updateDelivery(@Param('id') id: string, @Body() dto: any) {
+    return this.adminLabsService.updateDelivery(id, dto);
   }
 
   @Post('delivery/pipeline/:id/retry')
   @ApiOperation({ summary: 'Retry failed report delivery' })
-  retryDelivery(@Param('id') id: string) {
-    return this.adminLabsService.retryDelivery(id);
+  @AuditEvent(AuditAction.ADMIN_LAB_UPDATE, 'LabDelivery')
+  @UseInterceptors(AuditLogInterceptor)
+  retryDelivery(@Param('id') id: string, @Body() dto: { deliveryMethod: string }) {
+    return this.adminLabsService.retryDelivery(id, dto);
+  }
+
+  @Post('delivery/pipeline/:id/manual-delivery')
+  @ApiOperation({ summary: 'Mark delivery as manually delivered with report file' })
+  @AuditEvent(AuditAction.ADMIN_LAB_UPDATE, 'LabDelivery')
+  @UseInterceptors(AuditLogInterceptor)
+  manualDelivery(
+    @Param('id') id: string, 
+    @Body() dto: { reportFileUrl: string; reportFileName: string; deliveryMethod?: string }
+  ) {
+    return this.adminLabsService.manualDelivery(id, dto);
   }
 }

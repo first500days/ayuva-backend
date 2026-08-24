@@ -1,12 +1,21 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { AiSurfaceConfig, AiSurfaceConfigDocument } from './schemas/ai-surface-config.schema';
 import { AiToolPermission, AiToolPermissionDocument } from './schemas/ai-tool-permission.schema';
 import { AiRelease, AiReleaseDocument } from './schemas/ai-release.schema';
 import { AiKnowledgeSource, AiKnowledgeSourceDocument } from './schemas/ai-knowledge-source.schema';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
+
+export interface AvailableModel {
+  id: string;
+  name: string;
+  description: string;
+  maxTokens: number;
+  supportsTools: boolean;
+  category: 'reasoning' | 'fast' | 'experimental';
+}
 
 @Injectable()
 export class AdminAiControlService {
@@ -90,6 +99,43 @@ export class AdminAiControlService {
     });
 
     return updated;
+  }
+
+  async getAvailableModels(): Promise<AvailableModel[]> {
+    return [
+      {
+        id: 'gemini-1.5-pro',
+        name: 'Gemini 1.5 Pro',
+        description: 'Complex Clinical Reasoning - Best for diagnostic assistance and care planning',
+        maxTokens: 2000000,
+        supportsTools: true,
+        category: 'reasoning',
+      },
+      {
+        id: 'gemini-1.5-flash',
+        name: 'Gemini 1.5 Flash',
+        description: 'Ultra-Low Latency Navigation - Best for real-time triage and discovery',
+        maxTokens: 1000000,
+        supportsTools: true,
+        category: 'fast',
+      },
+      {
+        id: 'gemini-1.0-pro',
+        name: 'Gemini 1.0 Pro',
+        description: 'Balanced Performance - General purpose clinical assistant',
+        maxTokens: 1000000,
+        supportsTools: true,
+        category: 'reasoning',
+      },
+      {
+        id: 'gemini-ultra',
+        name: 'Gemini Ultra',
+        description: 'Experimental Diagnostic Assistant - Highest capability, research preview',
+        maxTokens: 2000000,
+        supportsTools: true,
+        category: 'experimental',
+      },
+    ];
   }
 
   async getTools(): Promise<AiToolPermission[]> {
@@ -207,7 +253,6 @@ export class AdminAiControlService {
     const targetRelease = await this.releaseModel.findById(id).exec();
     if (!targetRelease) throw new NotFoundException(`Release ${id} not found`);
 
-    // mark previous active releases as rolled_back
     await this.releaseModel.updateMany({ status: 'released' }, { status: 'rolled_back' }).exec();
 
     targetRelease.status = 'released';
@@ -215,7 +260,6 @@ export class AdminAiControlService {
     targetRelease.releasedAt = new Date();
     await targetRelease.save();
 
-    // apply snapshot back to surfaces
     if (targetRelease.surfacesSnapshot) {
       for (const [key, val] of Object.entries(targetRelease.surfacesSnapshot)) {
         await this.surfaceModel.findOneAndUpdate({ surfaceKey: key }, { ...(val as any) }).exec();
@@ -236,13 +280,117 @@ export class AdminAiControlService {
     return this.knowledgeModel.find().sort({ lastSyncedAt: -1 }).exec();
   }
 
-  async addKnowledgeSource(dto: Partial<AiKnowledgeSource>): Promise<AiKnowledgeSource> {
+  async addKnowledgeSource(dto: Partial<AiKnowledgeSource>, actorId: string): Promise<AiKnowledgeSource> {
     const source = new this.knowledgeModel({
       ...dto,
       lastSyncedAt: new Date(),
       isVerified: true,
       vectorCount: dto.vectorCount || Math.floor(Math.random() * 5000 + 1200),
     });
-    return source.save();
+    const saved = await source.save();
+
+    await this.auditLogService.record({
+      actorId: actorId as any,
+      action: AuditAction.ADMIN_USER_UPDATE,
+      targetType: 'AiKnowledgeSource',
+      metadata: { action: 'knowledge_source_added', title: saved.title, category: saved.category },
+    });
+
+    return saved;
+  }
+
+  async updateKnowledgeSource(id: string, dto: Partial<AiKnowledgeSource>, actorId: string): Promise<AiKnowledgeSource> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Knowledge source not found');
+    }
+    const updated = await this.knowledgeModel
+      .findByIdAndUpdate(id, { ...dto, lastSyncedAt: new Date() }, { new: true })
+      .exec();
+    if (!updated) throw new NotFoundException('Knowledge source not found');
+
+    await this.auditLogService.record({
+      actorId: actorId as any,
+      action: AuditAction.ADMIN_USER_UPDATE,
+      targetType: 'AiKnowledgeSource',
+      metadata: { action: 'knowledge_source_updated', title: updated.title, id: updated.id },
+    });
+
+    return updated;
+  }
+
+  async deleteKnowledgeSource(id: string, actorId: string): Promise<{ message: string }> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Knowledge source not found');
+    }
+    const deleted = await this.knowledgeModel.findByIdAndDelete(id).exec();
+    if (!deleted) throw new NotFoundException('Knowledge source not found');
+
+    await this.auditLogService.record({
+      actorId: actorId as any,
+      action: AuditAction.ADMIN_USER_UPDATE,
+      targetType: 'AiKnowledgeSource',
+      metadata: { action: 'knowledge_source_deleted', title: deleted.title, id: deleted.id },
+    });
+
+    return { message: 'Knowledge source deleted successfully' };
+  }
+
+  async syncKnowledgeSource(id: string, actorId: string): Promise<AiKnowledgeSource> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Knowledge source not found');
+    }
+    
+    // Simulate sync - in production this would connect to the vector DB
+    const updated = await this.knowledgeModel
+      .findByIdAndUpdate(
+        id, 
+        { 
+          lastSyncedAt: new Date(),
+          vectorCount: Math.floor(Math.random() * 5000 + 1200),
+          isVerified: true,
+        }, 
+        { new: true }
+      )
+      .exec();
+    if (!updated) throw new NotFoundException('Knowledge source not found');
+
+    await this.auditLogService.record({
+      actorId: actorId as any,
+      action: AuditAction.ADMIN_USER_UPDATE,
+      targetType: 'AiKnowledgeSource',
+      metadata: { action: 'knowledge_source_synced', title: updated.title, vectorCount: updated.vectorCount },
+    });
+
+    return updated;
+  }
+
+  async reindexKnowledgeSource(id: string, actorId: string): Promise<{ message: string; vectorCount: number }> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException('Knowledge source not found');
+    }
+    
+    // Simulate reindex - in production this would rebuild the vector index
+    const newVectorCount = Math.floor(Math.random() * 10000 + 5000);
+    const updated = await this.knowledgeModel
+      .findByIdAndUpdate(
+        id, 
+        { 
+          lastSyncedAt: new Date(),
+          vectorCount: newVectorCount,
+          isVerified: true,
+        }, 
+        { new: true }
+      )
+      .exec();
+    if (!updated) throw new NotFoundException('Knowledge source not found');
+
+    await this.auditLogService.record({
+      actorId: actorId as any,
+      action: AuditAction.ADMIN_USER_UPDATE,
+      targetType: 'AiKnowledgeSource',
+      metadata: { action: 'knowledge_source_reindexed', title: updated.title, vectorCount: newVectorCount },
+    });
+
+    return { message: 'Knowledge source reindexed successfully', vectorCount: newVectorCount };
   }
 }

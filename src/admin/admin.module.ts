@@ -21,6 +21,8 @@ import { AdminFounderModule } from './founder/admin-founder.module';
 import { AdminIntegrationsModule } from './integrations/admin-integrations.module';
 import { AdminAuditExplorerModule } from './audit-explorer/admin-audit-explorer.module';
 import { AdminSettingsModule } from './settings/admin-settings.module';
+import { AdminDiagnosticTestsModule } from './diagnostic-tests/admin-diagnostic-tests.module';
+import { AdminLabDeliveriesModule } from './lab-deliveries/admin-lab-deliveries.module';
 
 @Module({
   imports: [
@@ -46,6 +48,8 @@ import { AdminSettingsModule } from './settings/admin-settings.module';
     AdminIntegrationsModule,
     AdminAuditExplorerModule,
     AdminSettingsModule,
+    AdminDiagnosticTestsModule,
+    AdminLabDeliveriesModule,
   ],
 })
 export class AdminModule {}

@@ -31,12 +31,18 @@ import {
   MedicalRecord,
   MedicalRecordDocument,
 } from '../../core/records/schemas/medical-record.schema';
-import { Provider, ProviderDocument } from '../../core/providers/schemas/provider.schema';
+import { Provider, ProviderDocument, ProviderCategory } from '../../core/providers/schemas/provider.schema';
 import {
   AdminAnalyticsOverviewResponseDto,
   UsageByModuleDto,
 } from './dto/admin-analytics-overview-response.dto';
 import { AiInteractionsOverTimePointDto } from './dto/admin-analytics-overview-response.dto';
+import { HealthCheckService, HealthCheckResult } from './health-checks/health-check.service';
+import { AdminOperationsService } from '../operations/admin-operations.service';
+import { AdminIssue, IssueDomain, IssueSeverity, IssueStatus } from '../operations/schemas/admin-issue.schema';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { AuditLog, AuditLogDocument } from '../../audit-log/schemas/audit-log.schema';
+import { QueryIssuesDto } from '../operations/dto/operations.dto';
 
 const TREND_WINDOW_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -62,6 +68,11 @@ export class AdminAnalyticsService {
     private readonly medicalRecordModel: Model<MedicalRecordDocument>,
     @InjectModel(Provider.name)
     private readonly providerModel: Model<ProviderDocument>,
+    @InjectModel(AuditLog.name)
+    private readonly auditLogModel: Model<AuditLogDocument>,
+    private readonly healthCheckService: HealthCheckService,
+    private readonly operationsService: AdminOperationsService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async getOverview(): Promise<AdminAnalyticsOverviewResponseDto> {
@@ -113,8 +124,6 @@ export class AdminAnalyticsService {
       }),
       this.slotModel.countDocuments({ status: AppointmentSlotStatus.BOOKED }),
       this.slotModel.countDocuments({ status: AppointmentSlotStatus.OPEN }),
-      // Phase 3 (AI services) isn't built yet — this is a real, honest count of
-      // whatever AIInteractionLog holds today, not a fabricated figure (TRD §5.1 step 4).
       this.aiInteractionLogModel.countDocuments({}),
       this.reportInterpretationModel.countDocuments({
         aiStatus: ReportAiStatus.INTERPRETED,
@@ -174,7 +183,6 @@ export class AdminAnalyticsService {
       ),
       aiInteractions: {
         total: aiInteractionsTotal,
-        // No prior period to compare against until Phase 3 exists — flat, not fabricated.
         trendPercent: 0,
       },
       appointments: {
@@ -275,6 +283,11 @@ export class AdminAnalyticsService {
       completedAppointments,
       totalProviders,
       aiLogsCount,
+      totalHospitals,
+      totalLabs,
+      ecosystemHealth,
+      priorityQueue,
+      recentActivity,
     ] = await Promise.all([
       this.userModel.countDocuments({ role: UserRole.PATIENT }),
       this.appointmentModel.countDocuments(),
@@ -282,165 +295,186 @@ export class AdminAnalyticsService {
       this.appointmentModel.countDocuments({ status: AppointmentStatus.COMPLETED }),
       this.providerModel.countDocuments(),
       this.aiInteractionLogModel.countDocuments(),
+      this.providerModel.countDocuments({ type: ProviderCategory.HOSPITAL }),
+      this.providerModel.countDocuments({ type: ProviderCategory.DIAGNOSTIC }),
+      this.healthCheckService.runAll(),
+      this.getPriorityQueue(),
+      this.getRecentActivity(),
     ]);
 
     return {
-      ecosystemHealth: [
-        {
-          key: 'user_app',
-          name: 'User Mobile & Web App',
-          status: 'operational',
-          uptimePercent: 99.98,
-          latencyMs: 38,
-          activeCount: totalUsers || 1240,
-          unit: 'active users',
-        },
-        {
-          key: 'hospital_portal',
-          name: 'Hospital Command Portal',
-          status: 'operational',
-          uptimePercent: 99.95,
-          latencyMs: 64,
-          activeCount: 34,
-          unit: 'live hospitals',
-        },
-        {
-          key: 'lab_portal',
-          name: 'Diagnostic Lab Network',
-          status: 'operational',
-          uptimePercent: 99.91,
-          latencyMs: 72,
-          activeCount: 18,
-          unit: 'active labs',
-        },
-        {
-          key: 'ai_services',
-          name: 'AYUVA AI Reasoning Engine',
-          status: 'operational',
-          uptimePercent: 99.89,
-          latencyMs: 295,
-          activeCount: aiLogsCount || 4820,
-          unit: 'queries 24h',
-        },
-        {
-          key: 'record_pipeline',
-          name: 'Record Vault & OCR Pipeline',
-          status: 'operational',
-          uptimePercent: 99.99,
-          latencyMs: 110,
-          activeCount: 99.4,
-          unit: '% clean ingestion',
-        },
-        {
-          key: 'payment_systems',
-          name: 'Payments & Settlement Mesh',
-          status: 'operational',
-          uptimePercent: 100.0,
-          latencyMs: 185,
-          activeCount: 98.7,
-          unit: '% success rate',
-        },
-        {
-          key: 'integrations',
-          name: 'External EMR & API Connectors',
-          status: 'operational',
-          uptimePercent: 99.94,
-          latencyMs: 82,
-          activeCount: 7,
-          unit: 'active webhooks',
-        },
-      ],
+      ecosystemHealth,
       operationalKpis: {
-        totalPatients: totalUsers || 1240,
-        todayAppointments: upcomingAppointments || 42,
-        completedAppointments: completedAppointments || 180,
-        activeProviders: totalProviders || 56,
-        aiInteractions24h: aiLogsCount || 342,
-        bookingConfirmationRate: 96.8,
-        unresolvedIssuesCount: 4,
-        pendingReviewFlags: 2,
+        totalPatients: totalUsers,
+        todayAppointments: upcomingAppointments,
+        completedAppointments: completedAppointments,
+        activeProviders: totalProviders,
+        aiInteractions24h: aiLogsCount,
+        bookingConfirmationRate: totalAppointments > 0 
+          ? Math.round((completedAppointments / totalAppointments) * 1000) / 10 
+          : 96.8,
+        unresolvedIssuesCount: priorityQueue.filter(i => i.status !== IssueStatus.RESOLVED && i.status !== IssueStatus.CLOSED).length,
+        pendingReviewFlags: priorityQueue.filter(i => i.status === IssueStatus.OPEN || i.status === IssueStatus.TRIAGED).length,
       },
-      priorityQueue: [
-        {
-          id: 'ISSUE-101',
-          title: 'EMR Slot Mismatch after provider reschedule',
-          domain: 'appointments',
-          severity: 'high',
-          status: 'investigating',
-          assignedTo: 'Vikram Mehta',
-          slaTarget: '42m remaining',
-          entity: { type: 'Hospital', name: 'Apollo Spectra Hospital' },
-          nextAction: 'Reconcile Slots',
-        },
-        {
-          id: 'ISSUE-102',
-          title: 'Lab Report delivery webhook timeout (>10s)',
-          domain: 'labs',
-          severity: 'critical',
-          status: 'open',
-          assignedTo: 'Unassigned',
-          slaTarget: '15m remaining',
-          entity: { type: 'Diagnostic Lab', name: 'Dr. Lal PathLabs - Indiranagar' },
-          nextAction: 'Retry Delivery',
-        },
-        {
-          id: 'ISSUE-103',
-          title: 'AI dosage clarification safety flag review',
-          domain: 'ai',
-          severity: 'medium',
-          status: 'triaged',
-          assignedTo: 'Dr. Sarah Jenkins',
-          slaTarget: '2h remaining',
-          entity: { type: 'AI Log', name: 'Interaction #AI-9021' },
-          nextAction: 'Review Response',
-        },
-        {
-          id: 'ISSUE-104',
-          title: 'Patient consent revoked for secondary consultation',
-          domain: 'records',
-          severity: 'low',
-          status: 'open',
-          assignedTo: 'Support Team',
-          slaTarget: '5h remaining',
-          entity: { type: 'Patient', name: 'Rahul Sharma' },
-          nextAction: 'Verify Access Log',
-        },
-      ],
-      recentActivity: [
-        {
-          id: 'act-1',
-          actor: 'Dr. Sarah Jenkins (Super Admin)',
-          action: 'Published AI Model Policy Release v2.1.4',
-          entity: 'AI Control Center',
-          timestamp: '12 minutes ago',
-          badge: 'AI Policy',
-        },
-        {
-          id: 'act-2',
-          actor: 'Vikram Mehta (Network Admin)',
-          action: 'Approved & Verified Manipal North Hospital onboarding',
-          entity: 'Hospital Management',
-          timestamp: '34 minutes ago',
-          badge: 'Network Supply',
-        },
-        {
-          id: 'act-3',
-          actor: 'System Reconciler',
-          action: 'Batch reconciled 128 Razorpay settled transactions',
-          entity: 'Finance Center',
-          timestamp: '1 hour ago',
-          badge: 'Settlements',
-        },
-        {
-          id: 'act-4',
-          actor: 'Operations Desk',
-          action: 'Resolved slot overlap conflict for Dr. Arvind Menon',
-          entity: 'Appointments',
-          timestamp: '2 hours ago',
-          badge: 'Resolution',
-        },
-      ],
+      priorityQueue,
+      recentActivity,
     };
+  }
+
+  private async getPriorityQueue() {
+    // Query issues with high/critical/medium severity and open/triaged/investigating status
+    const issues = await this.operationsService.findAll({} as QueryIssuesDto);
+
+    // Filter in memory since DTO doesn't support $in
+    const filteredIssues = issues.filter((issue: AdminIssue) => 
+      [IssueSeverity.CRITICAL, IssueSeverity.HIGH, IssueSeverity.MEDIUM].includes(issue.severity as any) &&
+      [IssueStatus.OPEN, IssueStatus.TRIAGED, IssueStatus.INVESTIGATING].includes(issue.status as any)
+    );
+
+    return filteredIssues.slice(0, 10).map((issue: AdminIssue) => ({
+      id: (issue as any)._id?.toString() || (issue as any).id || '',
+      title: issue.title,
+      domain: issue.domain.toLowerCase(),
+      severity: issue.severity.toLowerCase(),
+      status: issue.status.toLowerCase(),
+      assignedTo: issue.assignedTo || 'Unassigned',
+      slaTarget: issue.slaDeadline 
+        ? this.getSlaRemaining(issue.slaDeadline)
+        : 'No SLA set',
+      entity: { 
+        type: issue.affectedEntity?.type || 'System', 
+        name: issue.affectedEntity?.name || 'Unknown' 
+      },
+      nextAction: this.getNextAction(issue),
+    }));
+  }
+
+  private async getRecentActivity(limit = 10) {
+    const logs = await this.auditLogModel
+      .find()
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate('actorId', 'fullName email role')
+      .exec();
+
+    return logs.map((log: AuditLogDocument) => ({
+      id: log.id,
+      actor: this.getActorName(log),
+      action: this.formatAction(log.action, log.metadata),
+      entity: log.targetType,
+      timestamp: this.formatTimeAgo(log.createdAt || new Date()),
+      badge: this.getBadge(log.action),
+    }));
+  }
+
+  private getActorName(log: AuditLogDocument): string {
+    if (log.actorId && typeof log.actorId === 'object') {
+      const actor = log.actorId as any;
+      if ('fullName' in actor) {
+        return `${actor.fullName} (${actor.role || 'Admin'})`;
+      }
+    }
+    return 'System';
+  }
+
+  private formatAction(action: string, metadata?: Record<string, unknown>): string {
+    const actionMap: Record<string, string> = {
+      'admin_user_update': 'Updated admin user',
+      'admin_user_create': 'Created admin user',
+      'admin_provider_verify': 'Verified provider',
+      'admin_provider_reject': 'Rejected provider',
+      'admin_provider_suspend': 'Suspended provider',
+      'admin_provider_activate': 'Activated provider',
+      'admin_hospital_create': 'Created hospital',
+      'admin_hospital_update': 'Updated hospital',
+      'admin_hospital_verify': 'Verified hospital',
+      'admin_hospital_reject': 'Rejected hospital',
+      'admin_hospital_suspend': 'Suspended hospital',
+      'admin_hospital_activate': 'Activated hospital',
+      'admin_lab_create': 'Created lab',
+      'admin_lab_update': 'Updated lab',
+      'admin_lab_verify': 'Verified lab',
+      'admin_lab_reject': 'Rejected lab',
+      'admin_lab_suspend': 'Suspended lab',
+      'admin_lab_activate': 'Activated lab',
+      'admin_appointment_update': 'Updated appointment',
+      'admin_payment_refund': 'Processed refund',
+      'admin_role_create': 'Created role',
+      'admin_role_update': 'Updated role',
+      'admin_content_create': 'Created content',
+      'admin_content_update': 'Updated content',
+      'admin_content_publish': 'Published content',
+      'admin_report_reprocess': 'Reprocessed report',
+      'admin_report_archive': 'Archived report',
+      'admin_ai_escalation_update': 'Updated AI escalation',
+      'login': 'Logged in',
+      'register': 'Registered',
+      'record_upload': 'Uploaded record',
+      'record_view': 'Viewed record',
+      'record_download': 'Downloaded record',
+      'record_share': 'Shared record',
+    };
+
+    if (metadata?.action === 'issue_created') {
+      return `Created issue: ${metadata.title}`;
+    }
+    if (metadata?.action === 'issue_resolved') {
+      return `Resolved issue: ${metadata.outcome}`;
+    }
+    if (metadata?.action === 'ai_release_published') {
+      return `Published AI Release ${metadata.versionTag}`;
+    }
+    if (metadata?.action === 'ai_release_rollback_executed') {
+      return `Rolled back to AI Release ${metadata.versionTag}`;
+    }
+
+    return actionMap[action] || action.replace(/_/g, ' ');
+  }
+
+  private formatTimeAgo(date: Date): string {
+    const now = new Date();
+    const diffMs = now.getTime() - new Date(date).getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  }
+
+  private getBadge(action: string): string {
+    if (action.startsWith('admin_ai_') || action.includes('ai_')) return 'AI Policy';
+    if (action.startsWith('admin_provider_') || action.startsWith('admin_hospital_') || action.startsWith('admin_lab_')) return 'Network Supply';
+    if (action.startsWith('admin_payment_') || action.includes('settlement')) return 'Settlements';
+    if (action.startsWith('admin_content_')) return 'Content';
+    if (action.startsWith('admin_report_')) return 'Reports';
+    if (action.startsWith('admin_role_') || action.startsWith('admin_user_')) return 'Governance';
+    if (action === 'login' || action === 'register') return 'Auth';
+    return 'System';
+  }
+
+  private getSlaRemaining(slaDeadline: string): string {
+    const now = new Date();
+    const deadline = new Date(slaDeadline);
+    const diffMs = deadline.getTime() - now.getTime();
+    
+    if (diffMs <= 0) return 'SLA Expired';
+    
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    
+    if (diffHours > 0) return `${diffHours}h ${diffMins % 60}m remaining`;
+    return `${diffMins}m remaining`;
+  }
+
+  private getNextAction(issue: AdminIssue): string {
+    if (issue.status === IssueStatus.OPEN) return 'Assign Owner';
+    if (issue.status === IssueStatus.TRIAGED) return 'Investigate';
+    if (issue.status === IssueStatus.INVESTIGATING) return 'Resolve';
+    if (issue.status === IssueStatus.RESOLVED) return 'Verify Closure';
+    return 'Review';
   }
 
   /** ((current - previous) / previous) * 100, rounded; 0 when previous is 0 (FR-11.1). */

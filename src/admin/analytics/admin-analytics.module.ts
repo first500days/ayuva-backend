@@ -30,12 +30,17 @@ import {
   ProviderSchema,
 } from '../../core/providers/schemas/provider.schema';
 import { AuthModule } from '../../auth/auth.module';
+import { AdminOperationsModule } from '../operations/admin-operations.module';
+import { AuditLogModule } from '../../audit-log/audit-log.module';
 import { AdminAnalyticsController } from './admin-analytics.controller';
 import { AdminAnalyticsService } from './admin-analytics.service';
+import { HealthCheckService } from './health-checks/health-check.service';
 
 @Module({
   imports: [
     AuthModule,
+    AdminOperationsModule,
+    AuditLogModule,
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Appointment.name, schema: AppointmentSchema },
@@ -48,6 +53,7 @@ import { AdminAnalyticsService } from './admin-analytics.service';
     ]),
   ],
   controllers: [AdminAnalyticsController],
-  providers: [AdminAnalyticsService],
+  providers: [AdminAnalyticsService, HealthCheckService],
+  exports: [AdminAnalyticsService, HealthCheckService],
 })
 export class AdminAnalyticsModule {}
