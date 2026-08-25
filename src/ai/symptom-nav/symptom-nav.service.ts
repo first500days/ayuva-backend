@@ -1,6 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { firstValueFrom } from 'rxjs';
 import { SymptomEntry, SymptomEntryDocument } from './schemas/symptom-entry.schema';
 import {
   RecommendedCareLevel,
@@ -87,6 +90,7 @@ const STOPWORDS = new Set([
 
 @Injectable()
 export class SymptomNavService {
+  private readonly logger = new Logger(SymptomNavService.name);
   constructor(
     @InjectModel(SymptomEntry.name)
     private readonly symptomEntryModel: Model<SymptomEntryDocument>,
@@ -95,6 +99,8 @@ export class SymptomNavService {
     @InjectModel(HealthProfile.name)
     private readonly healthProfileModel: Model<HealthProfileDocument>,
     private readonly aiInteractionLogService: AiInteractionLogService,
+    private readonly configService: ConfigService,
+    private readonly httpService: HttpService,
   ) {}
 
   async analyse(
@@ -103,11 +109,88 @@ export class SymptomNavService {
   ): Promise<SymptomNavResponseDto> {
     const startedAt = Date.now();
 
-    // Optional patient profile context (TRD §6 input spec) — used to nudge
-    // the mock urgency, not to diagnose. Absent profile is a normal case.
     const healthProfile = await this.healthProfileModel
       .findOne({ userId: new Types.ObjectId(userId) })
       .exec();
+
+    const aiApiUrl = this.configService.get<string>('ai.apiUrl');
+    const aiSecret = this.configService.get<string>('ai.internalSecret');
+
+    if (aiApiUrl) {
+      try {
+        const { data } = await firstValueFrom(
+          this.httpService.post(
+            `${aiApiUrl.replace(/\/$/, '')}/internal/symptom-nav/analyse`,
+            {
+              rawText: dto.rawText,
+              durationDays: dto.durationDays,
+              healthProfile: healthProfile
+                ? {
+                    age: (healthProfile as unknown as { age?: number }).age,
+                    gender: (healthProfile as unknown as { gender?: string }).gender,
+                    conditions: healthProfile.conditions ?? [],
+                    allergies: (healthProfile as unknown as { allergies?: string[] }).allergies ?? [],
+                  }
+                : undefined,
+            },
+            {
+              headers: aiSecret ? { 'X-Internal-Secret': aiSecret } : {},
+              timeout: 15000,
+            },
+          ),
+        );
+
+        const extractedSymptoms: string[] = data.extractedSymptoms;
+        const urgency: Urgency = data.urgency;
+        const riskLevel: RiskLevel = data.riskLevel;
+        const recommendedCareLevel: RecommendedCareLevel = data.recommendedCareLevel;
+        const rulesVersion: string = data.rulesVersion ?? data.modelVersion ?? 'real-v1';
+        const disclaimer: string = data.disclaimer ?? AI_DISCLAIMER;
+
+        const symptomEntry = await this.symptomEntryModel.create({
+          userId: new Types.ObjectId(userId),
+          rawText: dto.rawText,
+          durationDays: dto.durationDays,
+          extractedSymptoms,
+        });
+
+        const triageResult = await this.triageResultModel.create({
+          symptomEntryId: symptomEntry._id,
+          understoodSymptoms: extractedSymptoms,
+          urgency,
+          riskLevel,
+          recommendedCareLevel,
+          rulesVersion,
+        });
+
+        const response: SymptomNavResponseDto = {
+          symptomEntryId: symptomEntry.id,
+          triageResultId: triageResult.id,
+          extractedSymptoms,
+          understoodSymptoms: extractedSymptoms,
+          urgency,
+          riskLevel,
+          recommendedCareLevel,
+          rulesVersion,
+          source: AiSource.REAL,
+          disclaimer,
+        };
+
+        await this.aiInteractionLogService.record({
+          userId,
+          service: AiService.SYMPTOM_NAV,
+          input: { rawText: dto.rawText, durationDays: dto.durationDays },
+          outcome: { urgency, riskLevel, recommendedCareLevel, extractedSymptoms },
+          latencyMs: Date.now() - startedAt,
+          source: AiSource.REAL,
+          flagged: riskLevel !== RiskLevel.LOW,
+        });
+
+        return response;
+      } catch (err) {
+        this.logger.warn(`AI gateway failed, falling back to mock: ${(err as Error).message}`);
+      }
+    }
 
     const extractedSymptoms = this.extractSymptoms(dto.rawText);
     const { urgency, riskLevel, recommendedCareLevel } = this.classify(

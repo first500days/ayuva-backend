@@ -1,3 +1,4 @@
+import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import {
@@ -24,6 +25,7 @@ import { AiInteractionLogModule } from '../ai-interaction-log/ai-interaction-log
  */
 @Module({
   imports: [
+    HttpModule,
     AuthModule,
     AiInteractionLogModule,
     MongooseModule.forFeature([

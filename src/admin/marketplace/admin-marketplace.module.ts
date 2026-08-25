@@ -3,11 +3,13 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MarketplaceTaxonomy, MarketplaceTaxonomySchema } from './schemas/marketplace-taxonomy.schema';
 import { MarketplaceQualityFlag, MarketplaceQualityFlagSchema } from './schemas/marketplace-quality-flag.schema';
 import { MarketplaceConfig, MarketplaceConfigSchema } from './schemas/marketplace-config.schema';
+import { AuditLogModule } from '../../audit-log/audit-log.module';
 import { AdminMarketplaceService } from './admin-marketplace.service';
 import { AdminMarketplaceController } from './admin-marketplace.controller';
 
 @Module({
   imports: [
+    AuditLogModule,
     MongooseModule.forFeature([
       { name: MarketplaceTaxonomy.name, schema: MarketplaceTaxonomySchema },
       { name: MarketplaceQualityFlag.name, schema: MarketplaceQualityFlagSchema },

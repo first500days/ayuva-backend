@@ -94,4 +94,8 @@ export default () => ({
   frontend: {
     url: process.env.FRONTEND_URL ?? 'http://localhost:3000',
   },
+  ai: {
+    apiUrl: process.env.AI_API_URL || undefined,
+    internalSecret: process.env.AI_INTERNAL_SECRET || undefined,
+  },
 });
