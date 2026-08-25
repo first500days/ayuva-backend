@@ -1,3 +1,4 @@
+import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
@@ -10,7 +11,7 @@ import { AiInteractionLogModule } from '../ai-interaction-log/ai-interaction-log
  * stateless and logged to the shared AIInteractionLog.
  */
 @Module({
-  imports: [AuthModule, AiInteractionLogModule],
+  imports: [HttpModule, AuthModule, AiInteractionLogModule],
   controllers: [AssistantController],
   providers: [AssistantService],
 })

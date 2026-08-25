@@ -29,6 +29,7 @@ import {
   Provider,
   ProviderSchema,
 } from '../../core/providers/schemas/provider.schema';
+import { AuditLog, AuditLogSchema } from '../../audit-log/schemas/audit-log.schema';
 import { AuthModule } from '../../auth/auth.module';
 import { AdminOperationsModule } from '../operations/admin-operations.module';
 import { AuditLogModule } from '../../audit-log/audit-log.module';
@@ -50,6 +51,7 @@ import { HealthCheckService } from './health-checks/health-check.service';
       { name: Medication.name, schema: MedicationSchema },
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
       { name: Provider.name, schema: ProviderSchema },
+      { name: AuditLog.name, schema: AuditLogSchema },
     ]),
   ],
   controllers: [AdminAnalyticsController],

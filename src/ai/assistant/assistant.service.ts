@@ -1,4 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+import { Injectable, Logger } from '@nestjs/common';
+import { firstValueFrom } from 'rxjs';
 import { ChatRequestDto } from './dto/chat-request.dto';
 import { AssistantResponseScope, ChatResponseDto } from './dto/chat-response.dto';
 import { AiInteractionLogService } from '../ai-interaction-log/ai-interaction-log.service';
@@ -41,12 +44,52 @@ const CLINICAL_REDIRECT_REPLY =
 
 @Injectable()
 export class AssistantService {
-  constructor(private readonly aiInteractionLogService: AiInteractionLogService) {}
+  private readonly logger = new Logger(AssistantService.name);
+  constructor(
+    private readonly aiInteractionLogService: AiInteractionLogService,
+    private readonly configService: ConfigService,
+    private readonly httpService: HttpService,
+  ) {}
 
   async chat(userId: string, dto: ChatRequestDto): Promise<ChatResponseDto> {
     const startedAt = Date.now();
     const text = dto.message.toLowerCase();
     const soundsClinical = CLINICAL_KEYWORDS.some((k) => text.includes(k));
+
+    const aiApiUrl = this.configService.get<string>('ai.apiUrl');
+    const aiSecret = this.configService.get<string>('ai.internalSecret');
+    if (aiApiUrl) {
+      try {
+        const { data } = await firstValueFrom(
+          this.httpService.post(
+            `${aiApiUrl.replace(/\/$/, '')}/internal/assistant/chat`,
+            { message: dto.message },
+            {
+              headers: aiSecret ? { 'X-Internal-Secret': aiSecret } : {},
+              timeout: 15000,
+            },
+          ),
+        );
+        const response: ChatResponseDto = {
+          reply: data.reply,
+          scope: data.scope as AssistantResponseScope,
+          source: AiSource.REAL,
+          disclaimer: data.disclaimer ?? AI_DISCLAIMER,
+        };
+        await this.aiInteractionLogService.record({
+          userId,
+          service: AiService.ASSISTANT,
+          input: { message: dto.message },
+          outcome: { scope: response.scope, reply: response.reply },
+          latencyMs: Date.now() - startedAt,
+          source: AiSource.REAL,
+          flagged: response.scope === AssistantResponseScope.CLINICAL_REDIRECT,
+        });
+        return response;
+      } catch (err) {
+        this.logger.warn(`AI gateway failed, falling back to mock: ${(err as Error).message}`);
+      }
+    }
 
     const response: ChatResponseDto = soundsClinical
       ? {

@@ -1,6 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { firstValueFrom } from 'rxjs';
 import {
   GlossaryTerm,
   HighlightedValue,
@@ -158,12 +161,15 @@ const TEMPLATES: Record<MedicalRecordType, MockTemplate> = {
 
 @Injectable()
 export class ReportInterpreterService {
+  private readonly logger = new Logger(ReportInterpreterService.name);
   constructor(
     @InjectModel(ReportInterpretation.name)
     private readonly reportInterpretationModel: Model<ReportInterpretationDocument>,
     @InjectModel(MedicalRecord.name)
     private readonly medicalRecordModel: Model<MedicalRecordDocument>,
     private readonly aiInteractionLogService: AiInteractionLogService,
+    private readonly configService: ConfigService,
+    private readonly httpService: HttpService,
   ) {}
 
   async analyse(
@@ -189,6 +195,73 @@ export class ReportInterpreterService {
 
     // Idempotent on repeat views (FR-9.2) — regenerate only if not already interpreted.
     if (!interpretation || interpretation.aiStatus !== ReportAiStatus.INTERPRETED) {
+      const aiApiUrl = this.configService.get<string>('ai.apiUrl');
+      const aiSecret = this.configService.get<string>('ai.internalSecret');
+      if (aiApiUrl) {
+        try {
+          const { data } = await firstValueFrom(
+            this.httpService.post(
+              `${aiApiUrl.replace(/\/$/, '')}/internal/report-interpreter/analyse`,
+              {
+                recordId: dto.recordId,
+                recordType: record.type,
+                extractedText: undefined,
+              },
+              {
+                headers: aiSecret ? { 'X-Internal-Secret': aiSecret } : {},
+                timeout: 20000,
+              },
+            ),
+          );
+          interpretation = (await this.reportInterpretationModel.findOneAndUpdate(
+            { recordId: record._id },
+            {
+              $set: {
+                summaryText: data.summaryText,
+                highlightedValues: data.highlightedValues,
+                glossaryTerms: data.glossaryTerms,
+                suggestedQuestions: data.suggestedQuestions,
+                aiStatus: ReportAiStatus.INTERPRETED,
+              },
+            },
+            { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true },
+          ))!;
+          await this.aiInteractionLogService.record({
+            userId,
+            service: AiService.REPORT_INTERPRETER,
+            input: { recordId: dto.recordId, recordType: record.type },
+            outcome: {
+              interpretationId: interpretation.id,
+              highlightedCount: interpretation.highlightedValues.length,
+            },
+            latencyMs: Date.now() - startedAt,
+            source: AiSource.REAL,
+            flagged: interpretation.highlightedValues.some(
+              (v) => v.status !== HighlightedValueStatus.NORMAL,
+            ),
+          });
+          return {
+            id: interpretation.id,
+            recordId: interpretation.recordId.toString(),
+            summaryText: interpretation.summaryText,
+            highlightedValues: interpretation.highlightedValues.map((v) => ({
+              label: v.label,
+              value: v.value,
+              status: v.status,
+            })),
+            glossaryTerms: interpretation.glossaryTerms.map((g) => ({
+              term: g.term,
+              definition: g.definition,
+            })),
+            suggestedQuestions: interpretation.suggestedQuestions,
+            aiStatus: interpretation.aiStatus,
+            source: AiSource.REAL,
+            disclaimer: data.disclaimer ?? AI_DISCLAIMER,
+          };
+        } catch (err) {
+          this.logger.warn(`AI gateway failed, falling back to mock: ${(err as Error).message}`);
+        }
+      }
       const generated = this.generateMockInterpretation(record);
       // Non-null: upsert:true + returnDocument:'after' always returns a document.
       interpretation = (await this.reportInterpretationModel.findOneAndUpdate(

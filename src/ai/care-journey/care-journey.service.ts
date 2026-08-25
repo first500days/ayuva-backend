@@ -1,6 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { firstValueFrom } from 'rxjs';
 import {
   CareJourney,
   CareJourneyDocument,
@@ -82,6 +85,7 @@ const AVG_DAYS_PER_STEP = 3;
 
 @Injectable()
 export class CareJourneyService {
+  private readonly logger = new Logger(CareJourneyService.name);
   constructor(
     @InjectModel(CareJourney.name)
     private readonly careJourneyModel: Model<CareJourneyDocument>,
@@ -90,6 +94,8 @@ export class CareJourneyService {
     @InjectModel(SymptomEntry.name)
     private readonly symptomEntryModel: Model<SymptomEntryDocument>,
     private readonly aiInteractionLogService: AiInteractionLogService,
+    private readonly configService: ConfigService,
+    private readonly httpService: HttpService,
   ) {}
 
   async generate(
@@ -102,6 +108,75 @@ export class CareJourneyService {
       userId,
       dto.triageResultId,
     );
+
+    const aiApiUrl = this.configService.get<string>('ai.apiUrl');
+    const aiSecret = this.configService.get<string>('ai.internalSecret');
+    if (aiApiUrl) {
+      try {
+        const symptomEntry = await this.symptomEntryModel.findById(triageResult.symptomEntryId);
+        const { data } = await firstValueFrom(
+          this.httpService.post(
+            `${aiApiUrl.replace(/\/$/, '')}/internal/care-journey/generate`,
+            {
+              triageResultId: dto.triageResultId,
+              triageContext: {
+                urgency: triageResult.urgency,
+                riskLevel: triageResult.riskLevel,
+                recommendedCareLevel: triageResult.recommendedCareLevel,
+                extractedSymptoms: symptomEntry?.extractedSymptoms ?? triageResult.understoodSymptoms,
+                rulesVersion: triageResult.rulesVersion,
+              },
+            },
+            {
+              headers: aiSecret ? { 'X-Internal-Secret': aiSecret } : {},
+              timeout: 15000,
+            },
+          ),
+        );
+        const steps: CareStep[] = (data.steps as Array<{ name: string; contextNote: string; status: CareStepStatus }>).map(
+          (s, i) => ({
+            name: s.name,
+            status: (s.status as CareStepStatus) ?? (i === 0 ? CareStepStatus.CURRENT : CareStepStatus.UPCOMING),
+            contextNote: s.contextNote,
+          }),
+        );
+        const title: string = data.title;
+        const disclaimer: string = data.disclaimer ?? AI_DISCLAIMER;
+        const journey = await this.careJourneyModel.create({
+          userId: new Types.ObjectId(userId),
+          triageResultId: triageResult._id,
+          title,
+          steps,
+          progressPct: 0,
+          status: CareJourneyStatus.ACTIVE,
+        });
+        await this.aiInteractionLogService.record({
+          userId,
+          service: AiService.CARE_JOURNEY,
+          input: { triageResultId: dto.triageResultId },
+          outcome: { journeyId: journey.id, stepCount: steps.length },
+          latencyMs: Date.now() - startedAt,
+          source: AiSource.REAL,
+        });
+        return {
+          id: journey.id,
+          triageResultId: journey.triageResultId?.toString(),
+          title: journey.title,
+          steps: journey.steps.map((s) => ({
+            name: s.name,
+            status: s.status,
+            contextNote: s.contextNote,
+          })),
+          progressPct: journey.progressPct,
+          status: journey.status,
+          timelineEstimateDays: journey.steps.length * AVG_DAYS_PER_STEP,
+          source: AiSource.REAL,
+          disclaimer,
+        };
+      } catch (err) {
+        this.logger.warn(`AI gateway failed, falling back to mock: ${(err as Error).message}`);
+      }
+    }
 
     const template = JOURNEY_TEMPLATES[triageResult.recommendedCareLevel];
     const steps: CareStep[] = template.steps.map((s, i) => ({
