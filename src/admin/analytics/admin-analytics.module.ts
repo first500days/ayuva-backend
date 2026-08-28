@@ -32,6 +32,15 @@ import {
 import { AuthModule } from '../../auth/auth.module';
 import { AdminOperationsModule } from '../operations/admin-operations.module';
 import { AuditLogModule } from '../../audit-log/audit-log.module';
+import {
+  AuditLog,
+  AuditLogSchema,
+} from '../../audit-log/schemas/audit-log.schema';
+import { Lab, LabSchema } from '../../core/labs/schemas/lab.schema';
+import {
+  Hospital,
+  HospitalSchema,
+} from '../../core/hospitals/schemas/hospital.schema';
 import { AdminAnalyticsController } from './admin-analytics.controller';
 import { AdminAnalyticsService } from './admin-analytics.service';
 import { HealthCheckService } from './health-checks/health-check.service';
@@ -50,6 +59,9 @@ import { HealthCheckService } from './health-checks/health-check.service';
       { name: Medication.name, schema: MedicationSchema },
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
       { name: Provider.name, schema: ProviderSchema },
+      { name: AuditLog.name, schema: AuditLogSchema },
+      { name: Lab.name, schema: LabSchema },
+      { name: Hospital.name, schema: HospitalSchema },
     ]),
   ],
   controllers: [AdminAnalyticsController],

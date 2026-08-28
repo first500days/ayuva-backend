@@ -4,6 +4,8 @@ import { SymptomNavModule } from './symptom-nav/symptom-nav.module';
 import { CareJourneyModule } from './care-journey/care-journey.module';
 import { ReportInterpreterModule } from './report-interpreter/report-interpreter.module';
 import { AssistantModule } from './assistant/assistant.module';
+import { NavIntentModule } from './nav-intent/nav-intent.module';
+import { PrepPackModule } from './prep-pack/prep-pack.module';
 
 /**
  * AI Service domain (TRD §1): symptom navigation, care journey generation,
@@ -22,6 +24,8 @@ import { AssistantModule } from './assistant/assistant.module';
     CareJourneyModule,
     ReportInterpreterModule,
     AssistantModule,
+    NavIntentModule,
+    PrepPackModule,
   ],
 })
 export class AiModule {}

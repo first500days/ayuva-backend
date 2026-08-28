@@ -14,6 +14,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { AdminUsersModule } from './admin-users/admin-users.module';
 import { RolesModule } from './roles/roles.module';
 import { ContentModule } from './content/content.module';
+import { SharingModule } from './sharing/sharing.module';
 
 /**
  * Core Service domain (TRD §1): users, providers, appointments, records.
@@ -37,6 +38,7 @@ import { ContentModule } from './content/content.module';
     AdminUsersModule,
     RolesModule,
     ContentModule,
+    SharingModule,
   ],
 })
 export class CoreModule {}

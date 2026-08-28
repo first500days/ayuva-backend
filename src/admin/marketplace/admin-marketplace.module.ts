@@ -5,9 +5,11 @@ import { MarketplaceQualityFlag, MarketplaceQualityFlagSchema } from './schemas/
 import { MarketplaceConfig, MarketplaceConfigSchema } from './schemas/marketplace-config.schema';
 import { AdminMarketplaceService } from './admin-marketplace.service';
 import { AdminMarketplaceController } from './admin-marketplace.controller';
+import { AuditLogModule } from '../../audit-log/audit-log.module';
 
 @Module({
   imports: [
+    AuditLogModule,
     MongooseModule.forFeature([
       { name: MarketplaceTaxonomy.name, schema: MarketplaceTaxonomySchema },
       { name: MarketplaceQualityFlag.name, schema: MarketplaceQualityFlagSchema },
