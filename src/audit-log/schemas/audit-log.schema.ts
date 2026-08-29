@@ -40,6 +40,7 @@ export enum AuditAction {
   ADMIN_AI_ESCALATION_UPDATE = 'admin_ai_escalation_update',
   PASSWORD_RESET_REQUESTED = 'password_reset_requested',
   PASSWORD_RESET_COMPLETED = 'password_reset_completed',
+  ACCOUNT_DELETED = 'account_deleted',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;

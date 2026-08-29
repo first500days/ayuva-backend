@@ -293,6 +293,42 @@ export class AuthService {
     });
   }
 
+  /**
+   * Soft-deletes and anonymises the authenticated user's account (DPDP / GDPR
+   * right to erasure). A hard delete is intentionally avoided so that foreign
+   * references in appointments, records, and the immutable audit log remain
+   * intact. PII is overwritten so no personal data is retained.
+   */
+  async deleteAccount(userId: string): Promise<void> {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.userModel.findByIdAndUpdate(userId, {
+      $set: {
+        status: UserStatus.DEACTIVATED,
+        deactivatedAt: new Date(),
+        // Anonymise all PII fields so the record retains no personal data.
+        fullName: 'Deleted User',
+        email: `deleted+${userId}@ayuva.internal`,
+        passwordHash: undefined,
+        oauthId: undefined,
+        oauthProvider: undefined,
+        resetPasswordCode: undefined,
+        resetPasswordCodeExpiresAt: undefined,
+      },
+    });
+
+    await this.auditLogService.record({
+      actorId: user.id,
+      action: AuditAction.ACCOUNT_DELETED,
+      targetType: 'User',
+      targetId: user.id,
+    });
+  }
+
+
   /** FR-2.6: onboarding is skippable — presence of a HealthProfile is informational only, never gates auth. */
   private async hasHealthProfile(userId: string): Promise<boolean> {
     const count = await this.healthProfileModel

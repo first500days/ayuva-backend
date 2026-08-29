@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, HttpCode, HttpStatus, Post, Put, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -84,5 +84,17 @@ export class AuthController {
     @Body() dto: ConsentDto,
   ): Promise<ConsentStatusResponseDto> {
     return this.authService.updateConsent(user.sub, dto);
+  }
+
+  @Delete('account')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary:
+      'Permanently delete the authenticated user\'s account and anonymise all PII (DPDP / GDPR right to erasure). Required by Google Play Store data deletion policy.',
+  })
+  async deleteAccount(@CurrentUser() user: JwtPayload): Promise<void> {
+    return this.authService.deleteAccount(user.sub);
   }
 }
