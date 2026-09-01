@@ -14,6 +14,9 @@ import { ProfileService } from './profile.service';
 import { CreateHealthProfileDto } from '../health-profile/dto/create-health-profile.dto';
 import { CreateEmergencyContactDto } from '../health-profile/dto/create-emergency-contact.dto';
 import { CreateMedicationDto } from '../medications/dto/create-medication.dto';
+import { UpdateAccountDto } from './dto/update-account.dto';
+import { AuthUserDto } from '../../auth/dto/auth-tokens-response.dto';
+import type { UserDocument } from '../users/schemas/user.schema';
 import {
   EmergencyContactResponseDto,
   HealthProfileResponseDto,
@@ -31,6 +34,38 @@ import {
 @Controller('profile')
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
+
+  /**
+   * The same user summary the login/register responses carry, so the client can
+   * swap its cached user wholesale rather than patching one field into it.
+   */
+  @Get('account')
+  @ApiOperation({ summary: 'Get the signed-in patient’s own account summary' })
+  @ApiOkResponse({ type: AuthUserDto })
+  async getAccount(@CurrentUser() user: JwtPayload): Promise<AuthUserDto> {
+    const account = await this.profileService.getAccount(user.sub);
+    return this.toAuthUser(
+      account,
+      await this.profileService.hasHealthProfile(user.sub),
+    );
+  }
+
+  @Put('account')
+  @ApiOperation({
+    summary:
+      'Update the signed-in patient’s own name — without this the Profile edit only ever lived in the app’s local cache and was lost on the next sign-in',
+  })
+  @ApiOkResponse({ type: AuthUserDto })
+  async updateAccount(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdateAccountDto,
+  ): Promise<AuthUserDto> {
+    const account = await this.profileService.updateAccount(user.sub, dto);
+    return this.toAuthUser(
+      account,
+      await this.profileService.hasHealthProfile(user.sub),
+    );
+  }
 
   @Get('health')
   @ApiOperation({
@@ -114,5 +149,18 @@ export class ProfileController {
       dto,
     );
     return { name: contact.name, phone: contact.phone };
+  }
+
+  private toAuthUser(
+    account: UserDocument,
+    onboardingComplete: boolean,
+  ): AuthUserDto {
+    return {
+      id: account.id,
+      fullName: account.fullName,
+      email: account.email,
+      role: account.role,
+      onboardingComplete,
+    };
   }
 }

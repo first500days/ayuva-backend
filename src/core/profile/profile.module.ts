@@ -12,6 +12,7 @@ import {
   Medication,
   MedicationSchema,
 } from '../medications/schemas/medication.schema';
+import { User, UserSchema } from '../users/schemas/user.schema';
 import { ProfileController } from './profile.controller';
 import { ProfileService } from './profile.service';
 import { AuthModule } from '../../auth/auth.module';
@@ -25,6 +26,7 @@ import { NotificationsModule } from '../../notifications/notifications.module';
       { name: HealthProfile.name, schema: HealthProfileSchema },
       { name: EmergencyContact.name, schema: EmergencyContactSchema },
       { name: Medication.name, schema: MedicationSchema },
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [ProfileController],

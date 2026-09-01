@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -16,6 +16,8 @@ import {
 import { CreateHealthProfileDto } from '../health-profile/dto/create-health-profile.dto';
 import { CreateEmergencyContactDto } from '../health-profile/dto/create-emergency-contact.dto';
 import { CreateMedicationDto } from '../medications/dto/create-medication.dto';
+import { UpdateAccountDto } from './dto/update-account.dto';
+import { User, UserDocument } from '../users/schemas/user.schema';
 import { ReminderQueueService } from '../../notifications/queue/reminder-queue.service';
 
 /**
@@ -32,10 +34,48 @@ export class ProfileService {
     private readonly emergencyContactModel: Model<EmergencyContactDocument>,
     @InjectModel(Medication.name)
     private readonly medicationModel: Model<MedicationDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly reminderQueueService: ReminderQueueService,
   ) {}
 
-  async getHealthProfile(userId: string): Promise<HealthProfileDocument | null> {
+  /**
+   * The patient's own account record. Every screen that greets the user by
+   * name reads it from the login response, so an edit that only lived in the
+   * app's local cache was lost on the next sign-in.
+   */
+  async getAccount(userId: string): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) throw new NotFoundException('Account not found');
+    return user;
+  }
+
+  async updateAccount(
+    userId: string,
+    dto: UpdateAccountDto,
+  ): Promise<UserDocument> {
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        { fullName: dto.fullName.trim() },
+        { new: true },
+      )
+      .exec();
+    if (!user) throw new NotFoundException('Account not found');
+    return user;
+  }
+
+  /** FR-2.6: onboarding is skippable, so this is informational only. */
+  async hasHealthProfile(userId: string): Promise<boolean> {
+    const count = await this.healthProfileModel
+      .countDocuments({ userId: new Types.ObjectId(userId) })
+      .limit(1);
+    return count > 0;
+  }
+
+  async getHealthProfile(
+    userId: string,
+  ): Promise<HealthProfileDocument | null> {
     return this.healthProfileModel
       .findOne({ userId: new Types.ObjectId(userId) })
       .exec();
