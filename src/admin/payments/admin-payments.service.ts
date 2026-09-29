@@ -46,6 +46,16 @@ export class AdminPaymentsService {
     return this.toResponse(transaction);
   }
 
+  /** Marks collected fees as paid out to the partner; drives the payout status shown in the Partner Portal (P06). */
+  async settle(ids: string[]): Promise<{ settled: number }> {
+    const valid = ids.filter((id) => Types.ObjectId.isValid(id));
+    const result = await this.transactionModel.updateMany(
+      { _id: { $in: valid }, status: TransactionStatus.SUCCESSFUL, settlementStatus: { $ne: 'settled' } },
+      { $set: { settlementStatus: 'settled', settledAt: new Date() } },
+    );
+    return { settled: result.modifiedCount };
+  }
+
   private toResponse(transaction: TransactionDocument): AdminPaymentResponseDto {
     return {
       id: transaction.id,

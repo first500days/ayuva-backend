@@ -61,6 +61,13 @@ export class Transaction {
   @Prop()
   refundReason?: string;
 
+  // Partner payout tracking (P06) — only meaningful when the platform collected the fee.
+  @Prop({ type: String, enum: ['unsettled', 'settled'], default: 'unsettled', index: true })
+  settlementStatus: string;
+
+  @Prop()
+  settledAt?: Date;
+
   @Prop({ type: SchemaTypes.Mixed, default: {} })
   metadata: Record<string, any>;
 

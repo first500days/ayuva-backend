@@ -45,6 +45,7 @@ import { MailModule } from '../mail/mail.module';
     JwtAuthGuard,
     ConsentGuard,
     MongooseModule,
+    AuthService,
   ],
 })
 export class AuthModule {}

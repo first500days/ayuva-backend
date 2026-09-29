@@ -27,6 +27,7 @@ import { AdminCreateProviderDto } from './dto/admin-create-provider.dto';
 import { UpdateProviderDto } from './dto/update-provider.dto';
 import { ProviderScheduleDto } from './dto/provider-schedule.dto';
 import { BlockedDateDto } from './dto/blocked-date.dto';
+import { ProviderVerificationDto } from './dto/provider-verification.dto';
 import { AdminProviderResponseDto } from './dto/admin-provider-response.dto';
 
 @ApiTags('Admin - Providers')
@@ -56,6 +57,23 @@ export class AdminProvidersController {
     @Body() dto: AdminCreateProviderDto,
   ): Promise<AdminProviderResponseDto> {
     return this.adminProvidersService.create(dto);
+  }
+
+  @Get('verification-queue')
+  @ApiOperation({ summary: 'Providers awaiting verification (A02)' })
+  @ApiOkResponse({ type: [AdminProviderResponseDto] })
+  verificationQueue(): Promise<AdminProviderResponseDto[]> {
+    return this.adminProvidersService.verificationQueue();
+  }
+
+  @Patch(':id/verification')
+  @ApiOperation({ summary: 'Approve / reject / mark under review (A02)' })
+  @ApiOkResponse({ type: AdminProviderResponseDto })
+  verify(
+    @Param('id') id: string,
+    @Body() dto: ProviderVerificationDto,
+  ): Promise<AdminProviderResponseDto> {
+    return this.adminProvidersService.verify(id, dto);
   }
 
   @Patch(':id')

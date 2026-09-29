@@ -62,6 +62,13 @@ export class AdminProviderResponseDto {
   @ApiPropertyOptional({ example: 'https://cdn.ayuva.health/providers/p1.jpg' })
   profileImageUrl?: string;
 
+  @ApiPropertyOptional() email?: string;
+  @ApiPropertyOptional() phone?: string;
+  @ApiPropertyOptional() registrationNumber?: string;
+  @ApiPropertyOptional({ type: [String] }) qualifications?: string[];
+  @ApiPropertyOptional() verificationNotes?: string;
+  @ApiPropertyOptional() createdAt?: string;
+
   @ApiPropertyOptional({ type: AdminProviderScheduleResponseDto })
   schedule?: AdminProviderScheduleResponseDto;
 

@@ -71,6 +71,13 @@ export class Appointment {
 
   @Prop()
   internalNotes?: string;
+
+  // Set when a partner schedules a follow-up from a completed visit (P05).
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Appointment' })
+  followUpOfId?: Types.ObjectId;
+
+  @Prop()
+  rejectionReason?: string;
 }
 
 export const AppointmentSchema = SchemaFactory.createForClass(Appointment);

@@ -32,6 +32,9 @@ import { ReminderQueueService } from '../../notifications/queue/reminder-queue.s
 
 export type AppointmentsScope = 'upcoming' | 'past';
 
+// Statuses that still hold a slot and can be acted on by the patient.
+const ACTIVE_STATUSES = [AppointmentStatus.CONFIRMED, AppointmentStatus.REQUESTED];
+
 @Injectable()
 export class AppointmentsService {
   private readonly logger = new Logger(AppointmentsService.name);
@@ -80,7 +83,10 @@ export class AppointmentsService {
         patientId: userId,
         providerId: dto.providerId,
         slotId: slot.id,
-        status: AppointmentStatus.CONFIRMED,
+        // Partners who require approval get a REQUESTED booking to accept/reject (Partner Portal P05).
+        status: provider.requiresApproval
+          ? AppointmentStatus.REQUESTED
+          : AppointmentStatus.CONFIRMED,
       });
       // System-initiated care-continuity nudge (PRD §7.1 Notifications) — not
       // gated behind the "Set reminder" toggle, which is specifically the
@@ -110,9 +116,14 @@ export class AppointmentsService {
   ): Promise<AppointmentResponseDto[]> {
     const statusFilter =
       scope === 'upcoming'
-        ? [AppointmentStatus.CONFIRMED]
+        ? ACTIVE_STATUSES
         : scope === 'past'
-          ? [AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED_BY_PATIENT]
+          ? [
+              AppointmentStatus.COMPLETED,
+              AppointmentStatus.CANCELLED_BY_PATIENT,
+              AppointmentStatus.CANCELLED_BY_PROVIDER,
+              AppointmentStatus.NO_SHOW,
+            ]
           : undefined;
 
     const appointments = await this.appointmentModel
@@ -144,13 +155,13 @@ export class AppointmentsService {
     // No explicit scope: surface upcoming first, then past, each date-ordered.
     if (!scope) {
       const upcoming = results
-        .filter((r) => r.status === AppointmentStatus.CONFIRMED)
+        .filter((r) => ACTIVE_STATUSES.includes(r.status as AppointmentStatus))
         .sort(
           (a, b) =>
             a.date.localeCompare(b.date) || a.time.localeCompare(b.time),
         );
       const past = results
-        .filter((r) => r.status !== AppointmentStatus.CONFIRMED)
+        .filter((r) => !ACTIVE_STATUSES.includes(r.status as AppointmentStatus))
         .sort(
           (a, b) =>
             b.date.localeCompare(a.date) || b.time.localeCompare(a.time),
@@ -173,7 +184,7 @@ export class AppointmentsService {
 
     const appointment = await this.getOwnedAppointmentOrThrow(id, userId);
 
-    if (appointment.status !== AppointmentStatus.CONFIRMED) {
+    if (!ACTIVE_STATUSES.includes(appointment.status)) {
       throw new BadRequestException(
         'Only a confirmed appointment can be modified',
       );

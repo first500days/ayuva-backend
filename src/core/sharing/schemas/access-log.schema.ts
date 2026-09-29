@@ -20,6 +20,13 @@ export class AccessLog {
   @Prop({ required: true })
   action: string; // 'viewed' | 'downloaded' | 'granted' | 'revoked' | 'expired'
 
+  // Set for partner-initiated events so every view is attributable (P04).
+  @Prop({ type: SchemaTypes.ObjectId, index: true, sparse: true })
+  viewerUserId?: Types.ObjectId;
+
+  @Prop()
+  viewerName?: string;
+
   occurredAt?: Date;
 }
 

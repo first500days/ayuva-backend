@@ -150,6 +150,38 @@ export class Provider {
 
   @Prop({ default: 0 })
   feedbackCount?: number;
+
+  // Partner Portal (P01/P02): the partner login that owns/manages this provider profile.
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User', index: true, sparse: true })
+  ownerUserId?: Types.ObjectId;
+
+  @Prop()
+  email?: string;
+
+  @Prop()
+  phone?: string;
+
+  @Prop()
+  registrationNumber?: string;
+
+  @Prop({ type: [String], default: [] })
+  qualifications?: string[];
+
+  @Prop()
+  experienceYears?: number;
+
+  @Prop()
+  bio?: string;
+
+  // When true, new bookings land as REQUESTED and the partner must accept/reject (P05).
+  @Prop({ default: false })
+  requiresApproval?: boolean;
+
+  @Prop()
+  verifiedAt?: Date;
+
+  @Prop()
+  verificationNotes?: string;
 }
 
 export const ProviderSchema = SchemaFactory.createForClass(Provider);

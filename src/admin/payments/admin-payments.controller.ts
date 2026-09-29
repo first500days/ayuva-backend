@@ -50,6 +50,12 @@ export class AdminPaymentsController {
     return this.adminPaymentsService.processSettlementBatch(body.settlementIds || []);
   }
 
+  @Post('settle')
+  @ApiOperation({ summary: 'Mark successful transactions as settled to the partner (P06)' })
+  settle(@Body() body: { transactionIds: string[] }) {
+    return this.adminPaymentsService.settle(body.transactionIds || []);
+  }
+
   @Get('invoices')
   @ApiOperation({ summary: 'Provider and lab platform invoices' })
   getInvoices() {

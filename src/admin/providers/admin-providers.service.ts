@@ -13,6 +13,11 @@ import {
   AppointmentSlotDocument,
   AppointmentSlotStatus,
 } from '../../core/providers/schemas/appointment-slot.schema';
+import {
+  ShareOrganisation,
+  ShareOrganisationDocument,
+} from '../../core/sharing/schemas/share-organisation.schema';
+import { ProviderVerificationDto } from './dto/provider-verification.dto';
 import { AdminCreateProviderDto } from './dto/admin-create-provider.dto';
 import { UpdateProviderDto } from './dto/update-provider.dto';
 import { QueryAdminProvidersDto } from './dto/query-admin-providers.dto';
@@ -44,6 +49,8 @@ export class AdminProvidersService {
     private readonly providerModel: Model<ProviderDocument>,
     @InjectModel(AppointmentSlot.name)
     private readonly slotModel: Model<AppointmentSlotDocument>,
+    @InjectModel(ShareOrganisation.name)
+    private readonly orgModel: Model<ShareOrganisationDocument>,
   ) {}
 
   /**
@@ -140,6 +147,41 @@ export class AdminProvidersService {
     if (dto.status !== undefined) provider.status = dto.status;
 
     await provider.save();
+    return this.toResponse(provider);
+  }
+
+  /** Verification queue (A02): providers awaiting review, oldest first. */
+  async verificationQueue(): Promise<AdminProviderResponseDto[]> {
+    const providers = await this.providerModel
+      .find({
+        status: { $in: [ProviderStatus.PENDING, ProviderStatus.UNDER_REVIEW] },
+      })
+      .sort({ createdAt: 1 })
+      .exec();
+    return providers.map((p) => this.toResponse(p));
+  }
+
+  /** Gate before a Partner Portal account goes live: approve -> ACTIVE (patient-visible). */
+  async verify(
+    id: string,
+    dto: ProviderVerificationDto,
+  ): Promise<AdminProviderResponseDto> {
+    const provider = await this.getProviderOrThrow(id);
+    if (dto.decision === 'approve') {
+      provider.status = ProviderStatus.ACTIVE;
+      provider.verifiedAt = new Date();
+    } else if (dto.decision === 'reject') {
+      provider.status = ProviderStatus.REJECTED;
+    } else {
+      provider.status = ProviderStatus.UNDER_REVIEW;
+    }
+    if (dto.notes !== undefined) provider.verificationNotes = dto.notes;
+    await provider.save();
+    // Patients can only grant record access to a verified partner (P04).
+    await this.orgModel.updateMany(
+      { providerId: provider._id },
+      { $set: { connected: dto.decision === 'approve' } },
+    );
     return this.toResponse(provider);
   }
 
@@ -404,6 +446,12 @@ export class AdminProvidersService {
       consultationFee: provider.consultationFee,
       status: provider.status,
       profileImageUrl: provider.profileImageUrl,
+      email: provider.email,
+      phone: provider.phone,
+      registrationNumber: provider.registrationNumber,
+      qualifications: provider.qualifications,
+      verificationNotes: provider.verificationNotes,
+      createdAt: (provider as { createdAt?: Date }).createdAt?.toISOString(),
       schedule: provider.schedule
         ? {
             workingDays: provider.schedule.workingDays,

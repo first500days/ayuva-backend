@@ -23,6 +23,7 @@ import { AdminAuditExplorerModule } from './audit-explorer/admin-audit-explorer.
 import { AdminSettingsModule } from './settings/admin-settings.module';
 import { AdminDiagnosticTestsModule } from './diagnostic-tests/admin-diagnostic-tests.module';
 import { AdminLabDeliveriesModule } from './lab-deliveries/admin-lab-deliveries.module';
+import { AdminSubscriptionsModule } from './subscriptions/admin-subscriptions.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { AdminLabDeliveriesModule } from './lab-deliveries/admin-lab-deliveries.
     AdminSettingsModule,
     AdminDiagnosticTestsModule,
     AdminLabDeliveriesModule,
+    AdminSubscriptionsModule,
   ],
 })
 export class AdminModule {}
