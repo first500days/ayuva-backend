@@ -91,6 +91,17 @@ export default () => ({
   resend: {
     apiKey: process.env.RESEND_API_KEY,
   },
+  // OTP and reminder SMS (sms-sender.ts). Unset = log-only sender.
+  sms: {
+    twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
+    twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
+    from: process.env.SMS_FROM,
+  },
+  apple: {
+    // Comma-separated audiences accepted on Apple identity tokens: the iOS
+    // bundle id, plus the Services ID if web sign-in is added later.
+    clientIds: process.env.APPLE_CLIENT_IDS,
+  },
   frontend: {
     url: process.env.FRONTEND_URL ?? 'http://localhost:3000',
   },

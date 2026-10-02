@@ -36,6 +36,29 @@ export class UserConsent {
 }
 export const UserConsentSchema = SchemaFactory.createForClass(UserConsent);
 
+/**
+ * U11: channels and categories are separate switches, so a patient who mutes
+ * marketing (or email) still gets appointment reminders on the channels they
+ * kept. SMS carries reminders only.
+ */
+@Schema({ _id: false })
+export class NotificationPrefs {
+  @Prop({ default: true }) push: boolean;
+  @Prop({ default: true }) email: boolean;
+  @Prop({ default: false }) sms: boolean;
+
+  @Prop({ default: true }) appointments: boolean;
+  @Prop({ default: true }) results: boolean;
+  @Prop({ default: true }) sharing: boolean;
+  @Prop({ default: true }) medications: boolean;
+  @Prop({ default: true }) family: boolean;
+  @Prop({ default: false }) marketing: boolean;
+
+  @Prop({ default: true }) hideSensitiveOnLockScreen: boolean;
+}
+export const NotificationPrefsSchema =
+  SchemaFactory.createForClass(NotificationPrefs);
+
 export type UserDocument = HydratedDocument<User>;
 
 @Schema({ timestamps: true })
@@ -88,6 +111,39 @@ export class User {
   // Captured once at registration; required before an account can be created (PRD FR-1.5).
   @Prop({ type: UserConsentSchema, required: true })
   consent: UserConsent;
+
+  // U01: captured at sign-up; drive slot times, currency and copy.
+  @Prop({ uppercase: true, trim: true })
+  country?: string; // ISO 3166-1 alpha-2, e.g. "IN"
+
+  @Prop({ trim: true })
+  timezone?: string; // IANA, e.g. "Asia/Kolkata"
+
+  @Prop({ trim: true })
+  language?: string; // BCP 47, e.g. "en", "hi"
+
+  // E.164. Unique among accounts that have one.
+  @Prop({ trim: true, index: { unique: true, sparse: true } })
+  phone?: string;
+
+  @Prop()
+  phoneVerifiedAt?: Date;
+
+  @Prop()
+  emailVerifiedAt?: Date;
+
+  // Hashed one-time code for phone / email verification and OTP sign-in (U01).
+  @Prop()
+  otpHash?: string;
+
+  @Prop()
+  otpExpiresAt?: Date;
+
+  @Prop({ default: 0 })
+  otpAttempts?: number;
+
+  @Prop({ type: NotificationPrefsSchema, default: () => ({}) })
+  notificationPrefs?: NotificationPrefs;
 
   // Populated by the timestamps:true schema option — declared for typed access (Admin User Management, FR-12.1).
   createdAt?: Date;

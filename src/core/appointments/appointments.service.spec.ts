@@ -30,11 +30,16 @@ function buildService() {
     scheduleFollowUpReminder: jest.fn(),
     cancelFollowUpReminder: jest.fn(),
   };
+  const sharingService = {
+    revokeForAppointment: jest.fn().mockResolvedValue(0),
+    syncVisitExpiry: jest.fn().mockResolvedValue(undefined),
+  };
   const service = new AppointmentsService(
     appointmentModel as any,
     slotModel as any,
     providerModel as any,
     reminderQueueService as any,
+    sharingService as any,
   );
   return {
     service,
@@ -42,6 +47,7 @@ function buildService() {
     slotModel,
     providerModel,
     reminderQueueService,
+    sharingService,
   };
 }
 
@@ -202,6 +208,24 @@ describe('AppointmentsService', () => {
 
       expect(reminderQueueService.cancelAppointmentReminder).toHaveBeenCalledWith(
         SLOT_ID,
+      );
+    });
+
+    it('revokes "this visit" record shares when the patient cancels', async () => {
+      const { service, appointmentModel, providerModel, slotModel, sharingService } =
+        buildService();
+      appointmentModel.findById.mockResolvedValue(ownedAppointment());
+      providerModel.findById.mockResolvedValue({ name: 'Dr. Menon' });
+      slotModel.findById.mockResolvedValue({
+        date: new Date('2026-08-14T00:00:00Z'),
+        time: '10:30',
+      });
+
+      await service.update(SLOT_ID, USER_ID, { status: 'cancelled' as any });
+
+      expect(sharingService.revokeForAppointment).toHaveBeenCalledWith(
+        SLOT_ID,
+        'appointment_cancelled_by_patient',
       );
     });
   });

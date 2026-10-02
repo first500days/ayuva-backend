@@ -1,18 +1,27 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { AppNotification, AppNotificationDocument } from './schemas/app-notification.schema';
-import { AppNotificationResponseDto, NotificationPreferencesDto } from './dto/notification-response.dto';
+import {
+  AppNotification,
+  AppNotificationDocument,
+  NotificationCategory,
+} from './schemas/app-notification.schema';
+import {
+  AppNotificationResponseDto,
+  NotificationPreferencesDto,
+  UpdateNotificationPreferencesDto,
+} from './dto/notification-response.dto';
+import { User, UserDocument } from '../core/users/schemas/user.schema';
 
-// In-memory prefs store — keeps it simple without a new schema migration.
-// A real production app would persist this to a UserPreferences document.
-const prefsStore = new Map<string, NotificationPreferencesDto>();
-
-const DEFAULT_PREFS: NotificationPreferencesDto = {
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPreferencesDto = {
+  push: true,
+  email: true,
+  sms: false,
   appointments: true,
   results: true,
   sharing: true,
   medications: true,
+  family: true,
   marketing: false,
   hideSensitiveOnLockScreen: true,
 };
@@ -22,11 +31,20 @@ export class AppNotificationsService {
   constructor(
     @InjectModel(AppNotification.name)
     private readonly notificationModel: Model<AppNotificationDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
   ) {}
 
-  async list(userId: string): Promise<AppNotificationResponseDto[]> {
+  /** U11 feed; `category` is the filter tab (omit for All). */
+  async list(
+    userId: string,
+    category?: NotificationCategory,
+  ): Promise<AppNotificationResponseDto[]> {
     const notifications = await this.notificationModel
-      .find({ userId: new Types.ObjectId(userId) })
+      .find({
+        userId: new Types.ObjectId(userId),
+        ...(category && { category }),
+      })
       .sort({ occurredAt: -1 })
       .limit(50)
       .exec();
@@ -52,20 +70,35 @@ export class AppNotificationsService {
     return this.list(userId);
   }
 
-  getPreferences(userId: string): NotificationPreferencesDto {
-    return prefsStore.get(userId) ?? { ...DEFAULT_PREFS };
+  async getPreferences(userId: string): Promise<NotificationPreferencesDto> {
+    const user = await this.userModel
+      .findById(userId)
+      .select('notificationPrefs')
+      .lean()
+      .exec();
+    return withDefaults(user?.notificationPrefs);
   }
 
-  updatePreferences(userId: string, prefs: NotificationPreferencesDto): NotificationPreferencesDto {
-    prefsStore.set(userId, prefs);
-    return prefs;
+  /** Partial update: only the switches sent change. */
+  async updatePreferences(
+    userId: string,
+    patch: UpdateNotificationPreferencesDto,
+  ): Promise<NotificationPreferencesDto> {
+    const current = await this.getPreferences(userId);
+    const next = { ...current, ...stripUndefined(patch) };
+    await this.userModel.updateOne(
+      { _id: userId },
+      { $set: { notificationPrefs: next } },
+    );
+    return next;
   }
 
-  /** Called by other services (appointments, records, etc.) to create in-app notifications. */
+  /** Called by other services (appointments, records, sharing, family) to create in-app notifications. */
   async create(
     userId: string,
     data: {
       trigger: string;
+      category?: NotificationCategory;
       title: string;
       message: string;
       lockScreenText: string;
@@ -77,6 +110,7 @@ export class AppNotificationsService {
     await this.notificationModel.create({
       userId: new Types.ObjectId(userId),
       ...data,
+      category: data.category ?? 'general',
       actionLabel: data.actionLabel ?? 'View',
     });
   }
@@ -85,6 +119,7 @@ export class AppNotificationsService {
     return {
       id: n.id,
       trigger: n.trigger,
+      category: n.category ?? 'general',
       title: n.title,
       message: n.message,
       lockScreenText: n.lockScreenText,
@@ -95,4 +130,16 @@ export class AppNotificationsService {
       read: n.read,
     };
   }
+}
+
+export function withDefaults(
+  stored?: Partial<NotificationPreferencesDto> | null,
+): NotificationPreferencesDto {
+  return { ...DEFAULT_NOTIFICATION_PREFS, ...stripUndefined(stored ?? {}) };
+}
+
+function stripUndefined<T extends object>(obj: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined && v !== null),
+  ) as Partial<T>;
 }

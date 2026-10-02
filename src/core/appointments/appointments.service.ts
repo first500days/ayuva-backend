@@ -29,6 +29,7 @@ import {
 } from './dto/patch-appointment.dto';
 import { AppointmentResponseDto } from './dto/appointment-response.dto';
 import { ReminderQueueService } from '../../notifications/queue/reminder-queue.service';
+import { SharingService } from '../sharing/sharing.service';
 
 export type AppointmentsScope = 'upcoming' | 'past';
 
@@ -47,6 +48,7 @@ export class AppointmentsService {
     @InjectModel(Provider.name)
     private readonly providerModel: Model<ProviderDocument>,
     private readonly reminderQueueService: ReminderQueueService,
+    private readonly sharingService: SharingService,
   ) {}
 
   async create(
@@ -333,6 +335,8 @@ export class AppointmentsService {
     // Same for the follow-up nudge — it's relative to the visit date, which just changed.
     await this.reminderQueueService.cancelFollowUpReminder(appointment.id);
     await this.scheduleFollowUp(appointment, provider ?? undefined, newSlot);
+    // "This visit" record access follows the visit to its new time.
+    await this.sharingService.syncVisitExpiry(appointment.id);
 
     return this.toResponse(appointment, provider ?? undefined, newSlot);
   }
@@ -358,6 +362,11 @@ export class AppointmentsService {
     // A stale job firing for a cancelled appointment is a real bug, not an edge case.
     await this.reminderQueueService.cancelAppointmentReminder(appointment.id);
     await this.reminderQueueService.cancelFollowUpReminder(appointment.id);
+    // "This visit" record access ends with the visit.
+    await this.sharingService.revokeForAppointment(
+      appointment.id,
+      'appointment_cancelled_by_patient',
+    );
 
     const [provider, slot] = await Promise.all([
       this.providerModel.findById(appointment.providerId),

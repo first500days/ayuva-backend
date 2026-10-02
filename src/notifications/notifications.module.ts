@@ -11,6 +11,8 @@ import { reminderQueueProvider } from './queue/reminder-queue.provider';
 import { ReminderQueueService } from './queue/reminder-queue.service';
 import { ReminderProcessor } from './queue/reminder.processor';
 import { fcmSenderProvider } from './fcm/fcm.provider';
+import { SMS_SENDER, smsSenderProvider } from './sms/sms-sender';
+import { User, UserSchema } from '../core/users/schemas/user.schema';
 
 /**
  * Push notification / reminder system (FR-10.3, FR-7.6, TRD §2/§7/§8).
@@ -26,6 +28,7 @@ import { fcmSenderProvider } from './fcm/fcm.provider';
     MongooseModule.forFeature([
       { name: DeviceToken.name, schema: DeviceTokenSchema },
       { name: AppNotification.name, schema: AppNotificationSchema },
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [DevicesController, AppNotificationsController],
@@ -34,9 +37,10 @@ import { fcmSenderProvider } from './fcm/fcm.provider';
     AppNotificationsService,
     reminderQueueProvider,
     fcmSenderProvider,
+    smsSenderProvider,
     ReminderQueueService,
     ReminderProcessor,
   ],
-  exports: [ReminderQueueService, AppNotificationsService],
+  exports: [ReminderQueueService, AppNotificationsService, SMS_SENDER],
 })
 export class NotificationsModule {}

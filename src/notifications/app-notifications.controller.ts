@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -11,7 +11,12 @@ import { ConsentGuard } from '../auth/guards/consent.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { AppNotificationsService } from './app-notifications.service';
-import { AppNotificationResponseDto, NotificationPreferencesDto } from './dto/notification-response.dto';
+import {
+  AppNotificationResponseDto,
+  ListNotificationsQueryDto,
+  NotificationPreferencesDto,
+  UpdateNotificationPreferencesDto,
+} from './dto/notification-response.dto';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
@@ -23,8 +28,11 @@ export class AppNotificationsController {
   @Get()
   @ApiOperation({ summary: "List user's in-app notifications (FR-37)" })
   @ApiOkResponse({ type: [AppNotificationResponseDto] })
-  list(@CurrentUser() user: JwtPayload): Promise<AppNotificationResponseDto[]> {
-    return this.appNotificationsService.list(user.sub);
+  list(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: ListNotificationsQueryDto,
+  ): Promise<AppNotificationResponseDto[]> {
+    return this.appNotificationsService.list(user.sub, query.category);
   }
 
   @Post(':id/read')
@@ -45,19 +53,23 @@ export class AppNotificationsController {
   }
 
   @Get('preferences')
-  @ApiOperation({ summary: "Get user's notification preferences (FR-37)" })
+  @ApiOperation({
+    summary: "Get user's channel (push/email/SMS) and category preferences (FR-37, U11)",
+  })
   @ApiOkResponse({ type: NotificationPreferencesDto })
-  getPreferences(@CurrentUser() user: JwtPayload): NotificationPreferencesDto {
+  getPreferences(@CurrentUser() user: JwtPayload): Promise<NotificationPreferencesDto> {
     return this.appNotificationsService.getPreferences(user.sub);
   }
 
   @Put('preferences')
-  @ApiOperation({ summary: "Update user's notification preferences (FR-37)" })
+  @ApiOperation({
+    summary: 'Update notification preferences — only the switches sent change (FR-37, U11)',
+  })
   @ApiOkResponse({ type: NotificationPreferencesDto })
   updatePreferences(
     @CurrentUser() user: JwtPayload,
-    @Body() prefs: NotificationPreferencesDto,
-  ): NotificationPreferencesDto {
+    @Body() prefs: UpdateNotificationPreferencesDto,
+  ): Promise<NotificationPreferencesDto> {
     return this.appNotificationsService.updatePreferences(user.sub, prefs);
   }
 }

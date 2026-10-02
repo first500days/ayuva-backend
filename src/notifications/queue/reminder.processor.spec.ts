@@ -12,18 +12,46 @@ jest.mock('bullmq', () => ({
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { ReminderProcessor } = require('./reminder.processor');
 
-function buildProcessor() {
+function buildProcessor(
+  user: Record<string, unknown> | null = {
+    email: 'pat@example.com',
+    notificationPrefs: { hideSensitiveOnLockScreen: false },
+  },
+) {
   const deviceTokenModel = { find: jest.fn() };
   const fcmSender = { send: jest.fn().mockResolvedValue(undefined) };
   const config = { get: jest.fn() };
+  const userModel = {
+    findById: jest.fn().mockReturnValue({
+      select: () => ({ lean: () => ({ exec: () => Promise.resolve(user) }) }),
+    }),
+  };
+  const appNotifications = { create: jest.fn().mockResolvedValue(undefined) };
+  const mail = { sendMail: jest.fn().mockResolvedValue(true) };
+  const smsSender = { send: jest.fn().mockResolvedValue(true) };
   const processor = new ReminderProcessor(
     config as any,
     deviceTokenModel as any,
     fcmSender as any,
+    userModel as any,
+    appNotifications as any,
+    mail as any,
+    smsSender as any,
   );
   processor.onModuleInit();
-  return { processor, deviceTokenModel, fcmSender };
+  return { processor, deviceTokenModel, fcmSender, appNotifications, mail, smsSender };
 }
+
+const APPOINTMENT_JOB = {
+  data: {
+    type: ReminderJobName.APPOINTMENT,
+    appointmentId: 'appt-1',
+    userId: 'user-1',
+    providerName: 'Dr. Menon',
+    date: '2026-08-14',
+    time: '10:30',
+  },
+};
 
 describe('ReminderProcessor (BullMQ consumer)', () => {
   it('dispatches a medication reminder to every registered device token', async () => {
@@ -155,5 +183,93 @@ describe('ReminderProcessor (BullMQ consumer)', () => {
     });
 
     expect(fcmSender.send).not.toHaveBeenCalled();
+  });
+
+  describe('U11 channel and category settings', () => {
+    function withDevice(deviceTokenModel: { find: jest.Mock }) {
+      deviceTokenModel.find.mockReturnValue({
+        exec: jest.fn().mockResolvedValue([{ token: 'tok-1' }]),
+      });
+    }
+
+    it('records appointment reminders in the in-app feed under Appointments', async () => {
+      const { deviceTokenModel, appNotifications } = buildProcessor();
+      withDevice(deviceTokenModel);
+
+      await capturedProcessor!(APPOINTMENT_JOB);
+
+      expect(appNotifications.create).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({
+          category: 'appointments',
+          trigger: 'appointment_approaching',
+        }),
+      );
+    });
+
+    it('keeps the feed entry but sends nothing when the category is muted', async () => {
+      const { deviceTokenModel, fcmSender, mail, appNotifications } = buildProcessor({
+        email: 'pat@example.com',
+        notificationPrefs: { appointments: false },
+      });
+      withDevice(deviceTokenModel);
+
+      await capturedProcessor!(APPOINTMENT_JOB);
+
+      expect(appNotifications.create).toHaveBeenCalled();
+      expect(fcmSender.send).not.toHaveBeenCalled();
+      expect(mail.sendMail).not.toHaveBeenCalled();
+    });
+
+    it('still emails a reminder when push is off — channels are independent', async () => {
+      const { deviceTokenModel, fcmSender, mail } = buildProcessor({
+        email: 'pat@example.com',
+        notificationPrefs: { push: false },
+      });
+      withDevice(deviceTokenModel);
+
+      await capturedProcessor!(APPOINTMENT_JOB);
+
+      expect(fcmSender.send).not.toHaveBeenCalled();
+      expect(mail.sendMail).toHaveBeenCalledWith(
+        'pat@example.com',
+        'Upcoming appointment reminder',
+        expect.stringContaining('Dr. Menon'),
+      );
+    });
+
+    it('texts appointment reminders only to a verified number with SMS on', async () => {
+      const verified = buildProcessor({
+        phone: '+919800000000',
+        phoneVerifiedAt: new Date(),
+        notificationPrefs: { sms: true },
+      });
+      withDevice(verified.deviceTokenModel);
+      await capturedProcessor!(APPOINTMENT_JOB);
+      expect(verified.smsSender.send).toHaveBeenCalledWith(
+        '+919800000000',
+        expect.stringContaining('Dr. Menon'),
+      );
+
+      const unverified = buildProcessor({
+        phone: '+919800000000',
+        notificationPrefs: { sms: true },
+      });
+      withDevice(unverified.deviceTokenModel);
+      await capturedProcessor!(APPOINTMENT_JOB);
+      expect(unverified.smsSender.send).not.toHaveBeenCalled();
+    });
+
+    it('hides the detail on the lock screen by default', async () => {
+      const { deviceTokenModel, fcmSender } = buildProcessor({});
+      withDevice(deviceTokenModel);
+
+      await capturedProcessor!(APPOINTMENT_JOB);
+
+      expect(fcmSender.send).toHaveBeenCalledWith(
+        'tok-1',
+        expect.objectContaining({ body: expect.not.stringContaining('Dr. Menon') }),
+      );
+    });
   });
 });

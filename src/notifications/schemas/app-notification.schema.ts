@@ -11,6 +11,19 @@ export type NotificationTrigger =
   | 'report_available'
   | 'permission_expiry';
 
+/**
+ * U11 filter tabs: All · Appointments · Documents · Family. Consent events
+ * (access granted/revoked) show under All so a grant is never silent.
+ */
+export const NOTIFICATION_CATEGORIES = [
+  'appointments',
+  'documents',
+  'family',
+  'consent',
+  'general',
+] as const;
+export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
+
 export type AppNotificationDocument = HydratedDocument<AppNotification>;
 
 @Schema({ timestamps: { createdAt: 'occurredAt', updatedAt: false } })
@@ -20,6 +33,9 @@ export class AppNotification {
 
   @Prop({ required: true })
   trigger: string;
+
+  @Prop({ type: String, enum: NOTIFICATION_CATEGORIES, default: 'general', index: true })
+  category: NotificationCategory;
 
   @Prop({ required: true })
   title: string;

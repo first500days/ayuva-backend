@@ -10,11 +10,13 @@ import { AppointmentsController } from './appointments.controller';
 import { AppointmentsService } from './appointments.service';
 import { AuthModule } from '../../auth/auth.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
+import { SharingModule } from '../sharing/sharing.module';
 
 @Module({
   imports: [
     AuthModule,
     NotificationsModule,
+    SharingModule,
     MongooseModule.forFeature([
       { name: Appointment.name, schema: AppointmentSchema },
       { name: AppointmentSlot.name, schema: AppointmentSlotSchema },

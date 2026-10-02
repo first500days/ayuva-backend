@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminProvidersModule } from '../admin/providers/admin-providers.module';
+import { SharingModule } from '../core/sharing/sharing.module';
 import { User, UserSchema } from '../core/users/schemas/user.schema';
 import { Provider, ProviderSchema } from '../core/providers/schemas/provider.schema';
 import {
@@ -34,6 +35,7 @@ import { PartnerPaymentsService } from './partner-payments.service';
     AuditLogModule,
     NotificationsModule,
     AdminProvidersModule,
+    SharingModule,
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Provider.name, schema: ProviderSchema },

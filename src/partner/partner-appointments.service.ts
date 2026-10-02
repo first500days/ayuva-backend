@@ -18,6 +18,7 @@ import { AuditAction } from '../audit-log/schemas/audit-log.schema';
 import { PartnerContextService } from './partner-context.service';
 import { PartnerRecordsService } from './partner-records.service';
 import { PartnerAppointmentsQueryDto } from './dto/partner.dto';
+import { SharingService } from '../core/sharing/sharing.service';
 
 /** P05 — appointment management. Slot/status changes are the same records the patient app and admin panel read, so they sync in real time. */
 @Injectable()
@@ -30,6 +31,7 @@ export class PartnerAppointmentsService {
     private readonly reminders: ReminderQueueService,
     private readonly notifications: AppNotificationsService,
     private readonly audit: AuditLogService,
+    private readonly sharing: SharingService,
   ) {}
 
   async list(userId: string, query: PartnerAppointmentsQueryDto) {
@@ -96,6 +98,8 @@ export class PartnerAppointmentsService {
     await this.releaseSlot(appointment.slotId);
     await this.reminders.cancelAppointmentReminder(appointment.id);
     await this.reminders.cancelFollowUpReminder(appointment.id);
+    // "This visit" record access ends with the visit.
+    await this.sharing.revokeForAppointment(appointment.id, 'appointment_rejected_by_partner');
     await this.notify(
       appointment,
       'booking_changed',
@@ -118,6 +122,7 @@ export class PartnerAppointmentsService {
     appointment.slotId = newSlot._id;
     await appointment.save();
     await this.releaseSlot(oldSlotId);
+    await this.sharing.syncVisitExpiry(appointment.id);
 
     await this.reminders.cancelAppointmentReminder(appointment.id);
     await this.reminders.cancelFollowUpReminder(appointment.id);
@@ -201,6 +206,7 @@ export class PartnerAppointmentsService {
     return this.notifications
       .create(appointment.patientId.toString(), {
         trigger,
+        category: 'appointments',
         title,
         message,
         lockScreenText: title,

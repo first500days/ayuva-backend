@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ShareGrant, ShareGrantDocument } from '../core/sharing/schemas/share-grant.schema';
+import { describeScope, grantRecordFilter } from '../core/sharing/share-scope';
 import {
   ShareOrganisation,
   ShareOrganisationDocument,
@@ -55,8 +56,10 @@ export class PartnerRecordsService {
     const grant = await this.getActiveGrantOrThrow(provider.id, grantId);
     const partner = await this.userModel.findById(userId).select('fullName').exec();
 
+    // Resolved live from the grant's scope, always pinned to the granting patient.
     const records = await this.recordModel
-      .find({ _id: { $in: grant.recordIds.filter((id) => Types.ObjectId.isValid(id)) } })
+      .find(grantRecordFilter(grant))
+      .sort({ recordDate: -1, uploadedAt: -1 })
       .exec();
 
     grant.accessCount += 1;
@@ -75,10 +78,14 @@ export class PartnerRecordsService {
     const [share] = await this.toShares([grant]);
     return {
       ...share,
+      recordCount: records.length,
       records: records.map((r) => ({
         id: r.id,
         title: r.originalFileName,
         type: r.type,
+        kind: r.kind,
+        providerName: r.providerName,
+        recordDate: (r.recordDate ?? r.uploadedAt)?.toISOString(),
         uploadedAt: r.uploadedAt?.toISOString(),
       })),
     };
@@ -88,11 +95,13 @@ export class PartnerRecordsService {
   async downloadRecord(userId: string, grantId: string, recordId: string) {
     const provider = await this.context.requireLive(userId);
     const grant = await this.getActiveGrantOrThrow(provider.id, grantId);
-    if (!grant.recordIds.includes(recordId) || !Types.ObjectId.isValid(recordId)) {
-      throw new ForbiddenException('This record was not shared with you');
-    }
-    const record = await this.recordModel.findById(recordId);
-    if (!record) throw new NotFoundException('Record not found');
+    // The record must fall inside the grant's scope now (rolling windows move, records get deleted).
+    const record = Types.ObjectId.isValid(recordId)
+      ? await this.recordModel.findOne({
+          $and: [{ _id: new Types.ObjectId(recordId) }, grantRecordFilter(grant)],
+        })
+      : null;
+    if (!record) throw new ForbiddenException('This record was not shared with you');
     const partner = await this.userModel.findById(userId).select('fullName').exec();
 
     const buffer = await this.storage.read(record.fileRef);
@@ -163,7 +172,7 @@ export class PartnerRecordsService {
     for (const g of grants) {
       if (g.expiresAt && g.expiresAt < new Date()) continue;
       const key = g.userId.toString();
-      sharedByPatient.set(key, (sharedByPatient.get(key) ?? 0) + g.recordIds.length);
+      sharedByPatient.set(key, (sharedByPatient.get(key) ?? 0) + (await this.countInScope(g)));
     }
 
     return appointments.map((a) => {
@@ -213,19 +222,26 @@ export class PartnerRecordsService {
     return grant;
   }
 
+  private countInScope(grant: ShareGrantDocument): Promise<number> {
+    return this.recordModel.countDocuments(grantRecordFilter(grant)).exec();
+  }
+
   private async toShares(grants: ShareGrantDocument[]) {
     const users = await this.userModel
       .find({ _id: { $in: grants.map((g) => g.userId) } })
       .select('fullName')
       .exec();
     const nameById = new Map(users.map((u) => [u.id, u.fullName]));
-    return grants.map((g) => ({
+    const counts = await Promise.all(grants.map((g) => this.countInScope(g)));
+    return grants.map((g, i) => ({
       id: g.id,
       patientId: g.userId.toString(),
       patientName: nameById.get(g.userId.toString()) ?? 'Patient',
       scopeKind: g.scopeKind,
+      scopeLabel: describeScope(g),
+      duration: g.duration,
       purpose: g.purpose,
-      recordCount: g.recordIds.length,
+      recordCount: counts[i],
       grantedAt: (g.grantedAt ?? new Date()).toISOString(),
       expiresAt: g.expiresAt?.toISOString(),
       accessCount: g.accessCount,

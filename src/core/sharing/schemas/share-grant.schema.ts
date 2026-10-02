@@ -14,20 +14,37 @@ export class ShareGrant {
   @Prop({ required: true })
   organisationName: string;
 
+  // ShareScope: 'full' | 'rolling_months' | 'types' | 'documents' (v1: 'summary').
+  // Resolved to records at read time by grantRecordFilter (share-scope.ts).
   @Prop({ required: true })
-  scopeKind: string; // 'documents' | 'summary'
+  scopeKind: string;
 
+  // 'documents' scope: exactly these records.
   @Prop({ type: [String], default: [] })
   recordIds: string[];
 
   @Prop({ type: [String], default: [] })
   recordTitles: string[];
 
+  // 'types' scope: these vault folders.
+  @Prop({ type: [String], default: [] })
+  recordTypes: string[];
+
+  // 'rolling_months' scope: window length.
+  @Prop()
+  rollingMonths?: number;
+
   @Prop({ required: true })
   purpose: string;
 
+  // ShareDuration: 'visit' | '30d' | 'until_revoked' (v1 also '24h' | '7d').
   @Prop({ required: true })
   duration: string;
+
+  // 'visit' duration: the appointment it covers. Cancelling or rejecting the
+  // appointment revokes the grant.
+  @Prop({ type: SchemaTypes.ObjectId, index: true, sparse: true })
+  appointmentId?: Types.ObjectId;
 
   @Prop({ default: 'active' })
   status: string; // 'active' | 'expired' | 'revoked'
