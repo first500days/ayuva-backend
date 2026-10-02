@@ -9,7 +9,8 @@ export type NotificationTrigger =
   | 'consultation_summary_uploaded'
   | 'test_booking_confirmed'
   | 'report_available'
-  | 'permission_expiry';
+  | 'permission_expiry'
+  | 'partner_verification_requested';
 
 /**
  * U11 filter tabs: All · Appointments · Documents · Family. Consent events

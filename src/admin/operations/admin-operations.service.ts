@@ -84,6 +84,7 @@ export class AdminOperationsService {
         {
           title: 'Duplicate payment webhook received from Razorpay',
           domain: IssueDomain.BILLING,
+          description: 'Razorpay delivered the payment.captured webhook twice for the same transaction within 3 seconds.',
           severity: IssueSeverity.MEDIUM,
           status: IssueStatus.RESOLVED,
           assignedTo: 'Finance Team',

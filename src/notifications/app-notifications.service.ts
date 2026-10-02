@@ -11,7 +11,12 @@ import {
   NotificationPreferencesDto,
   UpdateNotificationPreferencesDto,
 } from './dto/notification-response.dto';
-import { User, UserDocument } from '../core/users/schemas/user.schema';
+import {
+  User,
+  UserDocument,
+  UserRole,
+  UserStatus,
+} from '../core/users/schemas/user.schema';
 
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPreferencesDto = {
   push: true,
@@ -113,6 +118,24 @@ export class AppNotificationsService {
       category: data.category ?? 'general',
       actionLabel: data.actionLabel ?? 'View',
     });
+  }
+
+  /** Fans one in-app notification out to every active admin (e.g. a partner awaiting verification). */
+  async notifyAdmins(data: Parameters<AppNotificationsService['create']>[1]): Promise<void> {
+    const admins = await this.userModel
+      .find({ role: UserRole.ADMIN, status: UserStatus.ACTIVE })
+      .select('_id')
+      .lean()
+      .exec();
+    if (!admins.length) return;
+    await this.notificationModel.insertMany(
+      admins.map((a) => ({
+        userId: a._id,
+        ...data,
+        category: data.category ?? 'general',
+        actionLabel: data.actionLabel ?? 'View',
+      })),
+    );
   }
 
   private toResponse(n: AppNotificationDocument): AppNotificationResponseDto {
