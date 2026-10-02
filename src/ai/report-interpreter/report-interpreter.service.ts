@@ -31,7 +31,7 @@ interface MockTemplate {
 // Deterministic, type-appropriate placeholder content standing in for the
 // real Report Interpreter's model output (TRD §5.3) — never a diagnosis.
 const TEMPLATES: Record<MedicalRecordType, MockTemplate> = {
-  [MedicalRecordType.BLOOD]: {
+  [MedicalRecordType.LAB_REPORT]: {
     summaryText:
       'This blood panel checks how key body systems are functioning. Most values fall within the typical reference range; anything flagged below is worth discussing with your provider — it is not a diagnosis.',
     highlightedValues: [
@@ -52,7 +52,7 @@ const TEMPLATES: Record<MedicalRecordType, MockTemplate> = {
       'Does this result change anything about my current medications?',
     ],
   },
-  [MedicalRecordType.IMAGING]: {
+  [MedicalRecordType.SCAN]: {
     summaryText:
       'This imaging report describes what was visible in the scan in plain language. Findings noted below are for your awareness ahead of your appointment — interpretation and next steps are for your provider to explain.',
     highlightedValues: [
@@ -103,55 +103,48 @@ const TEMPLATES: Record<MedicalRecordType, MockTemplate> = {
       'Is there anything I should avoid while recovering?',
     ],
   },
-  [MedicalRecordType.ECG]: {
+  [MedicalRecordType.INSURANCE]: {
     summaryText:
-      'This ECG report records the heart\'s electrical activity. Below are key findings — please discuss any flagged items with your cardiologist or provider.',
+      'This insurance document describes your cover. Below is a plain-language summary of the terms it uses — confirm exact entitlements with your insurer.',
     highlightedValues: [
-      { label: 'Heart Rate', valueOptions: ['72 bpm', '110 bpm', '68 bpm'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.HIGH, HighlightedValueStatus.NORMAL] },
-      { label: 'Rhythm', valueOptions: ['Normal sinus rhythm', 'Irregular rhythm noted', 'Normal sinus rhythm'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.HIGH, HighlightedValueStatus.NORMAL] },
+      { label: 'Document Type', valueOptions: ['Policy schedule', 'Claim form', 'Cashless approval'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
     ],
     glossaryTerms: [
-      { term: 'ECG', definition: 'A test that records the electrical signals in your heart.' },
-      { term: 'Sinus rhythm', definition: 'A normal heartbeat pattern originating from the heart\'s natural pacemaker.' },
+      { term: 'Sum insured', definition: 'The maximum amount the policy pays out in a policy year.' },
+      { term: 'Co-payment', definition: 'The share of each claim that you pay yourself.' },
     ],
     suggestedQuestions: [
-      'Do these findings explain any symptoms I\'ve had?',
-      'Will I need a repeat ECG, and if so when?',
-      'Should I see a cardiologist based on this result?',
+      'Is this treatment covered under my policy?',
+      'What documents does the hospital need for a cashless claim?',
     ],
   },
-  [MedicalRecordType.CONSULTATION]: {
+  [MedicalRecordType.VACCINATION]: {
     summaryText:
-      'This consultation note summarizes your visit. Below are the key discussion points and agreed next steps — follow up with your provider if anything is unclear.',
+      'This is a vaccination record. Below is a plain-language summary of the terms it uses — your provider can confirm whether any doses are due.',
     highlightedValues: [
-      { label: 'Consultation Type', valueOptions: ['In-person', 'Video', 'Phone'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
-      { label: 'Follow-up Planned', valueOptions: ['Yes', 'No', 'Yes'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
+      { label: 'Doses Listed', valueOptions: ['1 dose', '2 doses', '3 doses'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
     ],
     glossaryTerms: [
-      { term: 'Consultation', definition: 'A meeting with a healthcare provider to discuss symptoms, diagnosis, or treatment.' },
-      { term: 'Follow-up', definition: 'A planned next appointment to check progress or review results.' },
+      { term: 'Booster', definition: 'An additional dose given after the first course to maintain protection.' },
+      { term: 'Batch number', definition: 'The manufacturing lot of the vaccine, recorded for traceability.' },
     ],
     suggestedQuestions: [
-      'What were the main takeaways from this consultation?',
-      'Are there any action items I should complete before the next visit?',
-      'Who should I contact if my symptoms change?',
+      'Am I due for any further doses?',
+      'Do I need this record for travel or school?',
     ],
   },
-  [MedicalRecordType.LAB_REPORT]: {
+  [MedicalRecordType.CERTIFICATE]: {
     summaryText:
-      'This lab report contains test results from the diagnostic lab. Below are key findings — share any flagged items with your referring clinician.',
+      'This is a medical certificate. Below is a plain-language summary of the terms it uses — the issuing provider can clarify anything that is unclear.',
     highlightedValues: [
-      { label: 'Report Status', valueOptions: ['Final', 'Preliminary', 'Final'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
-      { label: 'Abnormal Flags', valueOptions: ['None', '2 flagged', '1 flagged'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.HIGH, HighlightedValueStatus.NORMAL] },
+      { label: 'Certificate Type', valueOptions: ['Fitness certificate', 'Sick leave', 'Disability certificate'], statusOptions: [HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL, HighlightedValueStatus.NORMAL] },
     ],
     glossaryTerms: [
-      { term: 'Lab report', definition: 'A document summarizing results from laboratory tests ordered by a clinician.' },
-      { term: 'Reference range', definition: 'The expected values for a healthy person — used to interpret test results.' },
+      { term: 'Validity', definition: 'The period for which the certificate is accepted.' },
     ],
     suggestedQuestions: [
-      'What do the flagged values mean in my context?',
-      'Do I need to repeat any of these tests?',
-      'How should I share these results with my care team?',
+      'Who needs a copy of this certificate?',
+      'Does this certificate need to be renewed?',
     ],
   },
 };

@@ -89,7 +89,7 @@ const patientSeed = {
 
 const otherPatients = [
   { name: 'Marcus Bell', email: 'marcus.b@example.com', age: 58 },
-  { name: 'Lena Sørensen', email: 'lena.s@example.com', age: 34 },
+  { name: 'Lena SÃ¸rensen', email: 'lena.s@example.com', age: 34 },
   { name: 'Isabela Costa', email: 'isabela.c@example.com', age: 29 },
   { name: 'Kwame Adjei', email: 'kwame.a@example.com', age: 61 },
   { name: 'Yuki Tanaka', email: 'yuki.t@example.com', age: 47 },
@@ -100,7 +100,7 @@ const medicationsSeed = [
   {
     name: 'Amlodipine',
     dosage: '5 mg',
-    frequency: 'Once daily · morning',
+    frequency: 'Once daily Â· morning',
     scheduleTimes: ['08:00'],
     taken: true,
     refillThresholdDays: 3,
@@ -117,7 +117,7 @@ const medicationsSeed = [
   {
     name: 'Atorvastatin',
     dosage: '20 mg',
-    frequency: 'Once daily · night',
+    frequency: 'Once daily Â· night',
     scheduleTimes: ['21:30'],
     taken: false,
     refillThresholdDays: 3,
@@ -199,11 +199,11 @@ const appointmentsSeed = [
 const reportsSeed = [
   {
     key: 'r1',
-    type: MedicalRecordType.BLOOD,
+    type: MedicalRecordType.LAB_REPORT,
     fileRef: 'records/amara-okafor/lipid-panel-2026-08-02.pdf',
     uploadedAt: new Date('2026-08-02'),
     summaryText:
-      'Your good cholesterol (HDL) is healthy. LDL is a touch high — your doctor may consider adjusting your statin dose.',
+      'Your good cholesterol (HDL) is healthy. LDL is a touch high â€” your doctor may consider adjusting your statin dose.',
     findings: [
       {
         label: 'Total cholesterol',
@@ -235,11 +235,11 @@ const reportsSeed = [
   },
   {
     key: 'r2',
-    type: MedicalRecordType.IMAGING,
+    type: MedicalRecordType.SCAN,
     fileRef: 'records/amara-okafor/resting-ecg-2026-07-28.pdf',
     uploadedAt: new Date('2026-07-28'),
     summaryText:
-      'A minor rhythm variation was noted. Dr. Menon will review this at your visit — it is not an urgent finding.',
+      'A minor rhythm variation was noted. Dr. Menon will review this at your visit â€” it is not an urgent finding.',
     findings: [
       {
         label: 'Heart rate',
@@ -265,7 +265,7 @@ const reportsSeed = [
   },
   {
     key: 'r3',
-    type: MedicalRecordType.BLOOD,
+    type: MedicalRecordType.LAB_REPORT,
     fileRef: 'records/amara-okafor/bp-log-2026-07-25.pdf',
     uploadedAt: new Date('2026-07-25'),
     summaryText:
@@ -339,7 +339,7 @@ const feedbackSeed = [
     status: FeedbackStatus.OPEN,
   },
   {
-    patientName: 'Lena Sørensen',
+    patientName: 'Lena SÃ¸rensen',
     type: FeedbackType.FEEDBACK,
     title: 'Great care journey',
     description: 'The care journey helped me prepare for my visit.',
@@ -530,7 +530,7 @@ async function seed() {
   }
 
   // Real, non-stale bookable slots for Provider Discovery -> booking (FR-7.1/7.2,
-  // FR-14.1-14.3) — routed through AdminProvidersService.updateSchedule so it's
+  // FR-14.1-14.3) â€” routed through AdminProvidersService.updateSchedule so it's
   // the exact same schedule-set + slot-regeneration path an admin uses (Session 7),
   // not a hand-inserted slot with a hardcoded date that goes stale after ~2 weeks.
   // Computed relative to seed-run time, so re-seeding always yields a fresh
@@ -621,7 +621,7 @@ async function seed() {
       recommendedCareLevel: triageResult.recommendedCareLevel,
     },
     latencyMs: 1240,
-    // Auto-flagged: riskLevel is Moderate-High (TRD §5.4 escalation rule).
+    // Auto-flagged: riskLevel is Moderate-High (TRD Â§5.4 escalation rule).
     flagged: true,
     reviewStatus: 'none',
   });

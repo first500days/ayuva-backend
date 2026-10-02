@@ -1,14 +1,19 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
+  Patch,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
@@ -27,6 +32,7 @@ import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { RecordsService } from './records.service';
 import { UploadRecordDto } from './dto/upload-record.dto';
 import { QueryRecordsDto } from './dto/query-records.dto';
+import { UpdateRecordDto } from './dto/update-record.dto';
 import { AttachAppointmentDto } from './dto/attach-appointment.dto';
 import { MedicalRecordResponseDto } from './dto/medical-record-response.dto';
 import { MedicalRecordDetailResponseDto } from './dto/medical-record-detail-response.dto';
@@ -77,19 +83,68 @@ export class RecordsController {
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadRecordDto,
   ): Promise<MedicalRecordResponseDto> {
-    return this.recordsService.upload(user.sub, file, dto.type);
+    return this.recordsService.upload(user.sub, file, dto);
   }
 
   @Get()
   @ApiOperation({
-    summary: 'List records, optionally filtered by category (FR-8.4)',
+    summary:
+      'List records — folder, search by name/tag/provider, tag, kind and date filters (FR-8.4, U08)',
   })
   @ApiOkResponse({ type: [MedicalRecordResponseDto] })
   findAll(
     @CurrentUser() user: JwtPayload,
     @Query() query: QueryRecordsDto,
   ): Promise<MedicalRecordResponseDto[]> {
-    return this.recordsService.findAll(user.sub, query.type);
+    return this.recordsService.findAll(user.sub, query);
+  }
+
+  @Get(':id/file')
+  @ApiOperation({ summary: "Download the record's file (U08 row menu)" })
+  @AuditEvent(AuditAction.RECORD_DOWNLOAD, 'MedicalRecord')
+  @UseInterceptors(AuditLogInterceptor)
+  async download(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, fileName, mimeType } = await this.recordsService.download(
+      user.sub,
+      id,
+    );
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${fileName.replace(/["\r\n]/g, '')}"`,
+    );
+    res.send(buffer);
+  }
+
+  @Patch(':id')
+  @ApiOperation({
+    summary: 'Rename, move folder, tag, set provider/date (U08 row menu)',
+  })
+  @ApiOkResponse({ type: MedicalRecordResponseDto })
+  @AuditEvent(AuditAction.RECORD_UPDATE, 'MedicalRecord')
+  @UseInterceptors(AuditLogInterceptor)
+  update(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: UpdateRecordDto,
+  ): Promise<MedicalRecordResponseDto> {
+    return this.recordsService.update(user.sub, id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete a record and its file (U08 row menu)' })
+  @AuditEvent(AuditAction.RECORD_DELETE, 'MedicalRecord')
+  @UseInterceptors(AuditLogInterceptor)
+  remove(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ): Promise<void> {
+    return this.recordsService.remove(user.sub, id);
   }
 
   @Get(':id')

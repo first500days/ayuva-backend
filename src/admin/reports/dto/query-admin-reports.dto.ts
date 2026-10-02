@@ -1,6 +1,10 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IsEnum, IsOptional } from 'class-validator';
-import { MedicalRecordType } from '../../../core/records/schemas/medical-record.schema';
+import {
+  MedicalRecordType,
+  normalizeRecordType,
+} from '../../../core/records/schemas/medical-record.schema';
 import { ReportAiStatus } from '../../../ai/report-interpreter/schemas/report-interpretation.schema';
 
 export class QueryAdminReportsDto {
@@ -15,6 +19,7 @@ export class QueryAdminReportsDto {
 
   @ApiPropertyOptional({ enum: MedicalRecordType })
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) => normalizeRecordType(value))
   @IsEnum(MedicalRecordType)
   type?: MedicalRecordType;
 }

@@ -47,6 +47,16 @@ export enum AuditAction {
   PASSWORD_RESET_REQUESTED = 'password_reset_requested',
   PASSWORD_RESET_COMPLETED = 'password_reset_completed',
   ACCOUNT_DELETED = 'account_deleted',
+  RECORD_UPDATE = 'record_update',
+  RECORD_DELETE = 'record_delete',
+  // U10: grant, scope change and revoke all reach the admin audit log.
+  SHARE_GRANT = 'share_grant',
+  SHARE_REVOKE = 'share_revoke',
+  // U12 family accounts.
+  FAMILY_MEMBER_ADD = 'family_member_add',
+  FAMILY_PERMISSIONS_UPDATE = 'family_permissions_update',
+  FAMILY_LINK_REVOKE = 'family_link_revoke',
+  FAMILY_MEMBER_ACCESS = 'family_member_access',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;

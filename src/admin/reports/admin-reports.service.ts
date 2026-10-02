@@ -21,7 +21,7 @@ import { AdminReportResponseDto } from './dto/admin-report-response.dto';
 // generic binary stream rather than inventing an OCR/mimetype-detection pipeline.
 const CONTENT_TYPE_BY_RECORD_TYPE: Partial<Record<MedicalRecordType, string>> =
   {
-    [MedicalRecordType.IMAGING]: 'image/jpeg',
+    [MedicalRecordType.SCAN]: 'image/jpeg',
   };
 const DEFAULT_CONTENT_TYPE = 'application/octet-stream';
 

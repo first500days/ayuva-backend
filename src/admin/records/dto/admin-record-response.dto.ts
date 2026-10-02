@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { MedicalRecordType } from '../../../core/records/schemas/medical-record.schema';
 
 export class AdminRecordResponseDto {
   @ApiPropertyOptional({ example: '64f0c8e2b1a2c3d4e5f6a7b8' })
@@ -10,7 +11,7 @@ export class AdminRecordResponseDto {
   @ApiPropertyOptional({ example: 'John Doe' })
   patientName: string;
 
-  @ApiPropertyOptional({ enum: ['blood', 'imaging', 'prescription', 'discharge', 'ecg', 'consultation'] })
+  @ApiPropertyOptional({ enum: MedicalRecordType })
   type: string;
 
   @ApiPropertyOptional({ example: 'blood_test.pdf' })

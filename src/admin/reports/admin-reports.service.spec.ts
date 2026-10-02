@@ -65,7 +65,7 @@ describe('AdminReportsService', () => {
         exec: jest.fn().mockResolvedValue({
           id: RECORD_ID,
           patientId: PATIENT_ID,
-          type: MedicalRecordType.BLOOD,
+          type: MedicalRecordType.LAB_REPORT,
           uploadedAt: new Date('2026-08-01T00:00:00.000Z'),
         }),
       });
@@ -101,7 +101,7 @@ describe('AdminReportsService', () => {
         exec: jest.fn().mockResolvedValue({
           id: RECORD_ID,
           fileRef: 'records/patient-1/file.jpg',
-          type: MedicalRecordType.IMAGING,
+          type: MedicalRecordType.SCAN,
         }),
       });
       storageService.read.mockResolvedValue(Buffer.from('binary-data'));
@@ -121,7 +121,7 @@ describe('AdminReportsService', () => {
         exec: jest.fn().mockResolvedValue({
           id: RECORD_ID,
           fileRef: 'records/patient-1/file.pdf',
-          type: MedicalRecordType.BLOOD,
+          type: MedicalRecordType.LAB_REPORT,
         }),
       });
       storageService.read.mockResolvedValue(Buffer.from('binary-data'));
