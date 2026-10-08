@@ -8,6 +8,8 @@ export enum AiService {
   CARE_JOURNEY = 'careJourney',
   REPORT_INTERPRETER = 'reportInterpreter',
   ASSISTANT = 'assistant',
+  // Partner Portal AYUVA Scribe — structures a doctor's own notes (never clinical advice).
+  SCRIBE = 'scribe',
 }
 
 export enum AiReviewStatus {

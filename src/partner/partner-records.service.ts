@@ -189,6 +189,9 @@ export class PartnerRecordsService {
         followUpOfId: a.followUpOfId?.toString(),
         rejectionReason: a.rejectionReason,
         sharedRecordCount: sharedByPatient.get(a.patientId.toString()) ?? 0,
+        assignedMemberId: a.assignedMemberId?.toString() ?? null,
+        assignedName: a.assignedName ?? null,
+        department: a.department ?? null,
       };
     });
   }

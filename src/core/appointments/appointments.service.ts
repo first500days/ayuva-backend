@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -30,6 +31,8 @@ import {
 import { AppointmentResponseDto } from './dto/appointment-response.dto';
 import { ReminderQueueService } from '../../notifications/queue/reminder-queue.service';
 import { SharingService } from '../sharing/sharing.service';
+import { PartnerNotifierService } from '../../partner/notify/partner-notifier.service';
+import { PartnerTrigger } from '../../partner/notify/partner-triggers';
 
 export type AppointmentsScope = 'upcoming' | 'past';
 
@@ -49,6 +52,10 @@ export class AppointmentsService {
     private readonly providerModel: Model<ProviderDocument>,
     private readonly reminderQueueService: ReminderQueueService,
     private readonly sharingService: SharingService,
+    // Partner Notification Center ("New patient booking" etc.). Optional so unit
+    // tests that build the service by hand don't need to supply it.
+    @Optional()
+    private readonly partnerNotifier?: PartnerNotifierService,
   ) {}
 
   async create(
@@ -94,6 +101,17 @@ export class AppointmentsService {
       // gated behind the "Set reminder" toggle, which is specifically the
       // pre-visit reminder.
       await this.scheduleFollowUp(appointment, provider, slot);
+      await this.notifyPartner(
+        appointment,
+        slot,
+        PartnerTrigger.NEW_BOOKING,
+        provider.requiresApproval
+          ? 'New booking request'
+          : 'New patient booking',
+        provider.requiresApproval
+          ? `{patient} requested ${this.describeSlot(slot)} — accept or decline it in Appointments.`
+          : `{patient} booked ${this.describeSlot(slot)}.`,
+      );
       return this.toResponse(appointment, provider, slot);
     } catch (err) {
       // Compensate: give the slot back if we booked it but couldn't persist the appointment.
@@ -337,6 +355,13 @@ export class AppointmentsService {
     await this.scheduleFollowUp(appointment, provider ?? undefined, newSlot);
     // "This visit" record access follows the visit to its new time.
     await this.sharingService.syncVisitExpiry(appointment.id);
+    await this.notifyPartner(
+      appointment,
+      newSlot,
+      PartnerTrigger.BOOKING_CHANGED,
+      'Booking rescheduled',
+      `{patient}'s appointment moved to ${this.describeSlot(newSlot)}.`,
+    );
 
     return this.toResponse(appointment, provider ?? undefined, newSlot);
   }
@@ -372,11 +397,50 @@ export class AppointmentsService {
       this.providerModel.findById(appointment.providerId),
       this.slotModel.findById(appointment.slotId),
     ]);
+    await this.notifyPartner(
+      appointment,
+      slot ?? undefined,
+      PartnerTrigger.BOOKING_CHANGED,
+      'Booking cancelled',
+      `{patient} cancelled ${slot ? this.describeSlot(slot) : 'their appointment'} — the slot is open again.`,
+    );
     return this.toResponse(
       appointment,
       provider ?? undefined,
       slot ?? undefined,
     );
+  }
+
+  /** Partner Notification Center hook — best-effort, never fails the patient's action. */
+  private async notifyPartner(
+    appointment: AppointmentDocument,
+    slot: AppointmentSlotDocument | undefined,
+    trigger: PartnerTrigger,
+    title: string,
+    message: string,
+  ): Promise<void> {
+    await this.partnerNotifier?.emit(appointment.providerId, {
+      trigger,
+      title,
+      message,
+      patientId: appointment.patientId.toString(),
+      safeMessage:
+        trigger === PartnerTrigger.NEW_BOOKING
+          ? `${title}${slot ? ` for ${this.describeSlot(slot)}` : ''}.`
+          : `${title}${slot ? ` (${this.describeSlot(slot)})` : ''}.`,
+      route: '/partner/appointments',
+      params: { appointmentId: appointment.id },
+      data: {
+        appointmentId: appointment.id,
+        status: appointment.status,
+        date: slot?.date.toISOString().slice(0, 10),
+        time: slot?.time,
+      },
+    });
+  }
+
+  private describeSlot(slot: AppointmentSlotDocument): string {
+    return `${slot.date.toISOString().slice(0, 10)} at ${slot.time}`;
   }
 
   private async setReminder(

@@ -23,6 +23,7 @@ import { BlockedDateDto } from '../admin/providers/dto/blocked-date.dto';
 import { PartnerContextService } from './partner-context.service';
 import { PartnerRecordsService } from './partner-records.service';
 import { UpdatePartnerProfileDto } from './dto/partner.dto';
+import { roleLabel } from './rbac/partner-permissions';
 
 const EDITABLE_FIELDS = [
   'name',
@@ -36,6 +37,7 @@ const EDITABLE_FIELDS = [
   'profileImageUrl',
   'requiresApproval',
   'locations',
+  'departments',
 ] as const;
 
 @Injectable()
@@ -50,17 +52,51 @@ export class PartnerProfileService {
     private readonly records: PartnerRecordsService,
   ) {}
 
+  /**
+   * Profile plus who is signed in: their role inside the organisation and the
+   * effective permissions the portal renders its sidebar from. Works while
+   * the organisation is still awaiting verification.
+   */
   async getMe(userId: string) {
-    return this.toProfile(await this.context.getProvider(userId));
+    const ctx = await this.context.resolve(userId);
+    const m = ctx.member;
+    return {
+      ...this.toProfile(ctx.provider),
+      orgType: ctx.orgType,
+      membership: {
+        id: m.id,
+        role: m.role,
+        roleLabel: roleLabel(ctx.orgType, m.role),
+        isOwner: m.isOwner,
+        fullName: m.fullName,
+        email: m.email,
+        title: m.title ?? null,
+        department: m.department ?? null,
+        registrationNumber: m.registrationNumber ?? null,
+        phone: m.phone ?? null,
+        permissions: ctx.permissions,
+      },
+    };
   }
 
   async updateProfile(userId: string, dto: UpdatePartnerProfileDto) {
     const provider = await this.context.requireLive(userId);
     for (const key of EDITABLE_FIELDS) {
-      if (dto[key] !== undefined) provider.set(key, dto[key]);
+      if (dto[key] !== undefined) {
+        provider.set(
+          key,
+          key === 'departments'
+            ? [
+                ...new Set(
+                  (dto.departments ?? []).map((d) => d.trim()).filter(Boolean),
+                ),
+              ]
+            : dto[key],
+        );
+      }
     }
     await provider.save();
-    return this.toProfile(provider);
+    return this.getMe(userId);
   }
 
   async updateSchedule(userId: string, dto: ProviderScheduleDto) {
@@ -192,6 +228,7 @@ export class PartnerProfileService {
       profileImageUrl: p.profileImageUrl,
       requiresApproval: p.requiresApproval ?? false,
       locations: p.locations,
+      departments: p.departments ?? [],
       rating: p.rating,
       schedule: p.schedule
         ? {

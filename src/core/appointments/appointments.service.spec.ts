@@ -34,12 +34,14 @@ function buildService() {
     revokeForAppointment: jest.fn().mockResolvedValue(0),
     syncVisitExpiry: jest.fn().mockResolvedValue(undefined),
   };
+  const partnerNotifier = { emit: jest.fn().mockResolvedValue(undefined) };
   const service = new AppointmentsService(
     appointmentModel as any,
     slotModel as any,
     providerModel as any,
     reminderQueueService as any,
     sharingService as any,
+    partnerNotifier as any,
   );
   return {
     service,

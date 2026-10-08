@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -28,6 +29,8 @@ import {
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { AppNotificationsService } from '../../notifications/app-notifications.service';
+import { PartnerNotifierService } from '../../partner/notify/partner-notifier.service';
+import { PartnerTrigger } from '../../partner/notify/partner-triggers';
 import {
   CreateGrantDto,
   ShareGrantResponseDto,
@@ -77,6 +80,9 @@ export class SharingService {
     private readonly slotModel: Model<AppointmentSlotDocument>,
     private readonly audit: AuditLogService,
     private readonly notifications: AppNotificationsService,
+    // Tells the receiving partner organisation (Notification Center "Patient shared records").
+    @Optional()
+    private readonly partnerNotifier?: PartnerNotifierService,
   ) {}
 
   /** Share recipients: verified partners only (an org is `connected` once its provider is approved). */
@@ -189,6 +195,20 @@ export class SharingService {
     });
     // A grant is never silent to the patient (U11).
     await this.notifyConsentEvent(userId, grant, 'granted', scopeLabel);
+    await this.partnerNotifier?.emit(org.providerId, {
+      trigger: PartnerTrigger.RECORDS_SHARED,
+      title: 'Patient shared records',
+      message: `{patient} shared ${scopeLabel.toLowerCase()} with you${grant.purpose ? ` — "${grant.purpose}"` : ''}.`,
+      patientId: userId,
+      safeMessage: 'A patient shared Medical Vault records with your organisation.',
+      route: '/partner/patients',
+      params: { patientId: userId },
+      data: {
+        grantId: grant.id,
+        scopeKind: grant.scopeKind,
+        expiresAt: expiresAt?.toISOString(),
+      },
+    });
 
     return this.toGrantResponse(grant);
   }

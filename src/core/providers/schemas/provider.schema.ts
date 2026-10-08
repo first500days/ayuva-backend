@@ -182,6 +182,12 @@ export class Provider {
 
   @Prop()
   verificationNotes?: string;
+
+  // Partner Portal: the organisation's departments (hospital OPD/IPD units,
+  // lab sections) — used for staff, appointment and ward assignment and for
+  // department analytics.
+  @Prop({ type: [String], default: [] })
+  departments?: string[];
 }
 
 export const ProviderSchema = SchemaFactory.createForClass(Provider);

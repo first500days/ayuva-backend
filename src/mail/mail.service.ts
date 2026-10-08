@@ -21,9 +21,12 @@ export class MailService {
     to: string,
     subject: string,
     html: string,
+    attachments?: { filename: string; content: Buffer }[],
   ): Promise<boolean> {
     if (!this.resend) {
-      this.logger.log(`[log-only mail] -> to=${to} subject="${subject}"`);
+      this.logger.log(
+        `[log-only mail] -> to=${to} subject="${subject}"${attachments?.length ? ` attachments=${attachments.length}` : ''}`,
+      );
       return true;
     }
 
@@ -35,6 +38,7 @@ export class MailService {
         to,
         subject,
         html,
+        ...(attachments?.length && { attachments }),
       });
       this.logger.log(`Email sent to ${to}: ${subject}`);
       return true;

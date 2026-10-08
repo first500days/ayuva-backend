@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
@@ -9,6 +9,7 @@ import {
   IsIn,
   IsInt,
   IsISO8601,
+  IsMongoId,
   IsNumber,
 
   IsOptional,
@@ -115,6 +116,13 @@ export class UpdatePartnerProfileDto {
   @ValidateNested({ each: true })
   @Type(() => PartnerLocationDto)
   locations?: PartnerLocationDto[];
+
+  @ApiPropertyOptional({ type: [String], description: 'Departments / units, e.g. Cardiology, OPD, ICU' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(40)
+  @IsString({ each: true })
+  departments?: string[];
 }
 
 export class PartnerAppointmentsQueryDto {
@@ -122,6 +130,22 @@ export class PartnerAppointmentsQueryDto {
   @IsOptional()
   @IsIn(['incoming', 'today', 'upcoming', 'completed'])
   scope?: 'incoming' | 'today' | 'upcoming' | 'completed';
+
+  @ApiPropertyOptional({ description: 'Only appointments assigned to me' })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true' || value === '1')
+  @IsBoolean()
+  mine?: boolean;
+}
+
+/** Hospital/clinic front desk: who sees this patient, under which department. */
+export class AssignAppointmentDto {
+  @ApiPropertyOptional({ nullable: true, description: 'Staff member id; null to unassign' })
+  @IsOptional()
+  @IsMongoId()
+  memberId?: string | null;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() department?: string;
 }
 
 export class RejectAppointmentDto {

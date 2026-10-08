@@ -19,6 +19,11 @@ import { PartnerContextService } from './partner-context.service';
 import { PartnerRecordsService } from './partner-records.service';
 import { PartnerAppointmentsQueryDto } from './dto/partner.dto';
 import { SharingService } from '../core/sharing/sharing.service';
+import {
+  MemberStatus,
+  PartnerMember,
+  PartnerMemberDocument,
+} from './staff/schemas/partner-member.schema';
 
 /** P05 — appointment management. Slot/status changes are the same records the patient app and admin panel read, so they sync in real time. */
 @Injectable()
@@ -26,6 +31,7 @@ export class PartnerAppointmentsService {
   constructor(
     @InjectModel(Appointment.name) private readonly appointmentModel: Model<AppointmentDocument>,
     @InjectModel(AppointmentSlot.name) private readonly slotModel: Model<AppointmentSlotDocument>,
+    @InjectModel(PartnerMember.name) private readonly memberModel: Model<PartnerMemberDocument>,
     private readonly context: PartnerContextService,
     private readonly records: PartnerRecordsService,
     private readonly reminders: ReminderQueueService,
@@ -35,9 +41,9 @@ export class PartnerAppointmentsService {
   ) {}
 
   async list(userId: string, query: PartnerAppointmentsQueryDto) {
-    const provider = await this.context.requireLive(userId);
+    const { provider, member } = await this.context.requireLiveContext(userId);
     const appointments = await this.appointmentModel
-      .find({ providerId: provider._id })
+      .find({ providerId: provider._id, ...(query.mine && { assignedMemberId: member._id }) })
       .sort({ createdAt: -1 })
       .exec();
     const slots = await this.slotModel
@@ -73,6 +79,40 @@ export class PartnerAppointmentsService {
     return described.sort(
       (a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time),
     );
+  }
+
+  /** Assigns the visit to a practitioner (and department) — hospital OPD / multi-doctor clinics. */
+  async assign(userId: string, id: string, memberId: string | null | undefined, department?: string) {
+    const { appointment, providerId } = await this.load(userId, id);
+    if (memberId === null) {
+      appointment.assignedMemberId = undefined;
+      appointment.assignedName = undefined;
+    } else if (memberId) {
+      const member = Types.ObjectId.isValid(memberId)
+        ? await this.memberModel.findOne({ _id: memberId, providerId, status: MemberStatus.ACTIVE })
+        : null;
+      if (!member) throw new BadRequestException('That staff member is not active in your organisation');
+      appointment.assignedMemberId = member._id;
+      appointment.assignedName = member.fullName;
+      if (!department && member.department) appointment.department = member.department;
+      if (member.userId.toString() !== userId) {
+        await this.notifications
+          .create(member.userId.toString(), {
+            trigger: 'partner_appointment_assignment',
+            category: 'general',
+            title: 'Appointment assigned to you',
+            message: 'A patient visit was assigned to you — open Appointments for details.',
+            lockScreenText: 'New assignment',
+            actionLabel: 'Open',
+            actionRoute: '/partner/appointments',
+            actionParams: { appointmentId: appointment.id },
+          })
+          .catch(() => undefined);
+      }
+    }
+    if (department !== undefined) appointment.department = department.trim() || undefined;
+    await appointment.save();
+    return this.one(userId, id, AuditAction.PARTNER_APPOINTMENT_UPDATE, 'assigned');
   }
 
   async accept(userId: string, id: string) {

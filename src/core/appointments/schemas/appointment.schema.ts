@@ -78,6 +78,25 @@ export class Appointment {
 
   @Prop()
   rejectionReason?: string;
+
+  // Partner Portal: the practitioner (PartnerMember) seeing this patient, e.g.
+  // a hospital front desk assigning an OPD booking to a doctor.
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'PartnerMember',
+    index: true,
+    sparse: true,
+  })
+  assignedMemberId?: Types.ObjectId;
+
+  @Prop()
+  assignedName?: string;
+
+  // Department the visit is booked under — drives department analytics.
+  @Prop()
+  department?: string;
+
+  createdAt?: Date;
 }
 
 export const AppointmentSchema = SchemaFactory.createForClass(Appointment);

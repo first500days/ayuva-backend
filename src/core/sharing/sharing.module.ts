@@ -20,12 +20,14 @@ import { SharingService } from './sharing.service';
 import { AuthModule } from '../../auth/auth.module';
 import { AuditLogModule } from '../../audit-log/audit-log.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
+import { PartnerNotifyModule } from '../../partner/notify/partner-notify.module';
 
 @Module({
   imports: [
     AuthModule,
     AuditLogModule,
     NotificationsModule,
+    PartnerNotifyModule,
     MongooseModule.forFeature([
       { name: ShareGrant.name, schema: ShareGrantSchema },
       { name: ShareOrganisation.name, schema: ShareOrganisationSchema },

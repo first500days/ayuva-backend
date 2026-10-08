@@ -57,6 +57,24 @@ export enum AuditAction {
   FAMILY_PERMISSIONS_UPDATE = 'family_permissions_update',
   FAMILY_LINK_REVOKE = 'family_link_revoke',
   FAMILY_MEMBER_ACCESS = 'family_member_access',
+  // Partner Portal staff, clinical and operations actions ("Security & Logs").
+  PARTNER_STAFF_INVITE = 'partner_staff_invite',
+  PARTNER_STAFF_UPDATE = 'partner_staff_update',
+  PARTNER_STAFF_SUSPEND = 'partner_staff_suspend',
+  PARTNER_STAFF_ACCEPT = 'partner_staff_accept',
+  PARTNER_SETTINGS_UPDATE = 'partner_settings_update',
+  PARTNER_PATIENT_VIEW = 'partner_patient_view',
+  PARTNER_NOTE_SIGN = 'partner_note_sign',
+  PARTNER_NOTE_SHARE = 'partner_note_share',
+  PARTNER_RX_SIGN = 'partner_rx_sign',
+  PARTNER_RX_CANCEL = 'partner_rx_cancel',
+  PARTNER_REFERRAL_CREATE = 'partner_referral_create',
+  PARTNER_REFERRAL_UPDATE = 'partner_referral_update',
+  PARTNER_LAB_ORDER_UPDATE = 'partner_lab_order_update',
+  PARTNER_LAB_REPORT_RELEASE = 'partner_lab_report_release',
+  PARTNER_IMAGING_VIEW = 'partner_imaging_view',
+  PARTNER_ADMISSION_UPDATE = 'partner_admission_update',
+  PARTNER_CLAIM_UPDATE = 'partner_claim_update',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;
