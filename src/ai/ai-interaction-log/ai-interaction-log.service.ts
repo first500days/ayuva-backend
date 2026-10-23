@@ -16,6 +16,8 @@ export interface RecordAiInteractionParams {
   latencyMs: number;
   source: AiSource;
   flagged?: boolean;
+  surfaceKey?: string;
+  promptVersion?: string;
 }
 
 /**
@@ -38,6 +40,8 @@ export class AiInteractionLogService {
       latencyMs: params.latencyMs,
       source: params.source,
       flagged: params.flagged ?? false,
+      surfaceKey: params.surfaceKey,
+      promptVersion: params.promptVersion,
     });
   }
 }

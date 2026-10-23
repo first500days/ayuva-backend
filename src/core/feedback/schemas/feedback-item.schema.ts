@@ -37,6 +37,53 @@ export enum FeedbackCategory {
   OTHER = 'other',
 }
 
+/**
+ * A high-liability complaint handed to the legal and medical risk teams: the
+ * AI output it concerns, the exact prompt version behind that output, and
+ * any hold placed on the prompt while the case is reviewed.
+ */
+@Schema({ _id: false })
+export class ComplianceEscalation {
+  @Prop({ required: true })
+  escalatedAt: Date;
+
+  @Prop()
+  escalatedBy?: string;
+
+  @Prop()
+  reason?: string;
+
+  @Prop({ type: SchemaTypes.ObjectId })
+  aiLogId?: Types.ObjectId;
+
+  @Prop({ type: SchemaTypes.ObjectId })
+  recordId?: Types.ObjectId;
+
+  @Prop()
+  recordType?: string;
+
+  @Prop()
+  surfaceKey?: string;
+
+  @Prop()
+  promptVersion?: string;
+
+  // True when the output predates per-output version logging and the version
+  // was reconstructed from the prompt history.
+  @Prop({ default: false })
+  promptVersionInferred: boolean;
+
+  // Record type the prompt was paused for, pending the review.
+  @Prop()
+  pausedRecordType?: string;
+
+  // The Operations Desk incident tracking the case.
+  @Prop({ type: SchemaTypes.ObjectId })
+  issueId?: Types.ObjectId;
+}
+export const ComplianceEscalationSchema =
+  SchemaFactory.createForClass(ComplianceEscalation);
+
 export type FeedbackItemDocument = HydratedDocument<FeedbackItem>;
 
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })
@@ -92,6 +139,9 @@ export class FeedbackItem {
 
   @Prop()
   closedAt?: Date;
+
+  @Prop({ type: ComplianceEscalationSchema })
+  compliance?: ComplianceEscalation;
 
   // Populated by the timestamps option — declared for typed access (Admin Feedback Management).
   createdAt?: Date;

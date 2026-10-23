@@ -12,6 +12,7 @@ import {
 import {
   MedicalRecord,
   MedicalRecordDocument,
+  recordSystemFileName,
 } from '../../core/records/schemas/medical-record.schema';
 import {
   AccessLog,
@@ -267,7 +268,7 @@ export class PartnerTimelineService {
             id: `rec_${r.id}`,
             kind: 'record',
             at: (r.recordDate ?? r.uploadedAt ?? new Date()).toISOString(),
-            title: r.originalFileName,
+            title: recordSystemFileName(r),
             detail: [r.type.replace('_', ' '), r.providerName]
               .filter(Boolean)
               .join(' · '),

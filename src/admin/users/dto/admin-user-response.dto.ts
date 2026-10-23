@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole, UserStatus } from '../../../core/users/schemas/user.schema';
+import type { AgeSource } from '../../../common/utils/age.util';
 
 export type ActivityLevel = 'high' | 'medium' | 'low';
 
@@ -15,9 +16,19 @@ export class AdminUserResponseDto {
 
   @ApiPropertyOptional({
     example: 42,
-    description: 'From HealthProfile, if completed',
+    description:
+      'From the HealthProfile date of birth (or a self-reported age from older app builds); absent when missing',
   })
   age?: number;
+
+  @ApiProperty({
+    enum: ['dob', 'self_reported', 'missing'],
+    description: 'missing = no valid birth date on file (a saved age of 0 counts as missing)',
+  })
+  ageSource: AgeSource;
+
+  @ApiPropertyOptional({ example: '1984-03-09' })
+  dateOfBirth?: string;
 
   @ApiProperty({ enum: UserRole })
   role: UserRole;

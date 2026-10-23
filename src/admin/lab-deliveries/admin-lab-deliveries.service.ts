@@ -1,7 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, QueryFilter } from 'mongoose';
-import { LabDeliveryOrder, LabDeliveryOrderDocument, LabDeliveryStatus, LabDeliveryMethod } from '../../core/labs/schemas/lab-delivery-order.schema';
+import {
+  ColdChainStatus,
+  DEFAULT_COLD_CHAIN_MAX_C,
+  DEFAULT_COLD_CHAIN_MIN_C,
+  LabDeliveryOrder,
+  LabDeliveryOrderDocument,
+  LabDeliveryStatus,
+  LabDeliveryMethod,
+} from '../../core/labs/schemas/lab-delivery-order.schema';
 import { QueryLabDeliveriesDto } from './dto/query-lab-deliveries.dto';
 import { UpdateLabDeliveryDto, RetryDeliveryDto, ManualDeliveryDto } from './dto/update-lab-delivery.dto';
 import { AdminLabDeliveryResponseDto } from './dto/admin-lab-delivery-response.dto';
@@ -24,6 +32,8 @@ export class AdminLabDeliveriesService {
           { orderId: re },
           { patientName: re },
           { labName: re },
+          { courierId: re },
+          { courierName: re },
         ],
       });
     }
@@ -95,8 +105,55 @@ export class AdminLabDeliveriesService {
     if (dto.assignedTo !== undefined) delivery.assignedTo = dto.assignedTo;
     if (dto.priority !== undefined) delivery.priority = dto.priority;
 
+    // Courier log: undefined leaves a field alone, '' / null clears it.
+    if (dto.courierName !== undefined) delivery.set('courierName', dto.courierName?.trim() || undefined);
+    if (dto.courierId !== undefined) delivery.set('courierId', dto.courierId?.trim() || undefined);
+    if (dto.pickedUpAt !== undefined) {
+      delivery.set('pickedUpAt', dto.pickedUpAt ? new Date(dto.pickedUpAt) : undefined);
+    }
+    if (dto.transitTempMinC !== undefined) delivery.set('transitTempMinC', dto.transitTempMinC ?? undefined);
+    if (dto.transitTempMaxC !== undefined) delivery.set('transitTempMaxC', dto.transitTempMaxC ?? undefined);
+    if (dto.requiredTempMinC !== undefined) delivery.requiredTempMinC = dto.requiredTempMinC;
+    if (dto.requiredTempMaxC !== undefined) delivery.requiredTempMaxC = dto.requiredTempMaxC;
+    if (dto.coldChainStatus !== undefined) delivery.coldChainStatus = dto.coldChainStatus;
+
+    const { requiredMin, requiredMax } = this.requiredBand(delivery);
+    if (requiredMin >= requiredMax) {
+      throw new BadRequestException('Required temperature range must have its minimum below its maximum');
+    }
+    if (
+      delivery.transitTempMinC != null &&
+      delivery.transitTempMaxC != null &&
+      delivery.transitTempMinC > delivery.transitTempMaxC
+    ) {
+      throw new BadRequestException('Lowest transit temperature cannot be above the highest');
+    }
+
     await delivery.save();
     return this.toResponse(delivery);
+  }
+
+  private requiredBand(delivery: LabDeliveryOrderDocument) {
+    return {
+      requiredMin: delivery.requiredTempMinC ?? DEFAULT_COLD_CHAIN_MIN_C,
+      requiredMax: delivery.requiredTempMaxC ?? DEFAULT_COLD_CHAIN_MAX_C,
+    };
+  }
+
+  /**
+   * Logger readings decide the cold-chain status: any reading outside the
+   * required band is a breach, both readings inside it is within range. With
+   * no conclusive readings the manually recorded status stands.
+   */
+  private coldChainStatusOf(delivery: LabDeliveryOrderDocument): ColdChainStatus {
+    const { requiredMin, requiredMax } = this.requiredBand(delivery);
+    const low = delivery.transitTempMinC;
+    const high = delivery.transitTempMaxC;
+    if ((low != null && low < requiredMin) || (high != null && high > requiredMax)) {
+      return ColdChainStatus.BREACH;
+    }
+    if (low != null && high != null) return ColdChainStatus.WITHIN_RANGE;
+    return delivery.coldChainStatus ?? ColdChainStatus.NOT_RECORDED;
   }
 
   async retryDelivery(id: string, dto: RetryDeliveryDto): Promise<AdminLabDeliveryResponseDto> {
@@ -292,6 +349,16 @@ export class AdminLabDeliveriesService {
       createdAt: delivery.createdAt?.toISOString() ?? new Date().toISOString(),
       updatedAt: delivery.updatedAt?.toISOString() ?? new Date().toISOString(),
       turnaroundMinutes,
+      courierName: delivery.courierName,
+      courierId: delivery.courierId,
+      pickedUpAt: delivery.pickedUpAt?.toISOString(),
+      coldChain: {
+        status: this.coldChainStatusOf(delivery),
+        transitTempMinC: delivery.transitTempMinC,
+        transitTempMaxC: delivery.transitTempMaxC,
+        requiredTempMinC: this.requiredBand(delivery).requiredMin,
+        requiredTempMaxC: this.requiredBand(delivery).requiredMax,
+      },
     };
   }
 }

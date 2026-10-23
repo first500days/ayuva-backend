@@ -78,7 +78,10 @@ export class AdminFeedbackService {
       throw new NotFoundException('Feedback item not found');
     }
 
-    if (dto.status !== undefined) item.status = dto.status;
+    if (dto.status !== undefined) {
+      item.status = dto.status;
+      if (dto.status === FeedbackStatus.RESOLVED) item.resolvedAt = new Date();
+    }
     if (dto.assignedTo !== undefined)
       item.assignedTo = new Types.ObjectId(dto.assignedTo);
 
@@ -87,10 +90,22 @@ export class AdminFeedbackService {
     return this.toResponse(item, reporter ?? undefined);
   }
 
+  async findOne(id: string): Promise<AdminFeedbackResponseDto> {
+    const item = Types.ObjectId.isValid(id)
+      ? await this.feedbackItemModel.findById(id)
+      : null;
+    if (!item) {
+      throw new NotFoundException('Feedback item not found');
+    }
+    const reporter = await this.userModel.findById(item.reporterId);
+    return this.toResponse(item, reporter ?? undefined);
+  }
+
   private toResponse(
     item: FeedbackItemDocument,
     reporter?: UserDocument,
   ): AdminFeedbackResponseDto {
+    const c = item.compliance;
     return {
       id: item.id,
       reporterId: item.reporterId.toString(),
@@ -99,8 +114,24 @@ export class AdminFeedbackService {
       title: item.title,
       description: item.description,
       status: item.status,
+      priority: item.priority,
+      category: item.category,
       assignedTo: item.assignedTo?.toString(),
       createdAt: (item.createdAt ?? new Date(0)).toISOString(),
+      compliance: c
+        ? {
+            escalatedAt: c.escalatedAt.toISOString(),
+            escalatedBy: c.escalatedBy,
+            reason: c.reason,
+            aiLogId: c.aiLogId?.toString(),
+            recordType: c.recordType,
+            surfaceKey: c.surfaceKey,
+            promptVersion: c.promptVersion,
+            promptVersionInferred: c.promptVersionInferred ?? false,
+            pausedRecordType: c.pausedRecordType,
+            issueId: c.issueId?.toString(),
+          }
+        : undefined,
     };
   }
 }

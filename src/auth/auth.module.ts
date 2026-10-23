@@ -9,11 +9,22 @@ import { ConsentGuard } from './guards/consent.guard';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { GoogleAuthService } from './services/google-auth.service';
+import { TotpService } from './services/totp.service';
+import { AdminAccessService } from './services/admin-access.service';
 import { User, UserSchema } from '../core/users/schemas/user.schema';
 import {
   HealthProfile,
   HealthProfileSchema,
 } from '../core/health-profile/schemas/health-profile.schema';
+import {
+  AdminUser,
+  AdminUserSchema,
+} from '../core/admin-users/schemas/admin-user.schema';
+import { Role, RoleSchema } from '../core/roles/schemas/role.schema';
+import {
+  MedicalRecord,
+  MedicalRecordSchema,
+} from '../core/records/schemas/medical-record.schema';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { MailModule } from '../mail/mail.module';
 
@@ -25,6 +36,11 @@ import { MailModule } from '../mail/mail.module';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },
+      // Admin sign-in resolves the admin's role and permissions.
+      { name: AdminUser.name, schema: AdminUserSchema },
+      { name: Role.name, schema: RoleSchema },
+      // Re-consent attaches the new consent to the patient's records.
+      { name: MedicalRecord.name, schema: MedicalRecordSchema },
     ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -38,7 +54,15 @@ import { MailModule } from '../mail/mail.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [JwtStrategy, JwtAuthGuard, ConsentGuard, AuthService, GoogleAuthService],
+  providers: [
+    JwtStrategy,
+    JwtAuthGuard,
+    ConsentGuard,
+    AuthService,
+    GoogleAuthService,
+    TotpService,
+    AdminAccessService,
+  ],
   exports: [
     JwtModule,
     PassportModule,
@@ -46,6 +70,8 @@ import { MailModule } from '../mail/mail.module';
     ConsentGuard,
     MongooseModule,
     AuthService,
+    TotpService,
+    AdminAccessService,
   ],
 })
 export class AuthModule {}

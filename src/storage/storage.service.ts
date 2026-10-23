@@ -24,13 +24,19 @@ export class StorageService {
     this.key = Buffer.from(config.get<string>('storage.encryptionKey')!, 'hex');
   }
 
+  /**
+   * `name` ends up in the object key, so callers pass a system-generated name
+   * (never a patient's device filename). `folder` separates object classes,
+   * e.g. patient records from partner credential documents.
+   */
   async upload(
     buffer: Buffer,
-    originalName: string,
+    name: string,
     ownerId: string,
+    folder: 'records' | 'credentials' = 'records',
   ): Promise<string> {
-    const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const fileRef = `records/${ownerId}/${randomUUID()}-${safeName}`;
+    const safeName = name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const fileRef = `${folder}/${ownerId}/${randomUUID()}-${safeName}`;
     const destPath = join(this.uploadDir, fileRef);
 
     const iv = randomBytes(IV_LENGTH);
@@ -38,7 +44,7 @@ export class StorageService {
     const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
     const authTag = cipher.getAuthTag();
 
-    await mkdir(join(this.uploadDir, 'records', ownerId), { recursive: true });
+    await mkdir(join(this.uploadDir, folder, ownerId), { recursive: true });
     await writeFile(destPath, Buffer.concat([iv, authTag, encrypted]));
 
     return fileRef;

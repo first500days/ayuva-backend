@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../../src/app.module';
+import { currentStep, totpCode } from '../../src/auth/services/totp.service';
 import {
   CURRENT_CONSENT_VERSION,
   User,
@@ -111,8 +112,9 @@ export async function registerPatient(
 
 /**
  * No admin sign-up flow exists (admins are provisioned out-of-band, e.g. via
- * seed.ts) — creates the User doc directly with role=admin, then logs in
- * through the real /auth/login endpoint so tests exercise real token issuance.
+ * seed.ts) — creates the User doc directly with role=admin, then signs in
+ * through the real /auth/login + /auth/mfa/verify endpoints (MFA is mandatory
+ * for admins), enrolling the offered authenticator secret on the way.
  */
 export async function registerAdmin(
   app: INestApplication,
@@ -137,9 +139,16 @@ export async function registerAdmin(
     },
   });
 
-  const res = await request(app.getHttpServer())
+  const challenge = await request(app.getHttpServer())
     .post('/api/v1/auth/login')
     .send({ email: overrides.email, password })
+    .expect(200);
+  const res = await request(app.getHttpServer())
+    .post('/api/v1/auth/mfa/verify')
+    .send({
+      mfaToken: challenge.body.mfaToken,
+      code: totpCode(challenge.body.enrollment.secret, currentStep()),
+    })
     .expect(200);
 
   return { accessToken: res.body.accessToken, userId: admin.id };

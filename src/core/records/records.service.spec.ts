@@ -5,7 +5,10 @@ import {
   MedicalRecordKind,
   MedicalRecordType,
 } from './schemas/medical-record.schema';
-import { ReportAiStatus } from '../../ai/report-interpreter/schemas/report-interpretation.schema';
+import {
+  ReportAiStatus,
+  ReportReleaseStatus,
+} from '../../ai/report-interpreter/schemas/report-interpretation.schema';
 
 function buildService() {
   const recordModel = {
@@ -29,10 +32,26 @@ function buildService() {
   const reminderQueueService = {
     sendDocumentUploadConfirmation: jest.fn().mockResolvedValue(undefined),
   };
+  const patientConsent = {
+    termsAccepted: true,
+    privacyAccepted: true,
+    healthDataProcessingAccepted: true,
+    version: '2026-01-01',
+    acceptedAt: new Date('2026-01-15T00:00:00Z'),
+  };
+  const userQuery = {
+    select: jest.fn(),
+    lean: jest.fn(),
+    exec: jest.fn().mockResolvedValue({ consent: patientConsent }),
+  };
+  userQuery.select.mockReturnValue(userQuery);
+  userQuery.lean.mockReturnValue(userQuery);
+  const userModel = { findById: jest.fn().mockReturnValue(userQuery) };
   const service = new RecordsService(
     recordModel as any,
     appointmentModel as any,
     reportInterpretationModel as any,
+    userModel as any,
     storageService as any,
     reminderQueueService as any,
   );
@@ -41,6 +60,8 @@ function buildService() {
     recordModel,
     appointmentModel,
     reportInterpretationModel,
+    userModel,
+    userQuery,
     storageService,
     reminderQueueService,
   };
@@ -122,7 +143,7 @@ describe('RecordsService', () => {
       },
     );
 
-    it('sends a document-upload-confirmation push after a successful upload', async () => {
+    it('sends a document-upload-confirmation push naming the system file, not the device file', async () => {
       const { service, recordModel, reminderQueueService } = buildService();
       recordModel.create.mockResolvedValue({
         id: 'rec-1',
@@ -136,8 +157,44 @@ describe('RecordsService', () => {
       expect(reminderQueueService.sendDocumentUploadConfirmation).toHaveBeenCalledWith({
         recordId: 'rec-1',
         userId: 'user-1',
-        fileName: 'report.pdf',
+        fileName: expect.stringMatching(/^AYUVA-REC-[0-9A-F]{4}\.pdf$/),
       });
+    });
+
+    it('stores the file under a system name and keeps the device name only as the vault title', async () => {
+      const { service, recordModel, storageService } = buildService();
+      recordModel.create.mockImplementation((doc: object) =>
+        Promise.resolve({ id: 'rec-1', uploadedAt: new Date(), ...doc }),
+      );
+
+      await service.upload(
+        'user-1',
+        fakeFile({ originalname: 'IMG-20260830-WA0008.jpg', mimetype: 'image/jpeg' }),
+      );
+
+      const created = recordModel.create.mock.calls[0][0];
+      const expectedName = `AYUVA-IMG-${created._id.toHexString().slice(-4).toUpperCase()}.jpg`;
+      expect(created.systemFileName).toBe(expectedName);
+      expect(created.originalFileName).toBe('IMG-20260830-WA0008.jpg');
+      expect(storageService.upload).toHaveBeenCalledWith(expect.any(Buffer), expectedName, 'user-1');
+    });
+
+    it("attaches the patient's consent as a token at ingestion", async () => {
+      const { service, recordModel } = buildService();
+      recordModel.create.mockImplementation((doc: object) =>
+        Promise.resolve({ id: 'rec-1', uploadedAt: new Date(), ...doc }),
+      );
+
+      await service.upload('user-1', fakeFile());
+
+      expect(recordModel.create.mock.calls[0][0].consentToken).toEqual(
+        expect.objectContaining({
+          tokenId: expect.stringMatching(/^CT-[0-9A-F]{10}$/),
+          version: '2026-01-01',
+          healthDataProcessingAccepted: true,
+          capturedOn: 'ingestion',
+        }),
+      );
     });
 
     it('falls back to the scans folder for an unnamed image with no filename hint', async () => {
@@ -433,6 +490,31 @@ describe('RecordsService', () => {
         'Your lipid panel looks normal overall.',
       );
     });
+
+    it.each([ReportReleaseStatus.HELD_FOR_REVIEW, ReportReleaseStatus.ESCALATED])(
+      'shows a %s summary to the patient as still processing, with no text',
+      async (releaseStatus) => {
+        const { service, recordModel, reportInterpretationModel } = buildService();
+        recordModel.findOne.mockResolvedValue({
+          id: RECORD_ID,
+          originalFileName: 'ecg.pdf',
+          type: MedicalRecordType.LAB_REPORT,
+          uploadedAt: new Date('2026-08-01T00:00:00.000Z'),
+        });
+        reportInterpretationModel.findOne.mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            aiStatus: ReportAiStatus.INTERPRETED,
+            summaryText: 'Flagged summary',
+            releaseStatus,
+          }),
+        });
+
+        const result = await service.findOne(USER_ID, RECORD_ID);
+
+        expect(result.aiStatus).toBe(ReportAiStatus.PROCESSING);
+        expect(result.summaryText).toBeUndefined();
+      },
+    );
   });
 
   describe('attachToAppointment (FR-9.5)', () => {

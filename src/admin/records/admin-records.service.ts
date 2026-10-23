@@ -1,8 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
-import { MedicalRecord, MedicalRecordDocument, MedicalRecordType, RecordStatusEnhanced } from '../../core/records/schemas/medical-record.schema';
+import { Model, QueryFilter, Types } from 'mongoose';
+import {
+  MedicalRecord,
+  MedicalRecordDocument,
+  RecordStatusEnhanced,
+  consentStatusOf,
+  recordSystemFileName,
+} from '../../core/records/schemas/medical-record.schema';
 import { User, UserDocument } from '../../core/users/schemas/user.schema';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { QueryAdminRecordsDto } from './dto/query-admin-records.dto';
 import { AdminRecordResponseDto } from './dto/admin-record-response.dto';
 import { buildSafeRegex } from '../../common/utils/regex.util';
@@ -14,14 +22,25 @@ export class AdminRecordsService {
     private readonly medicalRecordModel: Model<MedicalRecordDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async findAll(query: QueryAdminRecordsDto): Promise<AdminRecordResponseDto[]> {
-    const and: any[] = [];
+    const and: QueryFilter<MedicalRecordDocument>[] = [];
 
     if (query.search) {
+      // System file name, patient name or record id — never the device filename.
       const re = buildSafeRegex(query.search);
-      and.push({ $or: [{ originalFileName: re }] });
+      const patients = await this.userModel.find({ fullName: re }).select('_id').lean().exec();
+      and.push({
+        $or: [
+          { systemFileName: re },
+          { patientId: { $in: patients.map((p) => p._id) } },
+          ...(Types.ObjectId.isValid(query.search.trim())
+            ? [{ _id: new Types.ObjectId(query.search.trim()) }]
+            : []),
+        ],
+      });
     }
     if (query.type) and.push({ type: query.type });
     if (query.status) and.push({ status: query.status });
@@ -38,42 +57,71 @@ export class AdminRecordsService {
     const patientIds = [...new Set(records.map((r) => r.patientId))];
     const patients = await this.userModel
       .find({ _id: { $in: patientIds } })
+      .select('fullName consent')
       .exec();
     const patientById = new Map(patients.map((p) => [p.id, p]));
 
-    return records.map((r) => ({
-      id: r.id,
-      patientId: r.patientId.toString(),
-      patientName: patientById.get(r.patientId.toString())?.fullName ?? 'Unknown patient',
-      type: r.type,
-      originalFileName: r.originalFileName,
-      uploadedAt: (r.uploadedAt ?? new Date(0)).toISOString(),
-      status: r.status ?? RecordStatusEnhanced.UPLOADED,
-      aiStatus: r.aiStatus,
-    }));
+    return records.map((r) => this.toResponse(r, patientById.get(r.patientId.toString())));
   }
 
   async findOne(id: string): Promise<AdminRecordResponseDto> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new NotFoundException('Record not found');
-    }
-    const record = await this.medicalRecordModel.findById(id).exec();
-    if (!record) {
-      throw new NotFoundException('Record not found');
-    }
+    const record = await this.getRecordOrThrow(id);
+    const patient = await this.userModel.findById(record.patientId).select('fullName consent').exec();
+    return this.toResponse(record, patient ?? undefined);
+  }
 
-    const patient = await this.userModel.findById(record.patientId).exec();
+  /**
+   * Refuses work on a record with no valid consent token ("locked"), and
+   * leaves an audit entry naming who tried.
+   */
+  async assertUnlocked(record: MedicalRecordDocument, actorId: string, attempted: string): Promise<void> {
+    const patient = await this.userModel.findById(record.patientId).select('consent').lean().exec();
+    const consent = consentStatusOf(record, patient?.consent);
+    if (consent.status === 'verified') return;
+    await this.auditLogService.record({
+      actorId,
+      action: AuditAction.RECORD_ACCESS_BLOCKED,
+      targetType: 'MedicalRecord',
+      targetId: record.id,
+      metadata: { attempted, reason: consent.detail },
+    });
+    throw new ForbiddenException(`This record is locked: ${consent.detail.toLowerCase()}.`);
+  }
 
+  private toResponse(
+    record: MedicalRecordDocument,
+    patient?: Pick<UserDocument, 'fullName' | 'consent'>,
+  ): AdminRecordResponseDto {
+    const consent = consentStatusOf(record, patient?.consent);
     return {
       id: record.id,
       patientId: record.patientId.toString(),
       patientName: patient?.fullName ?? 'Unknown patient',
       type: record.type,
-      originalFileName: record.originalFileName,
+      // The sanitized system name; the device filename never leaves the patient's vault.
+      fileName: recordSystemFileName(record),
       uploadedAt: (record.uploadedAt ?? new Date(0)).toISOString(),
       status: record.status ?? RecordStatusEnhanced.UPLOADED,
       aiStatus: record.aiStatus,
+      consent: {
+        status: consent.status,
+        source: consent.source,
+        detail: consent.detail,
+        tokenId: consent.token?.tokenId,
+        version: consent.token?.version,
+        acceptedAt: consent.token?.acceptedAt?.toISOString(),
+        capturedAt: consent.token?.capturedAt?.toISOString(),
+      },
+      locked: consent.status !== 'verified',
     };
+  }
+
+  private async getRecordOrThrow(id: string): Promise<MedicalRecordDocument> {
+    const record = Types.ObjectId.isValid(id)
+      ? await this.medicalRecordModel.findById(id).exec()
+      : null;
+    if (!record) throw new NotFoundException('Record not found');
+    return record;
   }
 
   async getConsents() {
@@ -168,9 +216,10 @@ export class AdminRecordsService {
     return this.findOne(id);
   }
 
-  async reprocess(id: string) {
-    const record = await this.medicalRecordModel.findById(id).exec();
-    if (!record) throw new NotFoundException('Record not found');
+  async reprocess(id: string, actorId: string) {
+    const record = await this.getRecordOrThrow(id);
+    // Reprocessing runs OCR/AI on the document, which needs the patient's consent.
+    await this.assertUnlocked(record, actorId, 'reprocess');
     record.status = RecordStatusEnhanced.PROCESSING;
     await record.save();
     return this.findOne(id);

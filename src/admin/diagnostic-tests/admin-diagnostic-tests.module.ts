@@ -3,9 +3,11 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { DiagnosticTest, DiagnosticTestSchema } from '../../core/labs/schemas/diagnostic-test.schema';
 import { AdminDiagnosticTestsService } from './admin-diagnostic-tests.service';
 import { AdminDiagnosticTestsController } from './admin-diagnostic-tests.controller';
+import { AuthModule } from '../../auth/auth.module';
 
 @Module({
   imports: [
+    AuthModule,
     MongooseModule.forFeature([{ name: DiagnosticTest.name, schema: DiagnosticTestSchema }]),
   ],
   controllers: [AdminDiagnosticTestsController],

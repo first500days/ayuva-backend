@@ -6,9 +6,10 @@ import type { Connection } from 'mongoose';
 import configuration from '../config/configuration';
 import type { Migration } from './migration.types';
 import { recordFoldersMigration } from './001-record-folders';
+import { recordSystemNamesMigration } from './002-record-system-names';
 
 // Applied in this order; append new migrations to the end.
-const MIGRATIONS: Migration[] = [recordFoldersMigration];
+const MIGRATIONS: Migration[] = [recordFoldersMigration, recordSystemNamesMigration];
 
 // Config + Mongo only — no Redis/BullMQ/FCM, unlike booting AppModule (seed.ts).
 @Module({

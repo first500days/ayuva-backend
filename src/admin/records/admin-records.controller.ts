@@ -8,6 +8,9 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminRecordsService } from './admin-records.service';
 import { QueryAdminRecordsDto } from './dto/query-admin-records.dto';
@@ -17,6 +20,7 @@ import { AdminRecordResponseDto } from './dto/admin-record-response.dto';
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('records')
 @Controller('admin/records')
 export class AdminRecordsController {
   constructor(private readonly adminRecordsService: AdminRecordsService) {}
@@ -47,9 +51,11 @@ export class AdminRecordsController {
   }
 
   @Post(':id/reprocess')
-  @ApiOperation({ summary: 'Reprocess a medical record OCR/pipeline' })
-  reprocess(@Param('id') id: string) {
-    return this.adminRecordsService.reprocess(id);
+  @ApiOperation({
+    summary: 'Reprocess a medical record OCR/pipeline — refused (403) while the record has no consent token',
+  })
+  reprocess(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    return this.adminRecordsService.reprocess(id, user.sub);
   }
 
   @Get(':id')

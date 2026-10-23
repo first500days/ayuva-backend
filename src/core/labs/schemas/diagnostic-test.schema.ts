@@ -60,6 +60,11 @@ export class DiagnosticTest {
   @Prop({ type: [String], default: [] })
   tags: string[];
 
+  // Other names partners and labs use for this test ("Hemogram", "CBC"). Each
+  // alias belongs to one master test, so incoming text maps unambiguously.
+  @Prop({ type: [String], default: [] })
+  aliases: string[];
+
   @Prop()
   description: string;
 
@@ -80,3 +85,4 @@ export const DiagnosticTestSchema = SchemaFactory.createForClass(DiagnosticTest)
 
 DiagnosticTestSchema.index({ testName: 'text', category: 'text', tags: 'text' });
 DiagnosticTestSchema.index({ category: 1, isActive: 1 });
+DiagnosticTestSchema.index({ aliases: 1 });

@@ -10,15 +10,28 @@ import {
   Put,
   Query,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { memoryStorage } from 'multer';
+import { CredentialDocType } from '../core/providers/schemas/provider.schema';
+import {
+  MAX_CREDENTIAL_BYTES,
+  UploadCredentialDto,
+} from '../admin/providers/dto/provider-credentials.dto';
+import { AuditLogInterceptor } from '../audit-log/interceptors/audit-log.interceptor';
+import { AuditEvent } from '../audit-log/decorators/audit-event.decorator';
+import { AuditAction } from '../audit-log/schemas/audit-log.schema';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -119,6 +132,41 @@ export class PartnerController {
   })
   me(@CurrentUser() u: JwtPayload) {
     return this.profile.getMe(u.sub);
+  }
+
+  @Get('credentials')
+  @ApiOperation({
+    summary:
+      'Licence / registration documents submitted for verification (available while pending)',
+  })
+  credentials(@CurrentUser() u: JwtPayload) {
+    return this.profile.credentials(u.sub);
+  }
+
+  @Post('credentials')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary:
+      'Upload a licence / registration document for the verification review (organisation admins, available while pending)',
+  })
+  @AuditEvent(AuditAction.PARTNER_CREDENTIAL_UPLOAD, 'Provider')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_CREDENTIAL_BYTES },
+    }),
+    AuditLogInterceptor,
+  )
+  addCredential(
+    @CurrentUser() u: JwtPayload,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() dto: UploadCredentialDto,
+  ) {
+    return this.profile.addCredential(
+      u.sub,
+      file,
+      dto.docType ?? CredentialDocType.MEDICAL_LICENSE,
+    );
   }
 
   @Patch('profile')

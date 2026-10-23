@@ -59,6 +59,25 @@ export class NotificationPrefs {
 export const NotificationPrefsSchema =
   SchemaFactory.createForClass(NotificationPrefs);
 
+/** Admin sign-in second factor: an authenticator-app (TOTP) secret. Mandatory for admins. */
+@Schema({ _id: false })
+export class UserMfa {
+  @Prop({ default: false }) enabled: boolean;
+
+  // AES-256-GCM encrypted base32 secret (TotpService), never stored in clear.
+  @Prop() secretEnc?: string;
+
+  @Prop() enrolledAt?: Date;
+
+  // Last accepted 30s step — a code is never accepted twice.
+  @Prop() lastUsedStep?: number;
+
+  @Prop({ default: 0 }) failedAttempts: number;
+
+  @Prop() lockedUntil?: Date;
+}
+export const UserMfaSchema = SchemaFactory.createForClass(UserMfa);
+
 export type UserDocument = HydratedDocument<User>;
 
 @Schema({ timestamps: true })
@@ -144,6 +163,10 @@ export class User {
 
   @Prop({ type: NotificationPrefsSchema, default: () => ({}) })
   notificationPrefs?: NotificationPrefs;
+
+  // Admin accounts only.
+  @Prop({ type: UserMfaSchema })
+  mfa?: UserMfa;
 
   // Populated by the timestamps:true schema option — declared for typed access (Admin User Management, FR-12.1).
   createdAt?: Date;

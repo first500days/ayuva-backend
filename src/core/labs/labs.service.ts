@@ -25,7 +25,7 @@ export class TestsService {
 
     if (query.query) {
       const re = buildSafeRegex(query.query);
-      filter['$or'] = [{ testName: re }, { tags: re }];
+      filter['$or'] = [{ testName: re }, { tags: re }, { aliases: re }];
     }
     if (query.category && query.category !== 'All') {
       filter['category'] = query.category;
@@ -71,7 +71,8 @@ export class TestsService {
     return {
       id: t.id,
       name: t.testName,
-      aliases: t.tags ?? [],
+      // Admin-curated aliases first; tags were the only aliases before those existed.
+      aliases: [...new Set([...(t.aliases ?? []), ...(t.tags ?? [])])],
       category: t.category,
       description: t.description ?? '',
       fromPrice: t.standardPrice ?? 0,

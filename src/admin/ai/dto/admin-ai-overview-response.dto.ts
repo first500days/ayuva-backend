@@ -26,6 +26,9 @@ export class AdminAiOverviewResponseDto {
   @ApiProperty({ example: 0 })
   flaggedCount: number;
 
+  @ApiProperty({ example: 0, description: 'Flagged items no reviewer has approved yet' })
+  pendingReviewCount: number;
+
   @ApiProperty({
     type: [AiServiceUsageDto],
     description:

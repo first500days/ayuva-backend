@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminAuditExplorerService } from './admin-audit-explorer.service';
 import type { AuditExplorerQuery } from './admin-audit-explorer.service';
@@ -9,6 +10,7 @@ import type { AuditExplorerQuery } from './admin-audit-explorer.service';
 @Controller('admin/audit-explorer')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('audit-explorer')
 export class AdminAuditExplorerController {
   constructor(private readonly auditExplorerService: AdminAuditExplorerService) {}
 

@@ -1,7 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Provider, ProviderDocument } from '../core/providers/schemas/provider.schema';
+import {
+  CredentialDocType,
+  Provider,
+  ProviderDocument,
+} from '../core/providers/schemas/provider.schema';
 import {
   Appointment,
   AppointmentDocument,
@@ -23,7 +27,7 @@ import { BlockedDateDto } from '../admin/providers/dto/blocked-date.dto';
 import { PartnerContextService } from './partner-context.service';
 import { PartnerRecordsService } from './partner-records.service';
 import { UpdatePartnerProfileDto } from './dto/partner.dto';
-import { roleLabel } from './rbac/partner-permissions';
+import { StaffRole, roleLabel } from './rbac/partner-permissions';
 
 const EDITABLE_FIELDS = [
   'name',
@@ -77,6 +81,29 @@ export class PartnerProfileService {
         permissions: ctx.permissions,
       },
     };
+  }
+
+  /** P01: licence / registration documents — viewable and uploadable while still pending. */
+  async credentials(userId: string) {
+    const ctx = await this.context.resolve(userId);
+    return this.adminProviders.listCredentials(ctx.provider.id as string);
+  }
+
+  async addCredential(
+    userId: string,
+    file: Express.Multer.File | undefined,
+    docType: CredentialDocType,
+  ) {
+    const ctx = await this.context.resolve(userId);
+    if (ctx.role !== StaffRole.ADMIN) {
+      throw new ForbiddenException(
+        'Only an organisation admin can submit verification documents',
+      );
+    }
+    return this.adminProviders.addCredential(ctx.provider.id as string, file, docType, {
+      userId,
+      role: 'partner',
+    });
   }
 
   async updateProfile(userId: string, dto: UpdatePartnerProfileDto) {

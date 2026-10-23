@@ -21,12 +21,16 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminLabsService } from './admin-labs.service';
 import { QueryAdminLabsDto } from './dto/query-admin-labs.dto';
 import { CreateLabDto } from './dto/create-lab.dto';
 import { UpdateLabDto } from './dto/update-lab.dto';
 import { AdminLabResponseDto } from './dto/admin-lab-response.dto';
+import { CreateDiagnosticTestDto } from '../diagnostic-tests/dto/create-diagnostic-test.dto';
+import { UpdateDiagnosticTestDto } from '../diagnostic-tests/dto/update-diagnostic-test.dto';
+import { UpdateLabDeliveryDto } from '../lab-deliveries/dto/update-lab-delivery.dto';
 import { AuditLogInterceptor } from '../../audit-log/interceptors/audit-log.interceptor';
 import { AuditEvent } from '../../audit-log/decorators/audit-event.decorator';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
@@ -35,6 +39,7 @@ import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('labs', 'lab-deliveries', 'diagnostics', 'verification')
 @Controller('admin/labs')
 export class AdminLabsController {
   constructor(private readonly adminLabsService: AdminLabsService) {}
@@ -102,8 +107,8 @@ export class AdminLabsController {
   // Diagnostic Tests
   @Get('catalogue/tests')
   @ApiOperation({ summary: 'Central diagnostic test catalogue with provider pricing' })
-  getCatalogue(@Query() query?: any) {
-    return this.adminLabsService.getDiagnosticCatalogue();
+  getCatalogue(@Query() query: Record<string, string | undefined>) {
+    return this.adminLabsService.getDiagnosticCatalogue(query);
   }
 
   @Get('catalogue/tests/:id')
@@ -116,7 +121,7 @@ export class AdminLabsController {
   @ApiOperation({ summary: 'Create diagnostic test' })
   @AuditEvent(AuditAction.ADMIN_LAB_CREATE, 'DiagnosticTest')
   @UseInterceptors(AuditLogInterceptor)
-  createDiagnosticTest(@Body() dto: any) {
+  createDiagnosticTest(@Body() dto: CreateDiagnosticTestDto) {
     return this.adminLabsService.createDiagnosticTest(dto);
   }
 
@@ -124,7 +129,7 @@ export class AdminLabsController {
   @ApiOperation({ summary: 'Update diagnostic test' })
   @AuditEvent(AuditAction.ADMIN_LAB_UPDATE, 'DiagnosticTest')
   @UseInterceptors(AuditLogInterceptor)
-  updateDiagnosticTest(@Param('id') id: string, @Body() dto: any) {
+  updateDiagnosticTest(@Param('id') id: string, @Body() dto: UpdateDiagnosticTestDto) {
     return this.adminLabsService.updateDiagnosticTest(id, dto);
   }
 
@@ -171,7 +176,7 @@ export class AdminLabsController {
   @ApiOperation({ summary: 'Update delivery' })
   @AuditEvent(AuditAction.ADMIN_LAB_UPDATE, 'LabDelivery')
   @UseInterceptors(AuditLogInterceptor)
-  updateDelivery(@Param('id') id: string, @Body() dto: any) {
+  updateDelivery(@Param('id') id: string, @Body() dto: UpdateLabDeliveryDto) {
     return this.adminLabsService.updateDelivery(id, dto);
   }
 

@@ -17,6 +17,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AuthTokensResponseDto } from './dto/auth-tokens-response.dto';
 import { RefreshTokenResponseDto } from './dto/refresh-token-response.dto';
 import { ConsentStatusResponseDto } from './dto/consent-status-response.dto';
+import { AdminMfaChallengeDto, VerifyMfaDto } from './dto/admin-mfa.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from './interfaces/jwt-payload.interface';
@@ -35,17 +36,35 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Email/password login (FR-1.1)' })
+  @ApiOperation({
+    summary:
+      'Email/password login (FR-1.1). Admins get an MFA challenge instead of tokens — finish with POST /auth/mfa/verify',
+  })
   @ApiOkResponse({ type: AuthTokensResponseDto })
-  login(@Body() dto: LoginDto): Promise<AuthTokensResponseDto> {
+  login(
+    @Body() dto: LoginDto,
+  ): Promise<AuthTokensResponseDto | AdminMfaChallengeDto> {
     return this.authService.login(dto);
+  }
+
+  @Post('mfa/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Admin sign-in step 2: the authenticator code (first use also enrols the app). Mandatory for every admin.',
+  })
+  @ApiOkResponse({ type: AuthTokensResponseDto })
+  verifyMfa(@Body() dto: VerifyMfaDto): Promise<AuthTokensResponseDto> {
+    return this.authService.verifyAdminMfa(dto);
   }
 
   @Post('oauth/google')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Google OAuth sign-up/sign-in (FR-1.3)' })
   @ApiOkResponse({ type: AuthTokensResponseDto })
-  oauthGoogle(@Body() dto: GoogleOAuthDto): Promise<AuthTokensResponseDto> {
+  oauthGoogle(
+    @Body() dto: GoogleOAuthDto,
+  ): Promise<AuthTokensResponseDto | AdminMfaChallengeDto> {
     return this.authService.oauthGoogle(dto);
   }
 

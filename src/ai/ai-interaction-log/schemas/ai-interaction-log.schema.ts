@@ -61,6 +61,24 @@ export class AIInteractionLog {
   @Prop()
   resolutionNotes?: string;
 
+  // The AI Control Center surface + prompt version in force when this ran.
+  @Prop()
+  surfaceKey?: string;
+
+  @Prop()
+  promptVersion?: string;
+
+  // Human review outcome from the AI Monitoring queue.
+  @Prop({ type: String, enum: ['approved', 'escalated'] })
+  reviewAction?: 'approved' | 'escalated';
+
+  @Prop()
+  reviewedAt?: Date;
+
+  // Reviewer's login email (the queue's "Reviewer" column).
+  @Prop()
+  reviewedBy?: string;
+
   // Populated by the timestamps option — declared for typed access (Admin AI Monitoring, FR-15.3).
   createdAt?: Date;
 }

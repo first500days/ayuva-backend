@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AuditLogInterceptor } from '../../audit-log/interceptors/audit-log.interceptor';
 import { AuditEvent } from '../../audit-log/decorators/audit-event.decorator';
@@ -20,6 +21,7 @@ import {
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('subscriptions')
 @Controller('admin/subscriptions')
 export class AdminSubscriptionsController {
   constructor(private readonly service: AdminSubscriptionsService) {}

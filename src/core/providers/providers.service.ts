@@ -21,8 +21,15 @@ import {
 import { ProviderResponseDto } from './dto/provider-response.dto';
 import { AppointmentSlotResponseDto } from './dto/appointment-slot-response.dto';
 import { buildSafeRegex } from '../../common/utils/regex.util';
+import {
+  MarketplaceTaxonomy,
+  MarketplaceTaxonomyDocument,
+} from '../../admin/marketplace/schemas/marketplace-taxonomy.schema';
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+// Shorter search text would match most categories and widen results to everything.
+const MIN_EXPANSION_LENGTH = 3;
 
 @Injectable()
 export class ProvidersService {
@@ -31,6 +38,8 @@ export class ProvidersService {
     private readonly providerModel: Model<ProviderDocument>,
     @InjectModel(AppointmentSlot.name)
     private readonly slotModel: Model<AppointmentSlotDocument>,
+    @InjectModel(MarketplaceTaxonomy.name)
+    private readonly taxonomyModel: Model<MarketplaceTaxonomyDocument>,
   ) {}
 
   async findAll(
@@ -43,11 +52,15 @@ export class ProvidersService {
 
     if (query.query) {
       const re = buildSafeRegex(query.query);
-      and.push({ $or: [{ name: re }, { specialty: re }] });
+      and.push({
+        $or: [{ name: re }, { specialty: re }, ...(await this.taxonomyMatchers(query.query))],
+      });
     }
     if (query.specialty) {
       const re = buildSafeRegex(query.specialty);
-      and.push({ $or: [{ type: re }, { specialty: re }] });
+      and.push({
+        $or: [{ type: re }, { specialty: re }, ...(await this.taxonomyMatchers(query.specialty))],
+      });
     }
     if (query.location) {
       const re = buildSafeRegex(query.location);
@@ -67,6 +80,44 @@ export class ProvidersService {
 
     const providers = await this.providerModel.find(filter).sort(sort).exec();
     return providers.map((p) => this.toResponse(p, userId));
+  }
+
+  /**
+   * Marketplace Governance categories widen a search: a category's name, its
+   * synonyms and the partner services mapped to it all match one another
+   * (so "Cardiology" finds a clinic's "Heart Scan"), and a mapped service
+   * also matches the exact provider that offers it.
+   */
+  private async taxonomyMatchers(text: string): Promise<QueryFilter<ProviderDocument>[]> {
+    if (text.trim().length < MIN_EXPANSION_LENGTH) return [];
+    const re = buildSafeRegex(text);
+    const categories = await this.taxonomyModel
+      .find({
+        isActive: true,
+        $or: [{ name: re }, { synonyms: re }, { 'mappedServices.serviceText': re }],
+      })
+      .select('name synonyms mappedServices')
+      .lean()
+      .exec();
+
+    const terms = new Set<string>();
+    const providerIds: Types.ObjectId[] = [];
+    for (const category of categories) {
+      terms.add(category.name);
+      for (const synonym of category.synonyms ?? []) terms.add(synonym);
+      for (const service of category.mappedServices ?? []) {
+        terms.add(service.serviceText);
+        if (service.entityId) providerIds.push(service.entityId);
+      }
+    }
+
+    const patterns = [...terms].map((t) => buildSafeRegex(t));
+    const matchers: QueryFilter<ProviderDocument>[] = [];
+    if (patterns.length) {
+      matchers.push({ specialty: { $in: patterns } }, { departments: { $in: patterns } });
+    }
+    if (providerIds.length) matchers.push({ _id: { $in: providerIds } });
+    return matchers;
   }
 
   async findOne(id: string, userId: string): Promise<ProviderResponseDto> {

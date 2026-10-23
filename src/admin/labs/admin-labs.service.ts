@@ -9,6 +9,9 @@ import { AdminLabResponseDto } from './dto/admin-lab-response.dto';
 import { buildSafeRegex } from '../../common/utils/regex.util';
 import { AdminDiagnosticTestsService } from '../diagnostic-tests/admin-diagnostic-tests.service';
 import { AdminLabDeliveriesService } from '../lab-deliveries/admin-lab-deliveries.service';
+import { CreateDiagnosticTestDto } from '../diagnostic-tests/dto/create-diagnostic-test.dto';
+import { UpdateDiagnosticTestDto } from '../diagnostic-tests/dto/update-diagnostic-test.dto';
+import { UpdateLabDeliveryDto } from '../lab-deliveries/dto/update-lab-delivery.dto';
 
 @Injectable()
 export class AdminLabsService {
@@ -102,19 +105,26 @@ export class AdminLabsService {
   }
 
   // Diagnostic Tests - delegate to DiagnosticTestsService
-  async getDiagnosticCatalogue() {
-    return this.diagnosticTestsService.findAll({ isActive: true, limit: 100 });
+  async getDiagnosticCatalogue(query: Record<string, string | undefined> = {}) {
+    const limit = Number(query.limit);
+    return this.diagnosticTestsService.findAll({
+      // Search also matches aliases, so a partner's spelling finds the master test.
+      search: query.search || undefined,
+      // Query strings arrive as text; only an explicit "false" lists inactive tests.
+      isActive: query.isActive !== 'false',
+      limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 100,
+    });
   }
 
   async getDiagnosticTest(id: string) {
     return this.diagnosticTestsService.findOne(id);
   }
 
-  async createDiagnosticTest(dto: any) {
+  async createDiagnosticTest(dto: CreateDiagnosticTestDto) {
     return this.diagnosticTestsService.create(dto);
   }
 
-  async updateDiagnosticTest(id: string, dto: any) {
+  async updateDiagnosticTest(id: string, dto: UpdateDiagnosticTestDto) {
     return this.diagnosticTestsService.update(id, dto);
   }
 
@@ -143,7 +153,7 @@ export class AdminLabsService {
     return this.labDeliveriesService.findOne(id);
   }
 
-  async updateDelivery(id: string, dto: any) {
+  async updateDelivery(id: string, dto: UpdateLabDeliveryDto) {
     return this.labDeliveriesService.update(id, dto);
   }
 

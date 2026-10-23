@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { AiService } from '../../../ai/ai-interaction-log/schemas/ai-interaction-log.schema';
+import { ReportReleaseStatus } from '../../../ai/report-interpreter/schemas/report-interpretation.schema';
 import { AiSource } from '../../../ai/common/ai-source.enum';
 
 export class AdminAiLogResponseDto {
@@ -43,6 +45,36 @@ export class AdminAiLogResponseDto {
   })
   resolutionNotes?: string;
 
+  @ApiPropertyOptional({ enum: ['approved', 'escalated'] })
+  reviewAction?: 'approved' | 'escalated';
+
+  @ApiPropertyOptional({ example: '2026-08-02T11:00:00.000Z' })
+  reviewedAt?: string;
+
+  @ApiPropertyOptional({ example: 'reviewer@ayuva.health' })
+  reviewedBy?: string;
+
+  @ApiPropertyOptional({ example: 'report_interpreter' })
+  surfaceKey?: string;
+
+  @ApiPropertyOptional({ example: 'v2.1.5', description: 'Prompt version in force when this ran' })
+  promptVersion?: string;
+
+  @ApiPropertyOptional({
+    enum: ReportReleaseStatus,
+    description: 'Report Explainer only: whether the patient can see the summary',
+  })
+  releaseStatus?: ReportReleaseStatus;
+
   @ApiProperty({ example: '2026-08-02T10:00:00.000Z' })
   createdAt: string;
+}
+
+/** Body for POST /admin/ai/escalations/:id/approve and /escalate. */
+export class AiReviewDecisionDto {
+  @ApiPropertyOptional({ example: 'Values checked against the original report' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
 }

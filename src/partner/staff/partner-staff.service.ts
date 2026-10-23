@@ -352,7 +352,7 @@ export class PartnerStaffService {
       data: { memberId: member.id, role: member.role },
       excludeUserId: member.userId.toString(),
     });
-    return this.auth.login({ email: member.email, password: dto.password });
+    return this.auth.loginForTokens({ email: member.email, password: dto.password });
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────

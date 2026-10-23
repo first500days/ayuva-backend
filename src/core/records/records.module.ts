@@ -12,6 +12,7 @@ import {
   ReportInterpretation,
   ReportInterpretationSchema,
 } from '../../ai/report-interpreter/schemas/report-interpretation.schema';
+import { User, UserSchema } from '../users/schemas/user.schema';
 import { RecordsController } from './records.controller';
 import { RecordsService } from './records.service';
 import { AuthModule } from '../../auth/auth.module';
@@ -29,6 +30,7 @@ import { NotificationsModule } from '../../notifications/notifications.module';
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
       { name: Appointment.name, schema: AppointmentSchema },
       { name: ReportInterpretation.name, schema: ReportInterpretationSchema },
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [RecordsController],

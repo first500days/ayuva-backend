@@ -1,10 +1,35 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  CredentialDocType,
   ProviderCategory,
   ProviderStatus,
   WorkingDay,
 } from '../../../core/providers/schemas/provider.schema';
 import { ProviderLocationDto } from '../../../core/providers/dto/create-provider.dto';
+
+/** Metadata only — the file itself is streamed from GET /admin/providers/:id/credentials/:docId/file. */
+export class ProviderCredentialResponseDto {
+  @ApiProperty({ example: '6718f0c8e2b1a2c3d4e5f6a7' })
+  id: string;
+
+  @ApiProperty({ enum: CredentialDocType })
+  docType: CredentialDocType;
+
+  @ApiProperty({ example: 'AYUVA-LIC-F6A7.pdf' })
+  fileName: string;
+
+  @ApiProperty({ example: 'application/pdf' })
+  mimeType: string;
+
+  @ApiPropertyOptional({ example: 482113 })
+  sizeBytes?: number;
+
+  @ApiProperty({ example: '2026-10-20T09:30:00.000Z' })
+  uploadedAt: string;
+
+  @ApiPropertyOptional({ enum: ['partner', 'admin'] })
+  uploadedByRole?: 'partner' | 'admin';
+}
 
 export class AdminProviderScheduleResponseDto {
   @ApiProperty({ enum: WorkingDay, isArray: true })
@@ -74,4 +99,11 @@ export class AdminProviderResponseDto {
 
   @ApiProperty({ type: [AdminProviderBlockedDateResponseDto] })
   blockedDates: AdminProviderBlockedDateResponseDto[];
+
+  @ApiProperty({ type: [ProviderCredentialResponseDto] })
+  credentials: ProviderCredentialResponseDto[];
+
+  @ApiPropertyOptional() verifiedAt?: string;
+  @ApiPropertyOptional() suspendedAt?: string;
+  @ApiPropertyOptional() suspensionReason?: string;
 }

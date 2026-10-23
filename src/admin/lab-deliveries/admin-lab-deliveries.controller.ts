@@ -1,11 +1,21 @@
-import { Controller, Get, Put, Post, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { Controller, Get, Put, Post, Body, Param, Query, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
+import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminLabDeliveriesService } from './admin-lab-deliveries.service';
 import { QueryLabDeliveriesDto } from './dto/query-lab-deliveries.dto';
 import { UpdateLabDeliveryDto, RetryDeliveryDto, ManualDeliveryDto } from './dto/update-lab-delivery.dto';
 import { AdminLabDeliveryResponseDto } from './dto/admin-lab-delivery-response.dto';
 
+// Was reachable without signing in; now admin-only like the rest of the panel.
 @ApiTags('Admin - Lab Deliveries')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN)
+@AdminArea('lab-deliveries')
 @Controller('admin/lab-deliveries')
 export class AdminLabDeliveriesController {
   constructor(private readonly service: AdminLabDeliveriesService) {}

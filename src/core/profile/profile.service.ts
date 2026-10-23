@@ -14,6 +14,7 @@ import {
   MedicationDocument,
 } from '../medications/schemas/medication.schema';
 import { CreateHealthProfileDto } from '../health-profile/dto/create-health-profile.dto';
+import { ageFromDateOfBirth } from '../../common/utils/age.util';
 import { CreateEmergencyContactDto } from '../health-profile/dto/create-emergency-contact.dto';
 import { CreateMedicationDto } from '../medications/dto/create-medication.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
@@ -93,11 +94,16 @@ export class ProfileService {
     userId: string,
     dto: CreateHealthProfileDto,
   ): Promise<HealthProfileDocument> {
+    // A date of birth wins; a bare age only comes from older app builds.
+    const dateOfBirth = dto.dateOfBirth
+      ? new Date(`${dto.dateOfBirth}T00:00:00.000Z`)
+      : undefined;
     return this.healthProfileModel.findOneAndUpdate(
       { userId: new Types.ObjectId(userId) },
       {
         $set: {
-          age: dto.age,
+          age: dateOfBirth ? ageFromDateOfBirth(dateOfBirth) : dto.age,
+          ...(dateOfBirth && { dateOfBirth }),
           gender: dto.gender,
           conditions: dto.conditions,
           allergies: dto.allergies,

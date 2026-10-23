@@ -15,8 +15,13 @@ export class HealthProfile {
   })
   userId: Types.ObjectId;
 
+  // Derived from dateOfBirth when there is one; read the age through
+  // patientAge() so it stays current after birthdays.
   @Prop({ required: true })
   age: number;
+
+  @Prop()
+  dateOfBirth?: Date;
 
   @Prop({ required: true })
   gender: string;

@@ -78,6 +78,45 @@ export class ProviderBlockedDate {
 export const ProviderBlockedDateSchema =
   SchemaFactory.createForClass(ProviderBlockedDate);
 
+export enum CredentialDocType {
+  MEDICAL_LICENSE = 'medical_license',
+  REGISTRATION_CERTIFICATE = 'registration_certificate',
+  ACCREDITATION = 'accreditation',
+  OTHER = 'other',
+}
+
+/** A licence / registration document submitted for verification (A02). */
+@Schema()
+export class ProviderCredential {
+  @Prop({ type: String, enum: CredentialDocType, required: true })
+  docType: CredentialDocType;
+
+  // Encrypted object key; the file is only streamed to admins and the owning organisation.
+  @Prop({ required: true })
+  fileRef: string;
+
+  // System name (AYUVA-LIC-XXXX.pdf), never the uploader's own filename.
+  @Prop({ required: true })
+  fileName: string;
+
+  @Prop({ required: true })
+  mimeType: string;
+
+  @Prop()
+  sizeBytes?: number;
+
+  @Prop({ required: true })
+  uploadedAt: Date;
+
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
+  uploadedBy?: Types.ObjectId;
+
+  @Prop({ type: String, enum: ['partner', 'admin'] })
+  uploadedByRole?: 'partner' | 'admin';
+}
+export const ProviderCredentialSchema =
+  SchemaFactory.createForClass(ProviderCredential);
+
 export type ProviderDocument = HydratedDocument<Provider>;
 
 @Schema({ timestamps: true })
@@ -182,6 +221,17 @@ export class Provider {
 
   @Prop()
   verificationNotes?: string;
+
+  // Licence / registration documents reviewed in the verification queue.
+  @Prop({ type: [ProviderCredentialSchema], default: [] })
+  credentials: (ProviderCredential & { _id?: Types.ObjectId })[];
+
+  // Set when an admin pauses a live provider (compliance dispute, failed re-verification).
+  @Prop()
+  suspendedAt?: Date;
+
+  @Prop({ trim: true })
+  suspensionReason?: string;
 
   // Partner Portal: the organisation's departments (hospital OPD/IPD units,
   // lab sections) — used for staff, appointment and ward assignment and for

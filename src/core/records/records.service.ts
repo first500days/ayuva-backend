@@ -10,6 +10,7 @@ import {
   MedicalRecordDocument,
   MedicalRecordKind,
   MedicalRecordType,
+  consentTokenFor,
 } from './schemas/medical-record.schema';
 import {
   Appointment,
@@ -18,9 +19,11 @@ import {
 import {
   ReportInterpretation,
   ReportInterpretationDocument,
-  ReportAiStatus,
+  patientView,
 } from '../../ai/report-interpreter/schemas/report-interpretation.schema';
+import { User, UserDocument } from '../users/schemas/user.schema';
 import { StorageService } from '../../storage/storage.service';
+import { systemFileName } from '../../common/utils/system-file-name.util';
 import { ReminderQueueService } from '../../notifications/queue/reminder-queue.service';
 import { MedicalRecordResponseDto } from './dto/medical-record-response.dto';
 import { MedicalRecordDetailResponseDto } from './dto/medical-record-detail-response.dto';
@@ -68,6 +71,8 @@ export class RecordsService {
     private readonly appointmentModel: Model<AppointmentDocument>,
     @InjectModel(ReportInterpretation.name)
     private readonly reportInterpretationModel: Model<ReportInterpretationDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly storageService: StorageService,
     private readonly reminderQueueService: ReminderQueueService,
   ) {}
@@ -106,16 +111,22 @@ export class RecordsService {
       (kind === MedicalRecordKind.VISIT_SUMMARY
         ? MedicalRecordType.PRESCRIPTION
         : this.categorize(file.originalname, file.mimetype));
-    const fileRef = await this.storageService.upload(
-      file.buffer,
-      file.originalname,
-      userId,
-    );
+
+    // The device filename only feeds the folder guess above and the patient's
+    // own vault title; the stored key and every other screen get a system name.
+    const recordId = new Types.ObjectId();
+    const systemName = systemFileName(recordId.toHexString(), file.mimetype, file.originalname);
+    const fileRef = await this.storageService.upload(file.buffer, systemName, userId);
+    // Consent is snapshotted onto the record at ingestion (the admin "Consent Token").
+    const patient = await this.userModel.findById(userId).select('consent').lean().exec();
 
     const record = await this.recordModel.create({
+      _id: recordId,
       patientId: userId,
       fileRef,
       originalFileName: file.originalname,
+      systemFileName: systemName,
+      consentToken: consentTokenFor(userId, patient?.consent, 'ingestion'),
       mimeType: file.mimetype,
       type,
       kind,
@@ -134,10 +145,11 @@ export class RecordsService {
       }),
     });
 
+    // Push text can show on a lock screen, so it names the system file, not the device one.
     await this.reminderQueueService.sendDocumentUploadConfirmation({
       recordId: record.id,
       userId,
-      fileName: record.originalFileName,
+      fileName: systemName,
     });
 
     return this.toResponse(record);
@@ -262,14 +274,14 @@ export class RecordsService {
 
     // ReportInterpretation is Phase-3-owned and may not exist yet — a record with
     // no matching doc is honestly reported as "queued", not a 404 or a fake status.
+    // A summary held for clinical review reads as still processing.
     const interpretation = await this.reportInterpretationModel
       .findOne({ recordId: record._id })
       .exec();
 
     return {
       ...this.toResponse(record),
-      aiStatus: interpretation?.aiStatus ?? ReportAiStatus.QUEUED,
-      summaryText: interpretation?.summaryText,
+      ...patientView(interpretation),
     };
   }
 

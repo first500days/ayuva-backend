@@ -1,10 +1,11 @@
-import { IsString, IsNumber, IsBoolean, IsOptional, IsArray, ValidateNested, Min, Max } from 'class-validator';
+import { ArrayMaxSize, IsMongoId, IsString, IsNumber, IsBoolean, IsOptional, IsArray, MaxLength, ValidateNested, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 class ProviderPricingDto {
+  // Cast to an ObjectId when saved — anything else used to crash the save with a 500.
   @ApiProperty()
-  @IsString()
+  @IsMongoId({ message: 'Each provider price needs a valid lab ID' })
   labId: string;
 
   @ApiProperty()
@@ -90,6 +91,18 @@ export class CreateDiagnosticTestDto {
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['Hemogram', 'Blood Test', 'CBC'],
+    description: 'Spelling variations partners use for this test; each maps to one master test',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(120, { each: true })
+  aliases?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()

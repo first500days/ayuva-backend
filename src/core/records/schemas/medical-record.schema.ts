@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
-import { User } from '../../users/schemas/user.schema';
+import { User, UserConsent } from '../../users/schemas/user.schema';
 import { Appointment } from '../../appointments/schemas/appointment.schema';
+import { systemFileName } from '../../../common/utils/system-file-name.util';
 
 /**
  * The Medical Vault folders (U08 / H5 Health Passport). The value doubles as
@@ -70,7 +72,119 @@ export enum RecordStatusEnhanced {
   ARCHIVED = 'archived',
 }
 
+/**
+ * Evidence of the patient's health-data processing consent, attached to the
+ * record when it is ingested (or when the patient later gives consent). One
+ * consent event can cover many records, so they share its tokenId.
+ */
+@Schema({ _id: false })
+export class ConsentToken {
+  @Prop({ required: true })
+  tokenId: string;
+
+  @Prop({ required: true })
+  version: string;
+
+  @Prop({ required: true })
+  healthDataProcessingAccepted: boolean;
+
+  // When the patient accepted that consent.
+  @Prop({ required: true })
+  acceptedAt: Date;
+
+  // When it was attached to this record.
+  @Prop({ required: true })
+  capturedAt: Date;
+
+  @Prop({ type: String, enum: ['ingestion', 'reconsent'], required: true })
+  capturedOn: 'ingestion' | 'reconsent';
+}
+export const ConsentTokenSchema = SchemaFactory.createForClass(ConsentToken);
+
+export interface RecordConsentStatus {
+  status: 'verified' | 'missing';
+  // ingestion / reconsent: a token on the record; account: no token yet, the
+  // patient's account-level consent stands in (records from before tokens).
+  source: 'ingestion' | 'reconsent' | 'account' | 'none';
+  detail: string;
+  token?: ConsentToken;
+}
+
+/**
+ * Whether a record may be processed. Needs a health-data consent token (or,
+ * for records from before tokens existed, account-level consent) AND consent
+ * that the patient has not since withdrawn. A missing status locks the
+ * record: no AI processing and no admin file access.
+ */
+export function consentStatusOf(
+  record: Pick<MedicalRecord, 'consentToken'>,
+  accountConsent?: Pick<UserConsent, 'healthDataProcessingAccepted' | 'acceptedAt'> | null,
+): RecordConsentStatus {
+  const accountAccepted = accountConsent?.healthDataProcessingAccepted === true;
+  const token = record.consentToken;
+  if (token?.healthDataProcessingAccepted) {
+    return accountAccepted
+      ? {
+          status: 'verified',
+          source: token.capturedOn,
+          detail: `Consent ${token.version} attached ${token.capturedOn === 'ingestion' ? 'at upload' : 'when the patient later consented'}`,
+          token,
+        }
+      : {
+          status: 'missing',
+          source: token.capturedOn,
+          detail: 'The patient has since withdrawn health-data processing consent',
+          token,
+        };
+  }
+  if (token) {
+    return {
+      status: 'missing',
+      source: token.capturedOn,
+      detail: 'The patient had declined health-data processing when this was uploaded',
+      token,
+    };
+  }
+  return accountAccepted
+    ? { status: 'verified', source: 'account', detail: 'Uploaded before consent tokens; covered by the account consent on file' }
+    : { status: 'missing', source: 'none', detail: 'No consent token was attached at upload' };
+}
+
+/**
+ * The token to attach for a patient's current consent. Its id is derived
+ * from the consent event (patient, version, acceptance time), so every record
+ * covered by the same consent carries the same token id.
+ */
+export function consentTokenFor(
+  patientId: string,
+  consent: Pick<UserConsent, 'healthDataProcessingAccepted' | 'version' | 'acceptedAt'> | null | undefined,
+  capturedOn: ConsentToken['capturedOn'],
+): ConsentToken | undefined {
+  if (!consent) return undefined;
+  const digest = createHash('sha256')
+    .update(`${patientId}:${consent.version}:${new Date(consent.acceptedAt).toISOString()}`)
+    .digest('hex');
+  return {
+    tokenId: `CT-${digest.slice(0, 10).toUpperCase()}`,
+    version: consent.version,
+    healthDataProcessingAccepted: consent.healthDataProcessingAccepted,
+    acceptedAt: new Date(consent.acceptedAt),
+    capturedAt: new Date(),
+    capturedOn,
+  };
+}
+
 export type MedicalRecordDocument = HydratedDocument<MedicalRecord>;
+
+/** System name for a record: stored on new uploads, derived for older ones. */
+export function recordSystemFileName(
+  record: Pick<MedicalRecord, 'systemFileName' | 'mimeType' | 'originalFileName'> & { id?: string },
+): string {
+  return (
+    record.systemFileName ??
+    systemFileName(record.id ?? '0000', record.mimeType, record.originalFileName)
+  );
+}
 
 @Schema({ timestamps: { createdAt: 'uploadedAt', updatedAt: true } })
 export class MedicalRecord {
@@ -87,9 +201,18 @@ export class MedicalRecord {
   fileRef: string;
 
   // Original upload filename — the closest thing to a "title" for FR-8.4's listing,
-  // since TRD's MedicalRecord entity has no dedicated title field.
+  // since TRD's MedicalRecord entity has no dedicated title field. Shown only
+  // in the patient's own vault; everywhere else uses systemFileName.
   @Prop({ required: true })
   originalFileName: string;
+
+  // AYUVA-IMG-2FBC.jpg — device filenames carry capture dates and app names,
+  // so the storage key, admin and partner screens use this instead.
+  @Prop()
+  systemFileName?: string;
+
+  @Prop({ type: ConsentTokenSchema })
+  consentToken?: ConsentToken;
 
   // Served back on download. Absent on records uploaded before it was stored.
   @Prop()

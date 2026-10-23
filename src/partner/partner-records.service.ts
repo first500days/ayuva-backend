@@ -11,6 +11,7 @@ import { AccessLog, AccessLogDocument } from '../core/sharing/schemas/access-log
 import {
   MedicalRecord,
   MedicalRecordDocument,
+  recordSystemFileName,
 } from '../core/records/schemas/medical-record.schema';
 import { User, UserDocument } from '../core/users/schemas/user.schema';
 import {
@@ -81,7 +82,8 @@ export class PartnerRecordsService {
       recordCount: records.length,
       records: records.map((r) => ({
         id: r.id,
-        title: r.originalFileName,
+        // Partners see the system name; the device filename stays in the patient's vault.
+        title: recordSystemFileName(r),
         type: r.type,
         kind: r.kind,
         providerName: r.providerName,
@@ -121,7 +123,7 @@ export class PartnerRecordsService {
       targetId: recordId,
       metadata: { grantId, download: true },
     });
-    return { buffer, fileName: record.originalFileName };
+    return { buffer, fileName: recordSystemFileName(record) };
   }
 
   /** Access log: every view attributable to a partner login on this provider's organisations. */
