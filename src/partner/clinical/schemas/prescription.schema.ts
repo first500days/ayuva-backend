@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
+import { CodedDiagnosis, CodedDiagnosisSchema } from './coded-diagnosis.schema';
 
 export enum PrescriptionStatus {
   DRAFT = 'draft',
@@ -92,6 +93,10 @@ export class Prescription {
   @Prop({ default: '' })
   diagnosis: string;
 
+  // ICD-11 / SNOMED CT coded diagnoses; at least one is required to sign.
+  @Prop({ type: [CodedDiagnosisSchema], default: [] })
+  diagnoses: CodedDiagnosis[];
+
   @Prop({ default: '' })
   advice: string;
 
@@ -115,6 +120,10 @@ export class Prescription {
   // sha256 over the signed content + signer + time: proves the slip wasn't altered after signing.
   @Prop()
   signatureHash?: string;
+
+  // The prescriber's explicit sign-off: they confirmed the attestation at signing.
+  @Prop()
+  attestedAt?: Date;
 
   @Prop({ type: SchemaTypes.ObjectId, ref: 'MedicalRecord' })
   vaultRecordId?: Types.ObjectId;

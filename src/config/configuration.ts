@@ -85,6 +85,11 @@ export default () => ({
   // Comma-separated allowed origins for CORS (main.ts) — unset in production
   // means "reject all cross-origin requests" (logged loudly), not "allow all".
   corsAllowedOrigins: process.env.CORS_ALLOWED_ORIGINS,
+  // Ayuva's cut of partner consultation payments, shown in the partner Billing
+  // split (the admin Payments screen quotes the same 15%).
+  payments: {
+    platformFeePercent: Number(process.env.PLATFORM_FEE_PERCENT ?? 15),
+  },
   mail: {
     from: process.env.MAIL_FROM ?? 'noreply@ayuva.com',
   },

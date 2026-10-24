@@ -21,6 +21,7 @@ import {
 } from '../../audit-log/schemas/audit-log.schema';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import {
+  MemberStatus,
   PartnerMember,
   PartnerMemberDocument,
 } from '../staff/schemas/partner-member.schema';
@@ -47,6 +48,10 @@ export interface ActivityRow {
   actorUserId: string | null;
   actorName: string;
   actorRole: string | null;
+  // The staff record behind the login, for "Freeze account".
+  actorMemberId: string | null;
+  actorStatus: MemberStatus | null;
+  actorIsOwner: boolean;
   patientId: string | null;
   patientName: string | null;
   target: string | null;
@@ -124,6 +129,14 @@ const ACTION_META: Partial<
   [AuditAction.PARTNER_STAFF_SUSPEND]: {
     category: 'admin',
     label: 'Suspended / reactivated staff',
+  },
+  [AuditAction.PARTNER_STAFF_FREEZE]: {
+    category: 'admin',
+    label: 'Froze account (security)',
+  },
+  [AuditAction.PARTNER_STAFF_DUTY]: {
+    category: 'operations',
+    label: 'Changed duty status',
   },
   [AuditAction.PARTNER_STAFF_ACCEPT]: {
     category: 'admin',
@@ -239,6 +252,9 @@ export class PartnerSecurityService {
         actorUserId: userId?.toString() ?? null,
         actorName: m?.fullName ?? fallback ?? 'Unknown user',
         actorRole: m ? roleLabel(actor.orgType, m.role) : null,
+        actorMemberId: m?.id ?? null,
+        actorStatus: m?.status ?? null,
+        actorIsOwner: m?.isOwner ?? false,
       };
     };
 

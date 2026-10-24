@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsIn,
@@ -6,8 +6,11 @@ import {
   IsISO8601,
   IsMongoId,
   IsOptional,
+  IsString,
   Max,
+  MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 
 export class ActivityQueryDto {
@@ -37,4 +40,27 @@ export class ActivityQueryDto {
   @Min(1)
   @Max(1000)
   limit?: number;
+}
+
+/** Security & Logs "Freeze account": pause a login straight from a suspicious activity row. */
+export class FreezeAccountDto {
+  @ApiProperty({
+    description: 'The login behind the activity row (actorUserId)',
+  })
+  @IsMongoId()
+  userId: string;
+
+  @ApiProperty({ example: 'Downloaded 40 patient files after midnight' })
+  @IsString()
+  @MinLength(5)
+  @MaxLength(500)
+  reason: string;
+
+  @ApiPropertyOptional({
+    description: 'The activity row that prompted the freeze',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  activityId?: string;
 }

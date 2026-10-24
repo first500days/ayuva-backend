@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -82,6 +83,7 @@ export class PartnerAnalyticsService {
     @InjectModel(PartnerAdmission.name)
     private readonly admissionModel: Model<AdmissionDocument>,
     private readonly claims: PartnerClaimsService,
+    private readonly config: ConfigService,
   ) {}
 
   async analytics(actor: PartnerActor, days = 30) {
@@ -495,6 +497,97 @@ export class PartnerAnalyticsService {
         actor.orgType === OrgType.HOSPITAL
           ? await this.claims.summary(providerId)
           : null,
+      split: await this.earningsSplit(
+        actor,
+        paid.filter((t) => t.paidAt && t.paidAt >= since),
+      ),
+    };
+  }
+
+  /**
+   * Who earned what in the window: Ayuva's platform fee comes off the top, then
+   * each doctor's configured share of the rest is separated from what the
+   * organisation keeps. A payment counts for the doctor assigned to its booking.
+   */
+  private async earningsSplit(actor: PartnerActor, txs: TransactionDocument[]) {
+    const percent =
+      this.config.get<number>('payments.platformFeePercent') ?? 15;
+    const money = (v: number) => Math.round(v * 100) / 100;
+    const apptIds = txs
+      .map((t) => t.appointmentId)
+      .filter((id): id is Types.ObjectId => !!id);
+    const [appts, members] = await Promise.all([
+      this.appointmentModel
+        .find({ _id: { $in: apptIds } })
+        .select('assignedMemberId')
+        .lean()
+        .exec(),
+      this.memberModel
+        .find({ providerId: actor.provider._id })
+        .select('fullName role revenueSharePercent')
+        .lean()
+        .exec(),
+    ]);
+    const doctorOf = new Map(
+      appts.map((a) => [a._id.toString(), a.assignedMemberId?.toString()]),
+    );
+    const memberById = new Map(members.map((m) => [m._id.toString(), m]));
+
+    const byDoctor = new Map<
+      string,
+      { consultations: number; gross: number }
+    >();
+    for (const t of txs) {
+      const key =
+        (t.appointmentId && doctorOf.get(t.appointmentId.toString())) ||
+        'unassigned';
+      const row = byDoctor.get(key) ?? { consultations: 0, gross: 0 };
+      row.consultations += 1;
+      row.gross += t.amount;
+      byDoctor.set(key, row);
+    }
+
+    const doctors = [...byDoctor.entries()].map(([key, row]) => {
+      const member = key === 'unassigned' ? undefined : memberById.get(key);
+      const platformFee = money((row.gross * percent) / 100);
+      const net = money(row.gross - platformFee);
+      const sharePercent = member?.revenueSharePercent ?? null;
+      const doctorEarnings =
+        sharePercent === null ? 0 : money((net * sharePercent) / 100);
+      return {
+        memberId: member ? key : null,
+        name: member?.fullName ?? 'No doctor assigned',
+        role: member ? roleLabel(actor.orgType, member.role) : null,
+        consultations: row.consultations,
+        gross: money(row.gross),
+        platformFee,
+        net,
+        sharePercent,
+        doctorEarnings,
+        organisationShare: money(net - doctorEarnings),
+      };
+    });
+    doctors.sort(
+      (a, b) =>
+        Number(a.memberId === null) - Number(b.memberId === null) ||
+        b.gross - a.gross,
+    );
+    const total = (
+      k:
+        | 'gross'
+        | 'platformFee'
+        | 'net'
+        | 'doctorEarnings'
+        | 'organisationShare',
+    ) => money(doctors.reduce((s, d) => s + d[k], 0));
+    return {
+      platformFeePercent: percent,
+      gross: total('gross'),
+      platformFee: total('platformFee'),
+      net: total('net'),
+      doctorEarnings: total('doctorEarnings'),
+      organisationShare: total('organisationShare'),
+      doctors,
     };
   }
 }

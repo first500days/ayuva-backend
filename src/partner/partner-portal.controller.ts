@@ -36,12 +36,16 @@ import type { PartnerActor } from './rbac/partner-perm.guard';
 import { Perm } from './rbac/partner-permissions';
 import { PartnerStaffService } from './staff/partner-staff.service';
 import {
+  DutyStatusDto,
   InviteStaffDto,
   UpdateOwnStaffProfileDto,
   UpdateStaffDto,
 } from './staff/dto/staff.dto';
 import { PartnerSecurityService } from './security/partner-security.service';
-import { ActivityQueryDto } from './security/dto/security.dto';
+import {
+  ActivityQueryDto,
+  FreezeAccountDto,
+} from './security/dto/security.dto';
 import { PartnerNotifySettingsService } from './notify/partner-notify-settings.service';
 import { UpdateNotificationSettingsDto } from './notify/dto/notify.dto';
 import { PartnerPatientsService } from './clinical/partner-patients.service';
@@ -52,6 +56,7 @@ import {
   CancelPrescriptionDto,
   CreateNoteDto,
   CreatePrescriptionDto,
+  DiagnosisSearchDto,
   NotesQueryDto,
   PatientsQueryDto,
   PrescriptionsQueryDto,
@@ -156,6 +161,13 @@ export class PartnerStaffController {
     return this.staff.updateOwnProfile(a, dto);
   }
 
+  @Post('me/duty')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Check in / check out — my on-duty status' })
+  myDuty(@PartnerCtx() a: PartnerActor, @Body() dto: DutyStatusDto) {
+    return this.staff.setDuty(a, null, dto.onDuty);
+  }
+
   @Post()
   @RequirePerm(Perm.STAFF_MANAGE)
   @ApiOperation({
@@ -190,6 +202,18 @@ export class PartnerStaffController {
     return this.staff.reactivate(a, id);
   }
 
+  @Post(':id/duty')
+  @HttpCode(200)
+  @RequirePerm(Perm.STAFF_MANAGE)
+  @ApiOperation({ summary: "Correct a staff member's on-duty status" })
+  duty(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: DutyStatusDto,
+  ) {
+    return this.staff.setDuty(a, id, dto.onDuty);
+  }
+
   @Post(':id/resend-invite')
   @HttpCode(200)
   @RequirePerm(Perm.STAFF_MANAGE)
@@ -212,7 +236,10 @@ export class PartnerStaffController {
 @Roles(UserRole.PARTNER)
 @Controller('partner/security')
 export class PartnerSecurityController {
-  constructor(private readonly security: PartnerSecurityService) {}
+  constructor(
+    private readonly security: PartnerSecurityService,
+    private readonly staff: PartnerStaffService,
+  ) {}
 
   @Get('activity')
   @RequirePerm(Perm.SECURITY_AUDIT)
@@ -228,6 +255,17 @@ export class PartnerSecurityController {
   @RequirePerm(Perm.SECURITY_AUDIT)
   summary(@PartnerCtx() a: PartnerActor) {
     return this.security.summary(a);
+  }
+
+  @Post('freeze')
+  @HttpCode(200)
+  @RequirePerm(Perm.STAFF_MANAGE)
+  @ApiOperation({
+    summary:
+      'Freeze account: suspend the login behind a suspicious activity row — access stops immediately',
+  })
+  freeze(@PartnerCtx() a: PartnerActor, @Body() dto: FreezeAccountDto) {
+    return this.staff.freeze(a, dto);
   }
 }
 
@@ -353,6 +391,16 @@ export class PartnerClinicalController {
   })
   structure(@PartnerCtx() a: PartnerActor, @Body() dto: ScribeStructureDto) {
     return this.notes.structure(a, dto.text);
+  }
+
+  @Get('diagnosis-codes')
+  @RequirePerm(Perm.CLINICAL_WRITE)
+  @ApiOperation({
+    summary:
+      'ICD-11 / SNOMED CT diagnosis search — coded diagnoses for notes and e-prescriptions',
+  })
+  diagnosisCodes(@Query() q: DiagnosisSearchDto) {
+    return this.notes.diagnosisCodes(q.q);
   }
 
   @Get('notes')

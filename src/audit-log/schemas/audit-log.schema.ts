@@ -19,6 +19,8 @@ export enum AuditAction {
   ADMIN_PROVIDER_CREDENTIAL_VIEW = 'admin_provider_credential_view',
   ADMIN_PROVIDER_CREDENTIAL_UPLOAD = 'admin_provider_credential_upload',
   ADMIN_DOCTOR_SCHEDULE_UPDATE = 'admin_doctor_schedule_update',
+  // Ayuva's decision on a doctor's medical council registration (unlocks e-prescribing).
+  ADMIN_DOCTOR_REGISTRATION_REVIEW = 'admin_doctor_registration_review',
   PARTNER_CREDENTIAL_UPLOAD = 'partner_credential_upload',
   // Admin sign-in second factor (TOTP).
   ADMIN_MFA_ENROLL = 'admin_mfa_enroll',
@@ -81,6 +83,10 @@ export enum AuditAction {
   PARTNER_STAFF_INVITE = 'partner_staff_invite',
   PARTNER_STAFF_UPDATE = 'partner_staff_update',
   PARTNER_STAFF_SUSPEND = 'partner_staff_suspend',
+  // Security & Logs "Freeze account" on suspicious activity.
+  PARTNER_STAFF_FREEZE = 'partner_staff_freeze',
+  // On-duty check-in / check-out.
+  PARTNER_STAFF_DUTY = 'partner_staff_duty',
   PARTNER_STAFF_ACCEPT = 'partner_staff_accept',
   PARTNER_SETTINGS_UPDATE = 'partner_settings_update',
   PARTNER_PATIENT_VIEW = 'partner_patient_view',

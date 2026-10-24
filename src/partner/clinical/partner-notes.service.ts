@@ -31,6 +31,7 @@ import {
   UpdateNoteDto,
 } from './dto/clinical.dto';
 import { PartnerPatientsService } from './partner-patients.service';
+import { resolveDiagnosisCodes, searchDiagnosisCodes } from './diagnosis-codes';
 
 /** Clinical Notes & AYUVA Scribe. */
 @Injectable()
@@ -71,6 +72,15 @@ export class PartnerNotesService {
       source: AiSource.MOCK,
     });
     return { ...result, source: AiSource.MOCK, disclaimer: AI_DISCLAIMER };
+  }
+
+  /** ICD-11 / SNOMED CT diagnosis search for the notes and prescription forms. */
+  diagnosisCodes(q: string) {
+    return searchDiagnosisCodes(q).map(({ icd11, snomed, display }) => ({
+      icd11,
+      snomed,
+      display,
+    }));
   }
 
   async list(actor: PartnerActor, q: NotesQueryDto) {
@@ -123,6 +133,7 @@ export class PartnerNotesService {
       sections: dto.sections ?? {},
       vitals: dto.vitals ?? {},
       structuringSource: dto.structuringSource ?? 'manual',
+      diagnoses: resolveDiagnosisCodes(dto.diagnosisCodes ?? []),
     });
     return this.toResponse(note);
   }
@@ -146,6 +157,8 @@ export class PartnerNotesService {
     }
     if (dto.structuringSource !== undefined)
       note.structuringSource = dto.structuringSource;
+    if (dto.diagnosisCodes !== undefined)
+      note.set('diagnoses', resolveDiagnosisCodes(dto.diagnosisCodes));
     await note.save();
     return this.toResponse(note);
   }
@@ -311,6 +324,11 @@ export class PartnerNotesService {
         height: v.height ?? '',
       },
       structuringSource: n.structuringSource,
+      diagnoses: (n.diagnoses ?? []).map((d) => ({
+        icd11: d.icd11,
+        snomed: d.snomed,
+        display: d.display,
+      })),
       status: n.status,
       signedAt: n.signedAt?.toISOString() ?? null,
       sharedWithPatientAt: n.sharedWithPatientAt?.toISOString() ?? null,

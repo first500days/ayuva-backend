@@ -161,6 +161,8 @@ export class PartnerDocumentsService {
       ],
       2,
     );
+    if (rx.diagnoses?.length)
+      pdf.heading('Diagnosis').text(codedDiagnosisLines(rx.diagnoses));
     if (rx.diagnosis) pdf.heading('Clinical notes').text(rx.diagnosis);
     pdf.heading('Rx');
     pdf.table(
@@ -193,6 +195,10 @@ export class PartnerDocumentsService {
           ? `Reg. ${rx.doctorRegistrationNumber}`
           : 'Registered medical practitioner',
         `Digitally signed ${fmtDateTime(rx.signedAt)}`,
+        // Signed through the attested sign-off, which needs an Ayuva-verified registration.
+        ...(rx.attestedAt
+          ? ['Registration verified by Ayuva · prescriber attested']
+          : []),
         `Verification hash ${rx.signatureHash?.slice(0, 16) ?? ''}`,
       ]);
     }
@@ -232,6 +238,8 @@ export class PartnerDocumentsService {
     if (vitals.length) pdf.heading('Vitals').text(vitals.join('   ·   '));
     block('Examination', s.examination);
     block("Doctor's assessment", s.assessment);
+    if (note.diagnoses?.length)
+      pdf.heading('Diagnosis').text(codedDiagnosisLines(note.diagnoses));
     block('Plan', s.plan);
     block('Advice', s.advice);
     block('Follow-up', s.followUp);
@@ -408,6 +416,15 @@ const VITAL_LABELS: Record<string, string> = {
   weight: 'Weight',
   height: 'Height',
 };
+
+/** One line per diagnosis: "Essential hypertension — ICD-11 BA00 · SNOMED CT 59621000". */
+function codedDiagnosisLines(
+  diagnoses: { icd11: string; snomed: string; display: string }[],
+): string {
+  return diagnoses
+    .map((d) => `${d.display} — ICD-11 ${d.icd11} · SNOMED CT ${d.snomed}`)
+    .join('\n');
+}
 
 const FLAG_LABELS: Record<string, string> = {
   normal: '',

@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
+import { CodedDiagnosis, CodedDiagnosisSchema } from './coded-diagnosis.schema';
 
 export enum NoteStatus {
   DRAFT = 'draft',
@@ -86,6 +87,9 @@ export class ConsultationNote {
 
   @Prop({ type: NoteVitalsSchema, default: () => ({}) })
   vitals: NoteVitals;
+
+  @Prop({ type: [CodedDiagnosisSchema], default: [] })
+  diagnoses: CodedDiagnosis[];
 
   // 'mock' | 'real' when the AYUVA Scribe structured it, 'manual' when typed straight into sections.
   @Prop({ type: String, enum: ['mock', 'real', 'manual'], default: 'manual' })

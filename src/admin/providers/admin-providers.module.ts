@@ -22,13 +22,17 @@ import {
 } from '../../partner/staff/schemas/partner-member.schema';
 import { AuthModule } from '../../auth/auth.module';
 import { AuditLogModule } from '../../audit-log/audit-log.module';
+import { NotificationsModule } from '../../notifications/notifications.module';
 import { AdminProvidersController } from './admin-providers.controller';
 import { AdminProvidersService } from './admin-providers.service';
+import { AdminDoctorRegistrationsController } from './admin-doctor-registrations.controller';
+import { AdminDoctorRegistrationsService } from './admin-doctor-registrations.service';
 
 @Module({
   imports: [
     AuthModule,
     AuditLogModule,
+    NotificationsModule,
     MongooseModule.forFeature([
       { name: Provider.name, schema: ProviderSchema },
       { name: AppointmentSlot.name, schema: AppointmentSlotSchema },
@@ -37,8 +41,8 @@ import { AdminProvidersService } from './admin-providers.service';
       { name: Appointment.name, schema: AppointmentSchema },
     ]),
   ],
-  controllers: [AdminProvidersController],
-  providers: [AdminProvidersService],
+  controllers: [AdminProvidersController, AdminDoctorRegistrationsController],
+  providers: [AdminProvidersService, AdminDoctorRegistrationsService],
   exports: [AdminProvidersService],
 })
 export class AdminProvidersModule {}

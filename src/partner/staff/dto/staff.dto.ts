@@ -7,10 +7,13 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsNumber,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -108,6 +111,23 @@ export class UpdateStaffDto {
   @ValidateNested({ each: true })
   @Type(() => DutyBlockDto)
   dutySchedule?: DutyBlockDto[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 60,
+    description:
+      "Doctor's % of the consultation revenue they generate, after Ayuva's platform fee (null clears it)",
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  revenueSharePercent?: number | null;
+}
+
+/** On-duty check-in / check-out. */
+export class DutyStatusDto {
+  @ApiProperty() @IsBoolean() onDuty: boolean;
 }
 
 /** What a member may change about themselves (no role or department changes). */
@@ -130,6 +150,18 @@ export class UpdateOwnStaffProfileDto {
   @IsString()
   @MaxLength(60)
   registrationNumber?: string;
+
+  @ApiPropertyOptional({
+    type: [DutyBlockDto],
+    description:
+      'My own weekly working hours (e.g. a doctor setting their clinic hours)',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(21)
+  @ValidateNested({ each: true })
+  @Type(() => DutyBlockDto)
+  dutySchedule?: DutyBlockDto[];
 }
 
 export class AcceptInviteDto {

@@ -1,7 +1,9 @@
+import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  Equals,
   IsArray,
   IsBoolean,
   IsEmail,
@@ -17,6 +19,25 @@ import {
 
 const toBool = ({ value }: { value: unknown }) =>
   value === true || value === 'true' || value === '1';
+
+/** ICD-11 codes picked from GET /partner/diagnosis-codes; the server resolves the SNOMED CT ids and titles. */
+const DiagnosisCodes = () =>
+  applyDecorators(
+    ApiPropertyOptional({ type: [String], example: ['BA00', '5A11'] }),
+    IsOptional(),
+    IsArray(),
+    ArrayMaxSize(10),
+    IsString({ each: true }),
+    MaxLength(16, { each: true }),
+  );
+
+export class DiagnosisSearchDto {
+  @ApiProperty({ example: 'hypertension' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  q: string;
+}
 
 export class PatientsQueryDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(80) q?: string;
@@ -138,6 +159,9 @@ export class CreateNoteDto {
   @IsOptional()
   @IsIn(['mock', 'real', 'manual'])
   structuringSource?: string;
+
+  @DiagnosisCodes()
+  diagnosisCodes?: string[];
 }
 
 export class UpdateNoteDto {
@@ -168,6 +192,9 @@ export class UpdateNoteDto {
   @IsOptional()
   @IsIn(['mock', 'real', 'manual'])
   structuringSource?: string;
+
+  @DiagnosisCodes()
+  diagnosisCodes?: string[];
 }
 
 export class NotesQueryDto {
@@ -265,6 +292,9 @@ export class CreatePrescriptionDto {
   @IsOptional()
   @IsISO8601()
   followUpDate?: string;
+
+  @DiagnosisCodes()
+  diagnosisCodes?: string[];
 }
 
 export class UpdatePrescriptionDto {
@@ -296,6 +326,9 @@ export class UpdatePrescriptionDto {
 
   @ApiPropertyOptional() @IsOptional() @IsISO8601() followUpDate?: string;
   @ApiPropertyOptional() @IsOptional() @IsMongoId() appointmentId?: string;
+
+  @DiagnosisCodes()
+  diagnosisCodes?: string[];
 }
 
 export class PharmacyDto {
@@ -308,6 +341,16 @@ export class PharmacyDto {
 }
 
 export class SignPrescriptionDto {
+  @ApiProperty({
+    description:
+      'The prescriber confirms they assessed the patient and authorise this prescription — the explicit sign-off',
+  })
+  @IsBoolean()
+  @Equals(true, {
+    message: 'Confirm the sign-off declaration to sign this prescription',
+  })
+  attest: boolean;
+
   @ApiPropertyOptional({
     default: true,
     description: "Deliver the signed PDF to the patient's Medical Vault",

@@ -36,6 +36,11 @@ import {
   UpdatePrescriptionDto,
 } from './dto/clinical.dto';
 import { PartnerPatientsService } from './partner-patients.service';
+import { resolveDiagnosisCodes } from './diagnosis-codes';
+import {
+  registrationStateOf,
+  signingRegistration,
+} from '../staff/registration-status';
 
 /** Digital Prescriptions (E-Rx): draft → sign → patient vault (+ optional pharmacy). */
 @Injectable()
@@ -84,6 +89,7 @@ export class PartnerPrescriptionsService {
     if (dto.appointmentId)
       await this.assertAppointment(actor, dto.appointmentId, patient._id);
     let noteId: Types.ObjectId | undefined;
+    let diagnoses = resolveDiagnosisCodes(dto.diagnosisCodes ?? []);
     if (dto.noteId) {
       const note = await this.noteModel.findOne({
         _id: dto.noteId,
@@ -93,6 +99,15 @@ export class PartnerPrescriptionsService {
       if (!note)
         throw new BadRequestException('That note is not for this patient');
       noteId = note._id;
+      // Carries the consultation's coded diagnoses onto the slip unless chosen here.
+      if (dto.diagnosisCodes === undefined)
+        diagnoses = (note.diagnoses ?? []).map(
+          ({ icd11, snomed, display }) => ({
+            icd11,
+            snomed,
+            display,
+          }),
+        );
     }
     const rx = await this.rxModel.create({
       providerId: actor.provider._id,
@@ -101,7 +116,10 @@ export class PartnerPrescriptionsService {
       authorUserId: new Types.ObjectId(actor.userId),
       doctorName: actor.member.fullName,
       doctorTitle: actor.member.title,
-      doctorRegistrationNumber: this.registrationNumber(actor),
+      doctorRegistrationNumber: signingRegistration(
+        actor.member,
+        actor.provider,
+      ),
       patientId: patient._id,
       patientName: patient.fullName,
       appointmentId: dto.appointmentId
@@ -110,6 +128,7 @@ export class PartnerPrescriptionsService {
       noteId,
       items: dto.items,
       diagnosis: dto.diagnosis ?? '',
+      diagnoses,
       advice: dto.advice ?? '',
       investigations: dto.investigations ?? [],
       followUpDate: dto.followUpDate ? new Date(dto.followUpDate) : undefined,
@@ -126,6 +145,8 @@ export class PartnerPrescriptionsService {
     const rx = await this.loadOwnDraft(actor, id);
     if (dto.items !== undefined) rx.set('items', dto.items);
     if (dto.diagnosis !== undefined) rx.diagnosis = dto.diagnosis;
+    if (dto.diagnosisCodes !== undefined)
+      rx.set('diagnoses', resolveDiagnosisCodes(dto.diagnosisCodes));
     if (dto.advice !== undefined) rx.advice = dto.advice;
     if (dto.investigations !== undefined)
       rx.investigations = dto.investigations;
@@ -145,18 +166,33 @@ export class PartnerPrescriptionsService {
     const rx = await this.loadOwnDraft(actor, id);
     if (!rx.items.length)
       throw new BadRequestException('Add at least one medicine before signing');
-    const regNo = this.registrationNumber(actor);
-    if (!regNo) {
+    if (!rx.diagnoses?.length) {
       throw new BadRequestException(
-        'Add your medical registration number (My profile) before signing prescriptions',
+        'Add at least one coded diagnosis (ICD-11 / SNOMED CT) before signing',
       );
     }
+    const registration = registrationStateOf(actor.member, actor.provider);
+    if (!registration.number) {
+      throw new BadRequestException(
+        'Add your medical registration number (Settings → My profile) before signing prescriptions',
+      );
+    }
+    // A self-entered licence number isn't enough: Ayuva has to verify it first.
+    if (registration.status !== 'verified') {
+      throw new ForbiddenException(
+        registration.status === 'rejected'
+          ? `Ayuva couldn't verify registration ${registration.number}${registration.notes ? ` (${registration.notes})` : ''}. Correct it under Settings → My profile — prescription signing stays locked until it's verified.`
+          : `Prescription signing is locked until Ayuva verifies your medical registration ${registration.number}.`,
+      );
+    }
+    const regNo = registration.number;
     const signedAt = new Date();
     rx.doctorName = actor.member.fullName;
     rx.doctorTitle = actor.member.title;
     rx.doctorRegistrationNumber = regNo;
     rx.rxNumber = await this.newRxNumber(signedAt);
     rx.signedAt = signedAt;
+    rx.attestedAt = signedAt;
     rx.status = PrescriptionStatus.SIGNED;
     rx.signatureHash = this.contentHash(rx, actor.userId, signedAt);
     await rx.save();
@@ -199,6 +235,9 @@ export class PartnerPrescriptionsService {
     await this.record(actor, AuditAction.PARTNER_RX_SIGN, rx, {
       rxNumber: rx.rxNumber,
       items: rx.items.length,
+      diagnoses: rx.diagnoses.map((d) => d.icd11),
+      registration: regNo,
+      attested: true,
       toVault: dto.sendToVault !== false,
       toPharmacy: !!rx.pharmacySentAt,
     });
@@ -259,15 +298,6 @@ export class PartnerPrescriptionsService {
 
   // ── helpers ───────────────────────────────────────────────────────────────
 
-  /** The signer's council registration; a clinic owner falls back to the practice's registration. */
-  private registrationNumber(actor: PartnerActor): string | undefined {
-    return (
-      actor.member.registrationNumber ||
-      (actor.member.isOwner ? actor.provider.registrationNumber : undefined) ||
-      undefined
-    );
-  }
-
   private contentHash(
     rx: PrescriptionDocument,
     signerUserId: string,
@@ -291,6 +321,7 @@ export class PartnerPrescriptionsService {
         i.quantity,
       ]),
       diagnosis: rx.diagnosis,
+      diagnoses: rx.diagnoses.map((d) => [d.icd11, d.snomed]),
       advice: rx.advice,
       investigations: rx.investigations,
       followUpDate: rx.followUpDate?.toISOString() ?? null,
@@ -405,11 +436,17 @@ export class PartnerPrescriptionsService {
         quantity: i.quantity ?? '',
       })),
       diagnosis: r.diagnosis,
+      diagnoses: (r.diagnoses ?? []).map((d) => ({
+        icd11: d.icd11,
+        snomed: d.snomed,
+        display: d.display,
+      })),
       advice: r.advice,
       investigations: r.investigations,
       followUpDate: r.followUpDate?.toISOString().slice(0, 10) ?? null,
       signedAt: r.signedAt?.toISOString() ?? null,
       signatureHash: r.signatureHash ?? null,
+      attestedAt: r.attestedAt?.toISOString() ?? null,
       deliveredToVaultAt: r.deliveredToVaultAt?.toISOString() ?? null,
       pharmacy: r.pharmacy?.email
         ? { name: r.pharmacy.name ?? null, email: r.pharmacy.email }

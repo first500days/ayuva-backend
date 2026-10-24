@@ -45,19 +45,48 @@ import {
 } from '../rbac/partner-permissions';
 import { PartnerNotifierService } from '../notify/partner-notifier.service';
 import { PartnerTrigger } from '../notify/partner-triggers';
+import { AppNotificationsService } from '../../notifications/app-notifications.service';
 import {
   MemberStatus,
+  MemberSuspension,
   PartnerMember,
   PartnerMemberDocument,
+  RegistrationReview,
 } from './schemas/partner-member.schema';
 import {
   AcceptInviteDto,
+  DutyBlockDto,
   InviteStaffDto,
   UpdateOwnStaffProfileDto,
   UpdateStaffDto,
 } from './dto/staff.dto';
+import { FreezeAccountDto } from '../security/dto/security.dto';
+import { registrationStateOf } from './registration-status';
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Each block ends after it starts, and one person's shifts on a day never overlap (split shifts are fine). */
+function assertValidRoster(blocks: DutyBlockDto[]) {
+  const byDay = new Map<string, DutyBlockDto[]>();
+  for (const b of blocks) {
+    if (b.start >= b.end)
+      throw new BadRequestException(
+        `Duty block on ${b.day} must end after it starts`,
+      );
+    byDay.set(b.day, [...(byDay.get(b.day) ?? []), b]);
+  }
+  for (const [day, list] of byDay) {
+    const sorted = [...list].sort((a, b) => a.start.localeCompare(b.start));
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1]!;
+      const next = sorted[i]!;
+      if (prev.end > next.start)
+        throw new BadRequestException(
+          `Shifts on ${day} overlap (${prev.start}–${prev.end} and ${next.start}–${next.end})`,
+        );
+    }
+  }
+}
 // Placeholder consent until the invitee accepts the terms themselves; the
 // ConsentGuard rejects it, and the account has no password until then anyway.
 const PENDING_CONSENT_VERSION = 'invite-pending';
@@ -80,6 +109,7 @@ export class PartnerStaffService {
     private readonly auth: AuthService,
     private readonly notifier: PartnerNotifierService,
     private readonly config: ConfigService,
+    private readonly notifications: AppNotificationsService,
   ) {}
 
   async list(actor: PartnerActor) {
@@ -143,6 +173,10 @@ export class PartnerStaffService {
       await this.userModel.deleteOne({ _id: user._id });
       throw err;
     }
+    if (this.resubmitRegistration(actor, member)) {
+      await member.save();
+      await this.alertRegistrationSubmitted(actor, member);
+    }
 
     const inviteUrl = this.inviteUrl(token);
     await this.sendInviteEmail(
@@ -161,6 +195,7 @@ export class PartnerStaffService {
   async update(actor: PartnerActor, id: string, dto: UpdateStaffDto) {
     const member = await this.getMember(actor, id);
     const changes: Record<string, unknown> = {};
+    const previousRegistration = member.registrationNumber;
 
     if (dto.role !== undefined && dto.role !== member.role) {
       if (member.isOwner)
@@ -186,53 +221,105 @@ export class PartnerStaffService {
       }
     }
     if (dto.dutySchedule !== undefined) {
-      for (const b of dto.dutySchedule) {
-        if (b.start >= b.end)
-          throw new BadRequestException(
-            `Duty block on ${b.day} must end after it starts`,
-          );
-      }
+      assertValidRoster(dto.dutySchedule);
       member.dutySchedule = dto.dutySchedule;
       changes.dutySchedule = dto.dutySchedule.length;
     }
+    if (dto.revenueSharePercent !== undefined) {
+      const share = dto.revenueSharePercent ?? undefined;
+      if (share !== member.revenueSharePercent)
+        changes.revenueSharePercent = share ?? null;
+      member.set('revenueSharePercent', share);
+    }
+    const submitted =
+      member.registrationNumber !== previousRegistration &&
+      this.resubmitRegistration(actor, member);
     // Phone stays on the member only — User.phone is unique and reserved for patient OTP sign-in.
     await member.save();
     await this.record(actor, AuditAction.PARTNER_STAFF_UPDATE, member, changes);
+    if (submitted) await this.alertRegistrationSubmitted(actor, member);
     return this.toResponse(member, actor);
   }
 
   async updateOwnProfile(actor: PartnerActor, dto: UpdateOwnStaffProfileDto) {
     const member = actor.member;
+    const previousRegistration = member.registrationNumber;
     for (const key of ['title', 'phone', 'registrationNumber'] as const) {
       if (dto[key] !== undefined)
         member.set(key, dto[key]?.trim() || undefined);
     }
+    if (dto.dutySchedule !== undefined) {
+      assertValidRoster(dto.dutySchedule);
+      member.dutySchedule = dto.dutySchedule;
+    }
+    const submitted =
+      member.registrationNumber !== previousRegistration &&
+      this.resubmitRegistration(actor, member);
     await member.save();
+    if (dto.dutySchedule !== undefined || submitted) {
+      await this.record(actor, AuditAction.PARTNER_STAFF_UPDATE, member, {
+        self: true,
+        ...(dto.dutySchedule !== undefined && {
+          dutySchedule: dto.dutySchedule.length,
+        }),
+        ...(submitted && { registrationNumber: member.registrationNumber }),
+      });
+    }
+    if (submitted) await this.alertRegistrationSubmitted(actor, member);
     return this.toResponse(member, actor);
   }
 
   async suspend(actor: PartnerActor, id: string) {
     const member = await this.getMember(actor, id);
-    if (member.isOwner)
-      throw new BadRequestException(
-        "The organisation owner can't be suspended",
-      );
-    if (member.userId.toString() === actor.userId)
-      throw new BadRequestException("You can't suspend yourself");
-    if (member.status !== MemberStatus.ACTIVE)
-      throw new BadRequestException('Only an active member can be suspended');
-    if (member.role === StaffRole.ADMIN)
-      await this.assertAnotherAdmin(actor, member);
-    member.status = MemberStatus.SUSPENDED;
-    await member.save();
-    // Staff logins belong to exactly one organisation, so suspending the member blocks the login too.
-    await this.userModel.updateOne(
-      { _id: member.userId },
-      { $set: { status: UserStatus.INACTIVE } },
-    );
+    await this.suspendMember(actor, member, { source: 'staff' });
     await this.record(actor, AuditAction.PARTNER_STAFF_SUSPEND, member, {
       suspended: true,
     });
+    return this.toResponse(member, actor);
+  }
+
+  /**
+   * Security & Logs "Freeze account": an administrator who spots suspicious
+   * activity (e.g. bulk downloads at night) pauses that login at once. Every
+   * portal request re-checks membership, and the deactivated login can't
+   * refresh its tokens, so access stops immediately. Logs stay intact.
+   */
+  async freeze(actor: PartnerActor, dto: FreezeAccountDto) {
+    const member = await this.memberModel.findOne({
+      providerId: actor.provider._id,
+      userId: new Types.ObjectId(dto.userId),
+    });
+    if (!member)
+      throw new NotFoundException("That login isn't part of your organisation");
+    const reason = dto.reason.trim();
+    await this.suspendMember(actor, member, {
+      source: 'security_log',
+      reason,
+      activityId: dto.activityId,
+    });
+    await this.record(actor, AuditAction.PARTNER_STAFF_FREEZE, member, {
+      reason,
+      activityId: dto.activityId,
+    });
+    return this.toResponse(member, actor);
+  }
+
+  /** On-duty check-in / check-out: members set their own, administrators can correct anyone's. */
+  async setDuty(actor: PartnerActor, id: string | null, onDuty: boolean) {
+    const member = id ? await this.getMember(actor, id) : actor.member;
+    if (member.status !== MemberStatus.ACTIVE)
+      throw new BadRequestException(
+        'Only an active member can change duty status',
+      );
+    if (member.onDuty !== onDuty) {
+      member.onDuty = onDuty;
+      member.dutyStatusAt = new Date();
+      await member.save();
+      await this.record(actor, AuditAction.PARTNER_STAFF_DUTY, member, {
+        onDuty,
+        self: !id,
+      });
+    }
     return this.toResponse(member, actor);
   }
 
@@ -241,6 +328,7 @@ export class PartnerStaffService {
     if (member.status !== MemberStatus.SUSPENDED)
       throw new BadRequestException('Member is not suspended');
     member.status = MemberStatus.ACTIVE;
+    member.set('suspension', undefined);
     await member.save();
     await this.userModel.updateOne(
       { _id: member.userId },
@@ -356,6 +444,84 @@ export class PartnerStaffService {
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
+
+  /** Shared by Staff → Suspend and Security & Logs → Freeze account. */
+  private async suspendMember(
+    actor: PartnerActor,
+    member: PartnerMemberDocument,
+    details: Pick<MemberSuspension, 'source' | 'reason' | 'activityId'>,
+  ) {
+    if (member.isOwner)
+      throw new BadRequestException(
+        "The organisation owner can't be suspended",
+      );
+    if (member.userId.toString() === actor.userId)
+      throw new BadRequestException("You can't suspend yourself");
+    if (member.status !== MemberStatus.ACTIVE)
+      throw new BadRequestException(
+        member.status === MemberStatus.SUSPENDED
+          ? `${member.fullName} is already suspended`
+          : 'Only an active member can be suspended',
+      );
+    if (member.role === StaffRole.ADMIN)
+      await this.assertAnotherAdmin(actor, member);
+    member.status = MemberStatus.SUSPENDED;
+    member.onDuty = false;
+    member.suspension = {
+      at: new Date(),
+      byUserId: new Types.ObjectId(actor.userId),
+      byName: actor.member.fullName,
+      ...details,
+    };
+    await member.save();
+    // Staff logins belong to exactly one organisation, so suspending the member blocks the login too.
+    await this.userModel.updateOne(
+      { _id: member.userId },
+      { $set: { status: UserStatus.INACTIVE } },
+    );
+  }
+
+  /**
+   * A new or changed registration number goes back to Ayuva for verification;
+   * prescription signing stays locked until an admin approves it. Returns
+   * whether it was (re)submitted. A clinic owner's number is already verified
+   * when it's the clinic's own verified registration.
+   */
+  private resubmitRegistration(
+    actor: PartnerActor,
+    member: PartnerMemberDocument,
+  ): boolean {
+    const number = member.registrationNumber;
+    if (!number) {
+      member.set('registrationVerification', undefined);
+      return false;
+    }
+    if (member.registrationVerification?.number === number) return false;
+    if (registrationStateOf(member, actor.provider).status === 'verified')
+      return false;
+    member.registrationVerification = {
+      status: RegistrationReview.PENDING,
+      number,
+      submittedAt: new Date(),
+    };
+    return true;
+  }
+
+  private alertRegistrationSubmitted(
+    actor: PartnerActor,
+    member: PartnerMemberDocument,
+  ) {
+    return this.notifications
+      .notifyAdmins({
+        trigger: 'doctor_registration_submitted',
+        title: 'Doctor licence to verify',
+        message: `${member.fullName} (${actor.provider.name}) submitted medical registration ${member.registrationNumber}. Their prescription signing stays locked until it's verified.`,
+        lockScreenText: 'A doctor licence is waiting for verification',
+        actionLabel: 'Review',
+        actionRoute: '/admin/verification',
+      })
+      .catch(() => undefined);
+  }
 
   private async findInvite(token: string): Promise<PartnerMemberDocument> {
     const hash = createHash('sha256').update(token).digest('hex');
@@ -506,7 +672,7 @@ export class PartnerStaffService {
 
   toResponse(
     m: PartnerMemberDocument,
-    actor: { orgType: PartnerActor['orgType'] },
+    actor: Pick<PartnerActor, 'orgType' | 'provider'>,
     load?: { today: number; week: number },
   ) {
     return {
@@ -522,11 +688,23 @@ export class PartnerStaffService {
       title: m.title ?? null,
       department: m.department ?? null,
       registrationNumber: m.registrationNumber ?? null,
+      registration: registrationStateOf(m, actor.provider),
       dutySchedule: (m.dutySchedule ?? []).map((b) => ({
         day: b.day,
         start: b.start,
         end: b.end,
       })),
+      onDuty: m.onDuty ?? false,
+      dutyStatusAt: m.dutyStatusAt?.toISOString() ?? null,
+      revenueSharePercent: m.revenueSharePercent ?? null,
+      suspension: m.suspension
+        ? {
+            at: m.suspension.at.toISOString(),
+            byName: m.suspension.byName ?? null,
+            reason: m.suspension.reason ?? null,
+            source: m.suspension.source,
+          }
+        : null,
       invitedAt: m.createdAt?.toISOString() ?? null,
       inviteExpiresAt: m.inviteExpiresAt?.toISOString() ?? null,
       joinedAt: m.joinedAt?.toISOString() ?? null,

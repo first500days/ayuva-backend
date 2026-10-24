@@ -28,6 +28,7 @@ import { PartnerContextService } from './partner-context.service';
 import { PartnerRecordsService } from './partner-records.service';
 import { UpdatePartnerProfileDto } from './dto/partner.dto';
 import { StaffRole, roleLabel } from './rbac/partner-permissions';
+import { registrationStateOf } from './staff/registration-status';
 
 const EDITABLE_FIELDS = [
   'name',
@@ -77,7 +78,16 @@ export class PartnerProfileService {
         title: m.title ?? null,
         department: m.department ?? null,
         registrationNumber: m.registrationNumber ?? null,
+        // Prescription signing stays locked until this is 'verified'.
+        registration: registrationStateOf(m, ctx.provider),
         phone: m.phone ?? null,
+        dutySchedule: (m.dutySchedule ?? []).map((b) => ({
+          day: b.day,
+          start: b.start,
+          end: b.end,
+        })),
+        onDuty: m.onDuty ?? false,
+        dutyStatusAt: m.dutyStatusAt?.toISOString() ?? null,
         permissions: ctx.permissions,
       },
     };

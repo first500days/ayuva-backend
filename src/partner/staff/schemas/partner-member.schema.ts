@@ -23,6 +23,67 @@ export class DutyBlock {
 }
 export const DutyBlockSchema = SchemaFactory.createForClass(DutyBlock);
 
+export enum RegistrationReview {
+  PENDING = 'pending',
+  VERIFIED = 'verified',
+  REJECTED = 'rejected',
+}
+
+/**
+ * Ayuva's check of a member's medical council registration. It belongs to the
+ * exact number reviewed, so changing the number sends it back for review.
+ */
+@Schema({ _id: false })
+export class RegistrationVerification {
+  @Prop({ type: String, enum: RegistrationReview, required: true })
+  status: RegistrationReview;
+
+  @Prop({ required: true, trim: true })
+  number: string;
+
+  @Prop({ required: true })
+  submittedAt: Date;
+
+  @Prop()
+  decidedAt?: Date;
+
+  // Admin email.
+  @Prop()
+  decidedBy?: string;
+
+  // Shown to the doctor when the number couldn't be verified.
+  @Prop({ trim: true })
+  notes?: string;
+}
+export const RegistrationVerificationSchema = SchemaFactory.createForClass(
+  RegistrationVerification,
+);
+
+/** Why a member's access is paused, and from which screen. */
+@Schema({ _id: false })
+export class MemberSuspension {
+  @Prop({ required: true })
+  at: Date;
+
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
+  byUserId?: Types.ObjectId;
+
+  @Prop()
+  byName?: string;
+
+  @Prop({ trim: true })
+  reason?: string;
+
+  @Prop({ type: String, enum: ['staff', 'security_log'], default: 'staff' })
+  source: 'staff' | 'security_log';
+
+  // The Security & Logs row that prompted a freeze.
+  @Prop()
+  activityId?: string;
+}
+export const MemberSuspensionSchema =
+  SchemaFactory.createForClass(MemberSuspension);
+
 export type PartnerMemberDocument = HydratedDocument<PartnerMember>;
 
 /**
@@ -84,8 +145,27 @@ export class PartnerMember {
   @Prop({ trim: true })
   registrationNumber?: string;
 
+  // Prescription signing stays locked until Ayuva verifies the registration.
+  @Prop({ type: RegistrationVerificationSchema })
+  registrationVerification?: RegistrationVerification;
+
   @Prop({ type: [DutyBlockSchema], default: [] })
   dutySchedule: DutyBlock[];
+
+  // Attendance: whether they've checked in for work right now (the roster is the plan).
+  @Prop({ default: false })
+  onDuty: boolean;
+
+  @Prop()
+  dutyStatusAt?: Date;
+
+  // The doctor's share of the consultation revenue they generate, after Ayuva's
+  // platform fee. Unset means it all stays with the organisation.
+  @Prop({ min: 0, max: 100 })
+  revenueSharePercent?: number;
+
+  @Prop({ type: MemberSuspensionSchema })
+  suspension?: MemberSuspension;
 
   // sha256 of the one-time invite token; the raw token only ever lives in the invite link.
   @Prop({ index: true, sparse: true })
