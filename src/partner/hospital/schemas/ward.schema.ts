@@ -9,6 +9,33 @@ export enum BedStatus {
   RESERVED = 'reserved',
 }
 
+export const WARD_TYPES = [
+  'general',
+  'icu',
+  'private',
+  'semi_private',
+  'emergency',
+  'maternity',
+  'paediatric',
+] as const;
+
+export const WARD_TYPE_LABEL: Record<string, string> = {
+  general: 'General ward',
+  icu: 'ICU',
+  private: 'Private',
+  semi_private: 'Semi-private',
+  emergency: 'Emergency',
+  maternity: 'Maternity',
+  paediatric: 'Pediatrics',
+};
+
+/** Who a ward admits: male or female patients only, or anyone. */
+export enum WardGender {
+  MALE = 'male',
+  FEMALE = 'female',
+  MIXED = 'mixed',
+}
+
 @Schema()
 export class Bed {
   @Prop({ required: true, trim: true }) label: string;
@@ -38,12 +65,16 @@ export class Ward {
   @Prop({ trim: true })
   department?: string;
 
-  // 'general' | 'icu' | 'private' | 'semi_private' | 'emergency' | 'maternity' | 'paediatric'
+  // One of WARD_TYPES.
   @Prop({ default: 'general' })
   type: string;
 
   @Prop({ trim: true })
   floor?: string;
+
+  // Wards created before this field existed are treated as mixed.
+  @Prop({ type: String, enum: WardGender, default: WardGender.MIXED })
+  genderPolicy: WardGender;
 
   @Prop({ type: [BedSchema], default: [] })
   beds: (Bed & { _id: Types.ObjectId })[];

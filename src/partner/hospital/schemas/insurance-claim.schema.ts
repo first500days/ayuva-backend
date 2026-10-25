@@ -12,6 +12,13 @@ export enum ClaimStatus {
   SETTLED = 'settled',
 }
 
+/** Once the insurer has approved (or paid), the patient is financially cleared to leave. */
+export const DISCHARGE_CLEARED: ClaimStatus[] = [
+  ClaimStatus.APPROVED,
+  ClaimStatus.PARTIALLY_APPROVED,
+  ClaimStatus.SETTLED,
+];
+
 @Schema({ _id: false })
 export class ClaimEvent {
   @Prop({ required: true }) at: Date;
@@ -46,8 +53,14 @@ export class InsuranceClaim {
   @Prop({ type: SchemaTypes.ObjectId, ref: 'PartnerAdmission' })
   admissionId?: Types.ObjectId;
 
+  // The insurer.
   @Prop({ required: true, trim: true })
   payer: string;
+
+  // Third-party administrator processing the claim for the insurer, if any.
+  @Prop({ trim: true }) tpaName?: string;
+  // Pre-authorisation reference for a cashless claim.
+  @Prop({ trim: true }) preAuthId?: string;
 
   @Prop({ trim: true }) policyNumber?: string;
   @Prop({ trim: true }) payerClaimRef?: string;

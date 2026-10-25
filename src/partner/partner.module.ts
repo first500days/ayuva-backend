@@ -108,9 +108,15 @@ import {
   InsuranceClaim,
   InsuranceClaimSchema,
 } from './hospital/schemas/insurance-claim.schema';
+import {
+  PartnerBillPayment,
+  PartnerBillPaymentSchema,
+} from './hospital/schemas/bill-payment.schema';
 import { PartnerWardsService } from './hospital/partner-wards.service';
 import { PartnerClaimsService } from './hospital/partner-claims.service';
 import { PartnerAnalyticsService } from './hospital/partner-analytics.service';
+import { PartnerBillPaymentsService } from './hospital/partner-bill-payments.service';
+import { PartnerCapacityService } from './hospital/partner-capacity.service';
 
 /**
  * Partner Portal API (Product Journey §2, wireframes P01–P06) plus the
@@ -149,6 +155,7 @@ import { PartnerAnalyticsService } from './hospital/partner-analytics.service';
       { name: Ward.name, schema: WardSchema },
       { name: PartnerAdmission.name, schema: PartnerAdmissionSchema },
       { name: InsuranceClaim.name, schema: InsuranceClaimSchema },
+      { name: PartnerBillPayment.name, schema: PartnerBillPaymentSchema },
     ]),
   ],
   controllers: [
@@ -185,6 +192,8 @@ import { PartnerAnalyticsService } from './hospital/partner-analytics.service';
     PartnerWardsService,
     PartnerClaimsService,
     PartnerAnalyticsService,
+    PartnerBillPaymentsService,
+    PartnerCapacityService,
   ],
 })
 export class PartnerModule {}

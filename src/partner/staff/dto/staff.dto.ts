@@ -50,7 +50,11 @@ export class InviteStaffDto {
   @MaxLength(120)
   title?: string;
 
-  @ApiPropertyOptional({ example: 'Cardiology' })
+  @ApiPropertyOptional({
+    example: 'Cardiology',
+    description:
+      "Primary department, from the organisation's list — required for hospitals",
+  })
   @IsOptional()
   @IsString()
   @MaxLength(80)

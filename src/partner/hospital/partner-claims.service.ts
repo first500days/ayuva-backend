@@ -13,6 +13,7 @@ import { PartnerActor } from '../rbac/partner-perm.guard';
 import { PartnerPatientsService } from '../clinical/partner-patients.service';
 import {
   ClaimStatus,
+  DISCHARGE_CLEARED,
   InsuranceClaim,
   InsuranceClaimDocument,
 } from './schemas/insurance-claim.schema';
@@ -69,6 +70,8 @@ export class PartnerClaimsService {
         { claimNo: re },
         { patientName: re },
         { payer: re },
+        { tpaName: re },
+        { preAuthId: re },
         { policyNumber: re },
       ];
     }
@@ -111,6 +114,8 @@ export class PartnerClaimsService {
       patientName,
       admissionId: admission?._id,
       payer: dto.payer.trim(),
+      tpaName: dto.tpaName?.trim() || undefined,
+      preAuthId: dto.preAuthId?.trim() || undefined,
       policyNumber: dto.policyNumber,
       claimType: dto.claimType ?? 'cashless',
       department: dto.department ?? admission?.department,
@@ -182,6 +187,7 @@ export class PartnerClaimsService {
         break;
     }
     if (dto.payerClaimRef) claim.payerClaimRef = dto.payerClaimRef;
+    if (dto.preAuthId?.trim()) claim.preAuthId = dto.preAuthId.trim();
     claim.status = dto.status;
     claim.history.push({
       at: now,
@@ -266,6 +272,42 @@ export class PartnerClaimsService {
     };
   }
 
+  /** Each admission's latest claim, so the discharge desk sees whether the patient is cleared. */
+  async latestByAdmission(
+    providerId: Types.ObjectId,
+    admissionIds: Types.ObjectId[],
+  ) {
+    const latest = new Map<
+      string,
+      {
+        claimNo: string;
+        status: ClaimStatus;
+        claimType: string;
+        payer: string;
+        cleared: boolean;
+      }
+    >();
+    if (!admissionIds.length) return latest;
+    const rows = await this.claimModel
+      .find({ providerId, admissionId: { $in: admissionIds } })
+      .sort({ createdAt: -1 })
+      .select('admissionId claimNo status claimType payer tpaName')
+      .lean()
+      .exec();
+    for (const c of rows) {
+      const key = c.admissionId!.toString();
+      if (latest.has(key)) continue;
+      latest.set(key, {
+        claimNo: c.claimNo,
+        status: c.status,
+        claimType: c.claimType,
+        payer: c.tpaName || c.payer,
+        cleared: DISCHARGE_CLEARED.includes(c.status),
+      });
+    }
+    return latest;
+  }
+
   private async load(actor: PartnerActor, id: string) {
     const c = Types.ObjectId.isValid(id)
       ? await this.claimModel.findOne({
@@ -315,6 +357,8 @@ export class PartnerClaimsService {
       patientName: c.patientName,
       admissionId: c.admissionId?.toString() ?? null,
       payer: c.payer,
+      tpaName: c.tpaName ?? null,
+      preAuthId: c.preAuthId ?? null,
       policyNumber: c.policyNumber ?? null,
       payerClaimRef: c.payerClaimRef ?? null,
       claimType: c.claimType,
@@ -323,6 +367,7 @@ export class PartnerClaimsService {
       amountApproved: c.amountApproved ?? null,
       amountSettled: c.amountSettled ?? null,
       status: c.status,
+      dischargeCleared: DISCHARGE_CLEARED.includes(c.status),
       nextStatuses: NEXT[c.status],
       submittedAt: c.submittedAt?.toISOString() ?? null,
       decidedAt: c.decidedAt?.toISOString() ?? null,

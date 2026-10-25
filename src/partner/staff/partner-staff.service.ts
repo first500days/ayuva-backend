@@ -37,6 +37,7 @@ import { AuthService } from '../../auth/auth.service';
 import { AuthTokensResponseDto } from '../../auth/dto/auth-tokens-response.dto';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import {
+  OrgType,
   StaffRole,
   assignableRoles,
   orgTypeOf,
@@ -87,6 +88,21 @@ function assertValidRoster(blocks: DutyBlockDto[]) {
     }
   }
 }
+/**
+ * A department from the organisation's list, matched case-insensitively and
+ * returned as listed. Any name is accepted while no list has been set up.
+ */
+function listedDepartment(value: string, listed: string[]): string {
+  if (!listed.length) return value;
+  const match = listed.find(
+    (d) => d.trim().toLowerCase() === value.toLowerCase(),
+  );
+  if (!match)
+    throw new BadRequestException(
+      `${value} isn't one of your departments — add it under Settings → Organisation first`,
+    );
+  return match;
+}
 // Placeholder consent until the invitee accepts the terms themselves; the
 // ConsentGuard rejects it, and the account has no password until then anyway.
 const PENDING_CONSENT_VERSION = 'invite-pending';
@@ -131,6 +147,17 @@ export class PartnerStaffService {
 
   async invite(actor: PartnerActor, dto: InviteStaffDto) {
     this.assertAssignable(actor, dto.role);
+    // Hospitals route schedules, rosters and audits by wing, so everyone gets one.
+    const department = dto.department?.trim()
+      ? listedDepartment(
+          dto.department.trim(),
+          actor.provider.departments ?? [],
+        )
+      : undefined;
+    if (!department && actor.orgType === OrgType.HOSPITAL)
+      throw new BadRequestException(
+        'Choose a primary department for this staff member',
+      );
     const email = dto.email.trim().toLowerCase();
     if (await this.userModel.exists({ email })) {
       throw new ConflictException(
@@ -163,7 +190,7 @@ export class PartnerStaffService {
         email,
         phone: dto.phone,
         title: dto.title,
-        department: dto.department,
+        department,
         registrationNumber: dto.registrationNumber,
         inviteTokenHash: hash,
         inviteExpiresAt: new Date(Date.now() + INVITE_TTL_MS),
@@ -208,12 +235,22 @@ export class PartnerStaffService {
       changes.role = { from: member.role, to: dto.role };
       member.role = dto.role;
     }
-    for (const key of [
-      'title',
-      'department',
-      'phone',
-      'registrationNumber',
-    ] as const) {
+    if (dto.department !== undefined) {
+      const value = dto.department.trim();
+      // An existing name not on the list (set before the list existed) can stay.
+      const next = !value
+        ? undefined
+        : value === member.department
+          ? value
+          : listedDepartment(value, actor.provider.departments ?? []);
+      if (!next && member.department && actor.orgType === OrgType.HOSPITAL)
+        throw new BadRequestException(
+          'Hospital staff need a primary department — choose another one instead of clearing it',
+        );
+      if (next !== member.department) changes.department = next ?? null;
+      member.set('department', next);
+    }
+    for (const key of ['title', 'phone', 'registrationNumber'] as const) {
       if (dto[key] !== undefined) {
         const value = dto[key]?.trim() || undefined;
         if (value !== member[key]) changes[key] = value ?? null;

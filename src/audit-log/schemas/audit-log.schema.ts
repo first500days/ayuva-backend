@@ -101,6 +101,9 @@ export enum AuditAction {
   PARTNER_IMAGING_VIEW = 'partner_imaging_view',
   PARTNER_ADMISSION_UPDATE = 'partner_admission_update',
   PARTNER_CLAIM_UPDATE = 'partner_claim_update',
+  // Billing-desk receipts (split payments).
+  PARTNER_PAYMENT_RECORD = 'partner_payment_record',
+  PARTNER_PAYMENT_VOID = 'partner_payment_void',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;

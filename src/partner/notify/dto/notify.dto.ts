@@ -5,13 +5,18 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsIn,
+  IsInt,
   IsOptional,
   IsString,
+  Matches,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { StaffRole } from '../../rbac/partner-permissions';
-import { PartnerTrigger } from '../partner-triggers';
+import { CAPACITY_SCOPES, PartnerTrigger } from '../partner-triggers';
 
 export class NotificationRuleDto {
   @ApiProperty({ enum: PartnerTrigger })
@@ -43,6 +48,27 @@ export class WebhookConfigDto {
   url?: string;
 }
 
+/** "Alert when ICU occupancy reaches 95%" — who hears and how follows the capacity_warning rule. */
+export class CapacityRuleDto {
+  @ApiProperty({ example: 'icu' })
+  @Matches(/^[a-z0-9-]{1,40}$/, {
+    message: 'id must be lowercase letters, digits or dashes',
+  })
+  id: string;
+
+  @ApiProperty({ enum: CAPACITY_SCOPES })
+  @IsIn(CAPACITY_SCOPES)
+  scope: string;
+
+  @ApiProperty({ minimum: 50, maximum: 100, example: 95 })
+  @IsInt()
+  @Min(50)
+  @Max(100)
+  thresholdPercent: number;
+
+  @ApiProperty() @IsBoolean() enabled: boolean;
+}
+
 export class UpdateNotificationSettingsDto {
   @ApiPropertyOptional({ type: [NotificationRuleDto] })
   @IsOptional()
@@ -51,6 +77,14 @@ export class UpdateNotificationSettingsDto {
   @ValidateNested({ each: true })
   @Type(() => NotificationRuleDto)
   rules?: NotificationRuleDto[];
+
+  @ApiPropertyOptional({ type: [CapacityRuleDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => CapacityRuleDto)
+  capacityRules?: CapacityRuleDto[];
 
   @ApiPropertyOptional({ type: WebhookConfigDto })
   @IsOptional()

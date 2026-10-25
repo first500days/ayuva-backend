@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomBytes } from 'node:crypto';
-import { StaffRole } from '../rbac/partner-permissions';
+import { OrgType, StaffRole, orgTypeOf } from '../rbac/partner-permissions';
 import {
   PartnerNotificationSettings,
   PartnerNotificationSettingsDocument,
@@ -14,6 +14,8 @@ import {
 } from './schemas/partner-webhook-delivery.schema';
 import { PartnerNotifierService } from './partner-notifier.service';
 import {
+  CapacityRuleConfig,
+  DEFAULT_CAPACITY_RULES,
   PartnerTrigger,
   TRIGGER_CATALOG,
   feedTrigger,
@@ -43,7 +45,10 @@ export class PartnerNotifySettingsService {
   ) {}
 
   async get(providerId: Types.ObjectId) {
-    const { rules, settings } = await this.notifier.rulesFor(providerId);
+    const { rules, settings, provider } =
+      await this.notifier.rulesFor(providerId);
+    const hospital =
+      !!provider && orgTypeOf(provider.type) === OrgType.HOSPITAL;
     return {
       rules: rules.map((r) => {
         const def = TRIGGER_CATALOG.find((d) => d.trigger === r.trigger)!;
@@ -60,6 +65,14 @@ export class PartnerNotifySettingsService {
         // Shown to admins so their receiver can verify signatures.
         secret: settings?.webhook?.secret ?? null,
       },
+      capacityRules: hospital
+        ? (settings?.capacityRules ?? DEFAULT_CAPACITY_RULES).map((r) => ({
+            id: r.id,
+            scope: r.scope,
+            thresholdPercent: r.thresholdPercent,
+            enabled: r.enabled,
+          }))
+        : [],
     };
   }
 
@@ -68,6 +81,7 @@ export class PartnerNotifySettingsService {
     input: {
       rules?: NotificationRuleInput[];
       webhook?: { enabled?: boolean; url?: string };
+      capacityRules?: CapacityRuleConfig[];
     },
   ) {
     const settings =
@@ -111,8 +125,93 @@ export class PartnerNotifySettingsService {
       settings.markModified('webhook');
     }
 
+    if (input.capacityRules) {
+      const ids = input.capacityRules.map((r) => r.id);
+      if (new Set(ids).size !== ids.length)
+        throw new BadRequestException('Each capacity rule needs its own id');
+      const previous = new Map(
+        (settings.capacityRules ?? DEFAULT_CAPACITY_RULES).map((r) => [
+          r.id,
+          r,
+        ]),
+      );
+      const unchanged = new Set(
+        input.capacityRules
+          .filter((r) => {
+            const p = previous.get(r.id);
+            return (
+              !!p &&
+              p.scope === r.scope &&
+              p.thresholdPercent === r.thresholdPercent &&
+              p.enabled === r.enabled
+            );
+          })
+          .map((r) => r.id),
+      );
+      settings.capacityRules = input.capacityRules.map((r) => ({
+        id: r.id,
+        scope: r.scope,
+        thresholdPercent: r.thresholdPercent,
+        enabled: r.enabled,
+      }));
+      // New or changed rules re-arm, so a ward already over a new level alerts on the
+      // next check; unchanged rules keep their state and don't repeat themselves.
+      settings.capacityAlerts = (settings.capacityAlerts ?? []).filter((a) =>
+        unchanged.has(a.key.split('|')[0] ?? ''),
+      );
+      settings.markModified('capacityRules');
+      settings.markModified('capacityAlerts');
+    }
+
     await settings.save();
     return this.get(providerId);
+  }
+
+  /** Capacity rules in force, and the rule scopes that have already alerted. */
+  async capacityState(providerId: Types.ObjectId): Promise<{
+    rules: CapacityRuleConfig[];
+    alerting: Set<string>;
+  }> {
+    const s = await this.settingsModel
+      .findOne({ providerId })
+      .select('capacityRules capacityAlerts')
+      .lean()
+      .exec();
+    return {
+      rules: s?.capacityRules ?? DEFAULT_CAPACITY_RULES,
+      alerting: new Set((s?.capacityAlerts ?? []).map((a) => a.key)),
+    };
+  }
+
+  /**
+   * Marks a rule scope as alerting. Resolves true only for the caller that
+   * made the change, so two admissions at once can't send the same alert twice.
+   */
+  async markCapacityAlert(
+    providerId: Types.ObjectId,
+    key: string,
+  ): Promise<boolean> {
+    await this.settingsModel
+      .updateOne(
+        { providerId },
+        { $setOnInsert: { providerId } },
+        { upsert: true },
+      )
+      .catch(() => undefined); // a concurrent upsert won the unique index
+    const res = await this.settingsModel.updateOne(
+      { providerId, 'capacityAlerts.key': { $ne: key } },
+      { $push: { capacityAlerts: { key, at: new Date() } } },
+    );
+    return res.modifiedCount === 1;
+  }
+
+  /** Re-arms rule scopes that are back under their threshold. */
+  async clearCapacityAlerts(providerId: Types.ObjectId, keys: string[]) {
+    if (!keys.length) return;
+    await this.settingsModel.updateOne(
+      { providerId },
+      { $pull: { capacityAlerts: { key: { $in: keys } } } },
+    );
   }
 
   async rotateSecret(providerId: Types.ObjectId) {

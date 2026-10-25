@@ -21,12 +21,19 @@ import {
   PartnerMember,
   PartnerMemberDocument,
 } from '../staff/schemas/partner-member.schema';
-import { BedStatus, Ward, WardDocument } from './schemas/ward.schema';
+import {
+  BedStatus,
+  Ward,
+  WardDocument,
+  WardGender,
+} from './schemas/ward.schema';
 import {
   AdmissionDocument,
   AdmissionStatus,
   PartnerAdmission,
 } from './schemas/admission.schema';
+import { PartnerCapacityService } from './partner-capacity.service';
+import { PartnerClaimsService } from './partner-claims.service';
 import {
   AddBedsDto,
   AdmissionsQueryDto,
@@ -50,6 +57,8 @@ export class PartnerWardsService {
     private readonly documents: PartnerDocumentsService,
     private readonly notifier: PartnerNotifierService,
     private readonly audit: AuditLogService,
+    private readonly capacity: PartnerCapacityService,
+    private readonly claims: PartnerClaimsService,
   ) {}
 
   // ── Wards & beds ──────────────────────────────────────────────────────────
@@ -95,6 +104,7 @@ export class PartnerWardsService {
       department: dto.department,
       type: dto.type ?? 'general',
       floor: dto.floor,
+      genderPolicy: dto.genderPolicy ?? WardGender.MIXED,
       beds: Array.from({ length: dto.bedCount }, (_, i) => ({
         label: `${prefix}${i + 1}`,
         status: BedStatus.AVAILABLE,
@@ -103,36 +113,56 @@ export class PartnerWardsService {
     await this.recordWard(actor, ward, {
       change: 'ward_created',
       beds: dto.bedCount,
+      type: ward.type,
+      genderPolicy: ward.genderPolicy,
     });
+    await this.capacity.check(actor);
     return this.wardResponse(ward, new Map());
   }
 
   async updateWard(actor: PartnerActor, id: string, dto: UpdateWardDto) {
-    const ward = await this.loadWard(actor, id);
-    for (const [k, v] of Object.entries(dto))
+    const { bedCapacity, ...fields } = dto;
+    let ward = await this.loadWard(actor, id);
+    const before = ward.beds.length;
+    const remove =
+      bedCapacity !== undefined && bedCapacity < before
+        ? this.freeBedsToRemove(ward, before - bedCapacity)
+        : [];
+    for (const [k, v] of Object.entries(fields))
       if (v !== undefined) ward.set(k, v);
+    if (bedCapacity !== undefined && bedCapacity > before)
+      this.appendBeds(ward, bedCapacity - before);
     await ward.save();
+    if (remove.length) {
+      // Pulled atomically, re-checking status, in case a bed was taken meanwhile.
+      await this.wardModel.updateOne(
+        { _id: ward._id },
+        {
+          $pull: {
+            beds: {
+              _id: { $in: remove },
+              status: { $nin: [BedStatus.OCCUPIED, BedStatus.RESERVED] },
+            },
+          },
+        },
+      );
+      ward = await this.loadWard(actor, id);
+    }
+    if (ward.beds.length !== before) {
+      await this.recordWard(actor, ward, {
+        change: 'capacity_changed',
+        beds: { from: before, to: ward.beds.length },
+      });
+      await this.capacity.check(actor);
+    }
     return this.wardResponse(ward, await this.admittedMap(actor));
   }
 
   async addBeds(actor: PartnerActor, id: string, dto: AddBedsDto) {
     const ward = await this.loadWard(actor, id);
-    const prefix =
-      dto.prefix ?? ward.beds[0]?.label.replace(/\d+$/, '') ?? 'B-';
-    const used = new Set(ward.beds.map((b) => b.label));
-    let n = ward.beds.length;
-    for (let added = 0; added < dto.count;) {
-      n += 1;
-      const label = `${prefix}${n}`;
-      if (used.has(label)) continue;
-      ward.beds.push({
-        _id: new Types.ObjectId(),
-        label,
-        status: BedStatus.AVAILABLE,
-      });
-      added += 1;
-    }
+    this.appendBeds(ward, dto.count, dto.prefix);
     await ward.save();
+    await this.capacity.check(actor);
     return this.wardResponse(ward, await this.admittedMap(actor));
   }
 
@@ -163,6 +193,7 @@ export class PartnerWardsService {
     }
     await ward.deleteOne();
     await this.recordWard(actor, ward, { change: 'ward_removed' });
+    await this.capacity.check(actor);
     return { id, removed: true };
   }
 
@@ -185,7 +216,11 @@ export class PartnerWardsService {
       .sort({ admittedAt: -1 })
       .limit(300)
       .exec();
-    return rows.map((a) => this.admissionResponse(a));
+    const claims = await this.claims.latestByAdmission(
+      actor.provider._id,
+      rows.map((a) => a._id),
+    );
+    return rows.map((a) => this.admissionResponse(a, claims.get(a.id) ?? null));
   }
 
   async admit(actor: PartnerActor, dto: AdmitDto) {
@@ -212,6 +247,7 @@ export class PartnerWardsService {
     const attending = dto.attendingMemberId
       ? await this.activeMember(actor, dto.attendingMemberId)
       : undefined;
+    this.assertWardAdmits(await this.loadWard(actor, dto.wardId), dto.gender);
 
     const admissionId = new Types.ObjectId();
     const ward = await this.claimBed(actor, dto.wardId, dto.bedId, admissionId);
@@ -257,6 +293,7 @@ export class PartnerWardsService {
       ward: admission.wardName,
       bed: admission.bedLabel,
     });
+    await this.capacity.check(actor);
     return this.admissionResponse(admission);
   }
 
@@ -275,6 +312,8 @@ export class PartnerWardsService {
     const attending = dto.attendingMemberId
       ? await this.activeMember(actor, dto.attendingMemberId)
       : undefined;
+    const gender = admission.gender ?? dto.gender;
+    this.assertWardAdmits(await this.loadWard(actor, dto.wardId), gender);
     const newWard = await this.claimBed(
       actor,
       dto.wardId,
@@ -303,6 +342,7 @@ export class PartnerWardsService {
     admission.wardName = newWard.name;
     admission.bedId = newBed._id;
     admission.bedLabel = newBed.label;
+    if (gender) admission.gender = gender;
     if (dto.department) admission.department = dto.department;
     if (attending) {
       admission.attendingMemberId = attending._id;
@@ -321,6 +361,7 @@ export class PartnerWardsService {
       ward: admission.wardName,
       bed: admission.bedLabel,
     });
+    await this.capacity.check(actor);
     return this.admissionResponse(admission);
   }
 
@@ -374,6 +415,7 @@ export class PartnerWardsService {
       dischargeType: dto.type,
       summarySent: !!admission.vaultRecordId,
     });
+    await this.capacity.check(actor);
     return this.admissionResponse(admission);
   }
 
@@ -426,15 +468,77 @@ export class PartnerWardsService {
         name: w.name,
         department: w.department ?? null,
         type: w.type,
+        genderPolicy: w.genderPolicy ?? WardGender.MIXED,
         total: w.beds.length,
         occupied: w.beds.filter((b) => b.status === BedStatus.OCCUPIED).length,
         available: w.beds.filter((b) => b.status === BedStatus.AVAILABLE)
           .length,
       })),
+      capacityWarnings: await this.capacity.warnings(
+        providerId,
+        wards.map((w) => ({
+          id: w.id,
+          name: w.name,
+          type: w.type,
+          beds: w.beds,
+        })),
+      ),
     };
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * Male and female wards take only that gender, and need it recorded; mixed
+   * wards take anyone. "Other" isn't refused anywhere — the care team decides.
+   */
+  private assertWardAdmits(ward: WardDocument, gender: string | undefined) {
+    const policy = ward.genderPolicy ?? WardGender.MIXED;
+    if (policy === WardGender.MIXED) return;
+    if (!gender)
+      throw new BadRequestException(
+        `${ward.name} is a ${policy} ward — record the patient's gender to admit them here`,
+      );
+    const fits =
+      gender === 'other' ||
+      (gender === 'male'
+        ? policy === WardGender.MALE
+        : policy === WardGender.FEMALE);
+    if (!fits)
+      throw new BadRequestException(
+        `${ward.name} is a ${policy}-only ward — choose a ${gender} or mixed ward`,
+      );
+  }
+
+  /** Appends `count` available beds, continuing the ward's label numbering. */
+  private appendBeds(ward: WardDocument, count: number, prefix?: string) {
+    const p = prefix ?? ward.beds[0]?.label.replace(/\d+$/, '') ?? 'B-';
+    const used = new Set(ward.beds.map((b) => b.label));
+    let n = ward.beds.length;
+    for (let added = 0; added < count;) {
+      n += 1;
+      const label = `${p}${n}`;
+      if (used.has(label)) continue;
+      ward.beds.push({
+        _id: new Types.ObjectId(),
+        label,
+        status: BedStatus.AVAILABLE,
+      });
+      added += 1;
+    }
+  }
+
+  /** The newest `count` beds that can go: never an occupied or reserved one. */
+  private freeBedsToRemove(ward: WardDocument, count: number) {
+    const free = ward.beds.filter(
+      (b) => b.status !== BedStatus.OCCUPIED && b.status !== BedStatus.RESERVED,
+    );
+    if (free.length < count)
+      throw new BadRequestException(
+        `Only ${free.length} of ${ward.name}'s beds are free to remove — discharge or move patients first`,
+      );
+    return free.slice(-count).map((b) => b._id);
+  }
 
   /** Atomically flips an available/reserved bed to occupied — two admissions can never win one bed. */
   private async claimBed(
@@ -623,6 +727,7 @@ export class PartnerWardsService {
       department: w.department ?? null,
       type: w.type,
       floor: w.floor ?? null,
+      genderPolicy: w.genderPolicy ?? WardGender.MIXED,
       beds: w.beds.map((b) => {
         const a = b.admissionId
           ? admittedById.get(b.admissionId.toString())
@@ -646,7 +751,16 @@ export class PartnerWardsService {
     };
   }
 
-  admissionResponse(a: AdmissionDocument) {
+  admissionResponse(
+    a: AdmissionDocument,
+    insurance: {
+      claimNo: string;
+      status: string;
+      claimType: string;
+      payer: string;
+      cleared: boolean;
+    } | null = null,
+  ) {
     return {
       id: a.id,
       admissionNo: a.admissionNo,
@@ -687,6 +801,8 @@ export class PartnerWardsService {
         byName: t.byName ?? null,
       })),
       admittedByName: a.admittedByName ?? null,
+      // The latest insurance claim: tells the discharge desk if the patient is cleared.
+      insurance,
     };
   }
 }

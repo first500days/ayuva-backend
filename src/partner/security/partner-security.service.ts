@@ -32,6 +32,8 @@ export type ActivityCategory =
 
 export interface ActivityQuery {
   memberId?: string;
+  // Only staff whose primary department is this one.
+  department?: string;
   patientId?: string;
   category?: ActivityCategory;
   from?: string;
@@ -48,6 +50,7 @@ export interface ActivityRow {
   actorUserId: string | null;
   actorName: string;
   actorRole: string | null;
+  actorDepartment: string | null;
   // The staff record behind the login, for "Freeze account".
   actorMemberId: string | null;
   actorStatus: MemberStatus | null;
@@ -118,6 +121,14 @@ const ACTION_META: Partial<
     category: 'operations',
     label: 'Updated insurance claim',
   },
+  [AuditAction.PARTNER_PAYMENT_RECORD]: {
+    category: 'operations',
+    label: 'Recorded desk payment',
+  },
+  [AuditAction.PARTNER_PAYMENT_VOID]: {
+    category: 'operations',
+    label: 'Voided desk payment',
+  },
   [AuditAction.PARTNER_STAFF_INVITE]: {
     category: 'admin',
     label: 'Invited staff member',
@@ -179,11 +190,15 @@ export class PartnerSecurityService {
       .find({ providerId: actor.provider._id })
       .exec();
     const memberByUser = new Map(members.map((m) => [m.userId.toString(), m]));
-    let actorIds = members.map((m) => m.userId);
-    if (q.memberId) {
-      const m = members.find((x) => x.id === q.memberId);
-      actorIds = m ? [m.userId] : [];
-    }
+    const department = q.department?.trim().toLowerCase();
+    const actorIds = members
+      .filter(
+        (m) =>
+          (!q.memberId || m.id === q.memberId) &&
+          (!department ||
+            (m.department ?? '').trim().toLowerCase() === department),
+      )
+      .map((m) => m.userId);
     const range = this.range(q.from, q.to);
     const wantsAccess = !q.category || q.category === 'record_access';
 
@@ -252,6 +267,7 @@ export class PartnerSecurityService {
         actorUserId: userId?.toString() ?? null,
         actorName: m?.fullName ?? fallback ?? 'Unknown user',
         actorRole: m ? roleLabel(actor.orgType, m.role) : null,
+        actorDepartment: m?.department ?? null,
         actorMemberId: m?.id ?? null,
         actorStatus: m?.status ?? null,
         actorIsOwner: m?.isOwner ?? false,

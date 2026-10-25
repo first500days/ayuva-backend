@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -33,7 +34,7 @@ import {
   RequirePerm,
 } from './rbac/partner-perm.guard';
 import type { PartnerActor } from './rbac/partner-perm.guard';
-import { Perm } from './rbac/partner-permissions';
+import { OrgType, Perm } from './rbac/partner-permissions';
 import { PartnerStaffService } from './staff/partner-staff.service';
 import {
   DutyStatusDto,
@@ -94,6 +95,8 @@ import {
 import { PartnerWardsService } from './hospital/partner-wards.service';
 import { PartnerClaimsService } from './hospital/partner-claims.service';
 import { PartnerAnalyticsService } from './hospital/partner-analytics.service';
+import { PartnerBillPaymentsService } from './hospital/partner-bill-payments.service';
+import { PartnerCapacityService } from './hospital/partner-capacity.service';
 import {
   AddBedsDto,
   AdmissionsQueryDto,
@@ -104,10 +107,12 @@ import {
   CreateClaimDto,
   CreateWardDto,
   DischargeDto,
+  RecordBillPaymentDto,
   SetBedStatusDto,
   TransferDto,
   UpdateClaimDto,
   UpdateWardDto,
+  VoidBillPaymentDto,
 } from './hospital/dto/hospital.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/schemas/audit-log.schema';
@@ -279,6 +284,7 @@ export class PartnerNotifyController {
   constructor(
     private readonly settings: PartnerNotifySettingsService,
     private readonly audit: AuditLogService,
+    private readonly capacity: PartnerCapacityService,
   ) {}
 
   @Get()
@@ -297,6 +303,8 @@ export class PartnerNotifyController {
     @PartnerCtx() a: PartnerActor,
     @Body() dto: UpdateNotificationSettingsDto,
   ) {
+    if (dto.capacityRules && a.orgType !== OrgType.HOSPITAL)
+      throw new BadRequestException('Capacity warnings are for hospitals');
     const result = await this.settings.update(a.provider._id, dto);
     await this.audit.record({
       actorId: a.userId,
@@ -306,9 +314,14 @@ export class PartnerNotifyController {
         providerId: a.provider.id,
         label: 'Notification settings',
         webhook: dto.webhook?.enabled,
+        ...(dto.capacityRules && {
+          capacityRules: dto.capacityRules.filter((r) => r.enabled).length,
+        }),
       },
       ipAddress: a.ip,
     });
+    // A ward already over a new threshold alerts now, not at the next admission.
+    if (dto.capacityRules) await this.capacity.check(a);
     return result;
   }
 
@@ -888,6 +901,7 @@ export class PartnerHospitalController {
     private readonly wards: PartnerWardsService,
     private readonly claims: PartnerClaimsService,
     private readonly analytics: PartnerAnalyticsService,
+    private readonly billPayments: PartnerBillPaymentsService,
   ) {}
 
   @Get('wards')
@@ -1031,5 +1045,32 @@ export class PartnerHospitalController {
   })
   billing(@PartnerCtx() a: PartnerActor, @Query() q: AnalyticsQueryDto) {
     return this.analytics.billing(a, q.days ?? 30);
+  }
+
+  @Post('billing/payments')
+  @RequirePerm(Perm.CLAIMS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Record a bill settled at the billing desk — split across methods, e.g. cash + insurance',
+  })
+  recordPayment(
+    @PartnerCtx() a: PartnerActor,
+    @Body() dto: RecordBillPaymentDto,
+  ) {
+    return this.billPayments.create(a, dto);
+  }
+
+  @Post('billing/payments/:id/void')
+  @HttpCode(200)
+  @RequirePerm(Perm.CLAIMS_MANAGE)
+  @ApiOperation({
+    summary: 'Void a desk receipt: it stays listed but leaves every total',
+  })
+  voidPayment(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: VoidBillPaymentDto,
+  ) {
+    return this.billPayments.void(a, id, dto);
   }
 }

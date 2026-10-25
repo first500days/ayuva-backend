@@ -48,8 +48,14 @@ import {
   PartnerAdmission,
 } from './schemas/admission.schema';
 import { PartnerClaimsService } from './partner-claims.service';
+import {
+  BillPaymentRow,
+  PartnerBillPaymentsService,
+} from './partner-bill-payments.service';
+import { CREDIT_METHODS } from './schemas/bill-payment.schema';
 
 const DAY = 86_400_000;
+const round2 = (v: number) => Math.round(v * 100) / 100;
 const UPCOMING_DAYS = 7;
 const BOOKED = [
   AppointmentStatus.CONFIRMED,
@@ -83,6 +89,7 @@ export class PartnerAnalyticsService {
     @InjectModel(PartnerAdmission.name)
     private readonly admissionModel: Model<AdmissionDocument>,
     private readonly claims: PartnerClaimsService,
+    private readonly billPayments: PartnerBillPaymentsService,
     private readonly config: ConfigService,
   ) {}
 
@@ -405,15 +412,49 @@ export class PartnerAnalyticsService {
         .limit(15)
         .exec(),
     ]);
+    // Hospitals also take bills at their own desk, often split across methods.
+    const hospital = actor.orgType === OrgType.HOSPITAL;
+    const [desk, deskRecent]: BillPaymentRow[][] = hospital
+      ? await Promise.all([
+          this.billPayments.since(
+            providerId,
+            since < monthStart ? since : monthStart,
+          ),
+          this.billPayments.latest(providerId, 15),
+        ])
+      : [[], []];
     const sumSince = (d: Date) =>
-      paid
-        .filter((t) => t.paidAt && t.paidAt >= d)
-        .reduce((s, t) => s + t.amount, 0);
-    const byMethod = new Map<string, number>();
-    for (const t of paid.filter((x) => x.paidAt && x.paidAt >= since)) {
-      const m = t.paymentMethod || 'unspecified';
-      byMethod.set(m, (byMethod.get(m) ?? 0) + t.amount);
-    }
+      round2(
+        paid
+          .filter((t) => t.paidAt && t.paidAt >= d)
+          .reduce((s, t) => s + t.amount, 0) +
+          desk
+            .filter((p) => p.receivedAt >= d)
+            .reduce((s, p) => s + p.total, 0),
+      );
+    // Each share of a split bill counts under its own method, so the ledger adds up per method.
+    const byMethod = new Map<
+      string,
+      { method: string; channel: 'online' | 'desk'; amount: number }
+    >();
+    const addMethod = (
+      method: string,
+      channel: 'online' | 'desk',
+      amount: number,
+    ) => {
+      const row = byMethod.get(`${channel}:${method}`) ?? {
+        method,
+        channel,
+        amount: 0,
+      };
+      row.amount += amount;
+      byMethod.set(`${channel}:${method}`, row);
+    };
+    for (const t of paid.filter((x) => x.paidAt && x.paidAt >= since))
+      addMethod(t.paymentMethod || 'unspecified', 'online', t.amount);
+    const deskInWindow = desk.filter((p) => p.receivedAt >= since);
+    for (const p of deskInWindow)
+      for (const part of p.parts) addMethod(part.method, 'desk', part.amount);
     const daily = Array.from({ length: days }, (_, i) => ({
       date: new Date(since.getTime() + i * DAY).toISOString().slice(0, 10),
       amount: 0,
@@ -422,6 +463,10 @@ export class PartnerAnalyticsService {
     for (const t of paid) {
       const d = t.paidAt && dailyBy.get(t.paidAt.toISOString().slice(0, 10));
       if (d) d.amount += t.amount;
+    }
+    for (const p of desk) {
+      const d = dailyBy.get(p.receivedAt.toISOString().slice(0, 10));
+      if (d) d.amount = round2(d.amount + p.total);
     }
     const status = (s: TransactionStatus) =>
       all.find((a) => a._id === String(s));
@@ -476,27 +521,59 @@ export class PartnerAnalyticsService {
           .filter((s) => s._id !== 'settled')
           .reduce((a, s) => a + s.total, 0),
       },
-      byMethod: [...byMethod.entries()]
-        .map(([method, amount]) => ({ method, amount }))
+      byMethod: [...byMethod.values()]
+        .map((m) => ({ ...m, amount: round2(m.amount) }))
         .sort((a, b) => b.amount - a.amount),
       daily,
-      recent: recent.map((t) => ({
-        id: t.id,
-        receiptNo: `AYV-${t.id.slice(-8).toUpperCase()}`,
-        patientName: nameById.get(t.patientId.toString()) ?? 'Patient',
-        amount: t.amount,
-        currency: t.currency,
-        method: t.paymentMethod ?? null,
-        status: t.status,
-        settlementStatus: t.settlementStatus,
-        paidAt: t.paidAt?.toISOString() ?? null,
-        createdAt: (t.createdAt ?? new Date()).toISOString(),
-      })),
+      recent: [
+        ...recent.map((t) => ({
+          id: t.id,
+          source: 'online' as const,
+          receiptNo: `AYV-${t.id.slice(-8).toUpperCase()}`,
+          patientName: nameById.get(t.patientId.toString()) ?? 'Patient',
+          description: null,
+          amount: t.amount,
+          currency: t.currency,
+          method: t.paymentMethod ?? null,
+          methods: t.paymentMethod
+            ? [
+                {
+                  method: t.paymentMethod,
+                  amount: t.amount,
+                  reference: null,
+                  claimNo: null,
+                },
+              ]
+            : [],
+          split: false,
+          status: t.status,
+          settlementStatus: t.settlementStatus,
+          paidAt: t.paidAt?.toISOString() ?? null,
+          createdAt: (t.createdAt ?? new Date()).toISOString(),
+          recordedByName: null,
+          voidReason: null,
+        })),
+        ...deskRecent.map((p) => this.billPayments.row(p)),
+      ]
+        .sort((a, b) =>
+          (b.paidAt ?? b.createdAt).localeCompare(a.paidAt ?? a.createdAt),
+        )
+        .slice(0, 20),
+      // Billing-desk receipts in the window; credit shares are still owed by an insurer or employer.
+      desk: hospital
+        ? {
+            receipts: deskInWindow.length,
+            total: round2(deskInWindow.reduce((s, p) => s + p.total, 0)),
+            onCredit: round2(
+              deskInWindow
+                .flatMap((p) => p.parts)
+                .filter((x) => CREDIT_METHODS.includes(x.method))
+                .reduce((s, x) => s + x.amount, 0),
+            ),
+          }
+        : null,
       lab,
-      claims:
-        actor.orgType === OrgType.HOSPITAL
-          ? await this.claims.summary(providerId)
-          : null,
+      claims: hospital ? await this.claims.summary(providerId) : null,
       split: await this.earningsSplit(
         actor,
         paid.filter((t) => t.paidAt && t.paidAt >= since),

@@ -18,6 +18,13 @@ export class ActivityQueryDto {
   @IsOptional()
   @IsMongoId()
   memberId?: string;
+  @ApiPropertyOptional({
+    description: "Only staff in this primary department, e.g. 'Radiology'",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  department?: string;
   @ApiPropertyOptional({ description: 'Only events about this patient' })
   @IsOptional()
   @IsMongoId()

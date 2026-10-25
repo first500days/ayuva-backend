@@ -37,6 +37,27 @@ export class PartnerWebhookConfig {
 export const PartnerWebhookConfigSchema =
   SchemaFactory.createForClass(PartnerWebhookConfig);
 
+/** Capacity warning rule: alert once occupancy of the scope reaches the threshold. */
+@Schema({ _id: false })
+export class PartnerCapacityRule {
+  @Prop({ required: true }) id: string;
+  // One of CAPACITY_SCOPES.
+  @Prop({ required: true }) scope: string;
+  @Prop({ required: true, min: 1, max: 100 }) thresholdPercent: number;
+  @Prop({ default: true }) enabled: boolean;
+}
+export const PartnerCapacityRuleSchema =
+  SchemaFactory.createForClass(PartnerCapacityRule);
+
+/** A rule scope that is over its threshold and has already alerted. */
+@Schema({ _id: false })
+export class PartnerCapacityAlert {
+  @Prop({ required: true }) key: string;
+  @Prop({ required: true }) at: Date;
+}
+export const PartnerCapacityAlertSchema =
+  SchemaFactory.createForClass(PartnerCapacityAlert);
+
 export type PartnerNotificationSettingsDocument =
   HydratedDocument<PartnerNotificationSettings>;
 
@@ -56,6 +77,14 @@ export class PartnerNotificationSettings {
 
   @Prop({ type: PartnerWebhookConfigSchema, default: () => ({}) })
   webhook: PartnerWebhookConfig;
+
+  // Hospitals only. Unset until saved, so the starter templates apply.
+  @Prop({ type: [PartnerCapacityRuleSchema], default: undefined })
+  capacityRules?: PartnerCapacityRule[];
+
+  // So each crossing alerts once, not on every admission while a ward stays full.
+  @Prop({ type: [PartnerCapacityAlertSchema], default: [] })
+  capacityAlerts: PartnerCapacityAlert[];
 }
 
 export const PartnerNotificationSettingsSchema = SchemaFactory.createForClass(

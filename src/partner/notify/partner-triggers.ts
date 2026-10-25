@@ -1,4 +1,5 @@
 import { OrgType, StaffRole } from '../rbac/partner-permissions';
+import { WARD_TYPES } from '../hospital/schemas/ward.schema';
 
 /** Events a partner organisation can be notified about (Notification Center). */
 export enum PartnerTrigger {
@@ -11,8 +12,29 @@ export enum PartnerTrigger {
   LAB_RESULT_READY = 'lab_result_ready',
   CRITICAL_LAB_RESULT = 'critical_lab_result',
   ADMISSION_UPDATE = 'admission_update',
+  CAPACITY_WARNING = 'capacity_warning',
   STAFF_JOINED = 'staff_joined',
 }
+
+/**
+ * What a capacity warning watches: every ward on its own, all beds in the
+ * hospital, or all wards of one type together (e.g. every ICU).
+ */
+export const CAPACITY_SCOPES = ['each_ward', 'hospital', ...WARD_TYPES];
+
+export interface CapacityRuleConfig {
+  id: string;
+  scope: string;
+  thresholdPercent: number;
+  enabled: boolean;
+}
+
+/** Starter templates, in force until a hospital saves its own rules. */
+export const DEFAULT_CAPACITY_RULES: CapacityRuleConfig[] = [
+  { id: 'any-ward', scope: 'each_ward', thresholdPercent: 95, enabled: true },
+  { id: 'icu', scope: 'icu', thresholdPercent: 95, enabled: false },
+  { id: 'hospital', scope: 'hospital', thresholdPercent: 90, enabled: false },
+];
 
 export type PartnerChannel = 'inApp' | 'email' | 'sms' | 'desktop' | 'webhook';
 export const PARTNER_CHANNELS: PartnerChannel[] = [
@@ -132,6 +154,16 @@ export const TRIGGER_CATALOG: TriggerDefinition[] = [
     critical: false,
     defaultRoles: [R.ADMIN, R.NURSE],
     defaultChannels: channels(['inApp']),
+  },
+  {
+    trigger: PartnerTrigger.CAPACITY_WARNING,
+    label: 'Ward capacity warning',
+    description:
+      'Bed occupancy reaches a level set under Capacity warnings, so floor managers can act before wards overcrowd.',
+    orgTypes: [OrgType.HOSPITAL],
+    critical: true,
+    defaultRoles: [R.ADMIN, R.NURSE],
+    defaultChannels: channels(['inApp', 'desktop']),
   },
   {
     trigger: PartnerTrigger.STAFF_JOINED,
