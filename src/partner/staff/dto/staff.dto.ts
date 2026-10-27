@@ -77,6 +77,14 @@ export class InviteStaffDto {
   @IsString()
   @MaxLength(60)
   registrationNumber?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Diagnostic centres: role type Field collector — collects samples at patients' homes (phlebotomists and technicians)",
+  })
+  @IsOptional()
+  @IsBoolean()
+  fieldCollector?: boolean;
 }
 
 export class UpdateStaffDto {
@@ -127,6 +135,13 @@ export class UpdateStaffDto {
   @Min(0)
   @Max(100)
   revenueSharePercent?: number | null;
+
+  @ApiPropertyOptional({
+    description: 'Diagnostic centres: role type Field collector',
+  })
+  @IsOptional()
+  @IsBoolean()
+  fieldCollector?: boolean;
 }
 
 /** On-duty check-in / check-out. */

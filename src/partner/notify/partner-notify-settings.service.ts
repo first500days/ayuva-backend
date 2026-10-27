@@ -47,8 +47,8 @@ export class PartnerNotifySettingsService {
   async get(providerId: Types.ObjectId) {
     const { rules, settings, provider } =
       await this.notifier.rulesFor(providerId);
-    const hospital =
-      !!provider && orgTypeOf(provider.type) === OrgType.HOSPITAL;
+    const orgType = provider ? orgTypeOf(provider.type) : undefined;
+    const hospital = orgType === OrgType.HOSPITAL;
     return {
       rules: rules.map((r) => {
         const def = TRIGGER_CATALOG.find((d) => d.trigger === r.trigger)!;
@@ -73,6 +73,11 @@ export class PartnerNotifySettingsService {
             enabled: r.enabled,
           }))
         : [],
+      // Labs only: alert the moment a critical value is entered (null elsewhere).
+      criticalOnEntry:
+        orgType === OrgType.DIAGNOSTIC
+          ? (settings?.criticalOnEntry ?? true)
+          : null,
     };
   }
 
@@ -82,6 +87,7 @@ export class PartnerNotifySettingsService {
       rules?: NotificationRuleInput[];
       webhook?: { enabled?: boolean; url?: string };
       capacityRules?: CapacityRuleConfig[];
+      criticalOnEntry?: boolean;
     },
   ) {
     const settings =
@@ -163,8 +169,21 @@ export class PartnerNotifySettingsService {
       settings.markModified('capacityAlerts');
     }
 
+    if (input.criticalOnEntry !== undefined)
+      settings.criticalOnEntry = input.criticalOnEntry;
+
     await settings.save();
     return this.get(providerId);
+  }
+
+  /** Whether a lab is alerted the moment a critical value is entered (on unless switched off). */
+  async criticalOnEntry(providerId: Types.ObjectId): Promise<boolean> {
+    const s = await this.settingsModel
+      .findOne({ providerId })
+      .select('criticalOnEntry')
+      .lean()
+      .exec();
+    return s?.criticalOnEntry ?? true;
   }
 
   /** Capacity rules in force, and the rule scopes that have already alerted. */

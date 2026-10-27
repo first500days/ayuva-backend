@@ -43,6 +43,33 @@ export class LabOrderEvent {
 }
 export const LabOrderEventSchema = SchemaFactory.createForClass(LabOrderEvent);
 
+/** A sample tube linked to the order by scanning its barcode label. */
+@Schema({ _id: false })
+export class LabSample {
+  @Prop({ required: true }) barcode: string;
+  @Prop({ required: true }) linkedAt: Date;
+  @Prop() linkedByName?: string;
+  // The last scan confirming the tube belongs to this order (e.g. before results are entered).
+  @Prop() verifiedAt?: Date;
+  @Prop() verifiedByName?: string;
+}
+export const LabSampleSchema = SchemaFactory.createForClass(LabSample);
+
+/** Who was told about a critical (panic) value, and how — the lab's call-out record. */
+@Schema({ _id: false })
+export class CriticalCallout {
+  @Prop({ required: true }) at: Date;
+  @Prop({ required: true, trim: true }) notifiedName: string;
+  // 'phone' | 'in_person' | 'message' | 'other'
+  @Prop({ required: true }) method: string;
+  // The person told repeated the value back.
+  @Prop({ default: false }) readBack: boolean;
+  @Prop({ trim: true }) note?: string;
+  @Prop() byName?: string;
+}
+export const CriticalCalloutSchema =
+  SchemaFactory.createForClass(CriticalCallout);
+
 /** A DICOM file attached to an order — encrypted at rest like vault files. */
 @Schema()
 export class ImagingFile {
@@ -162,6 +189,12 @@ export class PartnerLabOrder {
   @Prop({ type: [LabOrderEventSchema], default: [] })
   statusHistory: LabOrderEvent[];
 
+  @Prop({ type: [LabSampleSchema], default: [] })
+  samples: LabSample[];
+
+  @Prop({ type: [CriticalCalloutSchema], default: [] })
+  criticalCallouts: CriticalCallout[];
+
   // When the report is due, from the slowest test's turnaround.
   @Prop()
   dueAt?: Date;
@@ -192,3 +225,4 @@ export class PartnerLabOrder {
 export const PartnerLabOrderSchema =
   SchemaFactory.createForClass(PartnerLabOrder);
 PartnerLabOrderSchema.index({ providerId: 1, status: 1, createdAt: -1 });
+PartnerLabOrderSchema.index({ providerId: 1, 'samples.barcode': 1 });

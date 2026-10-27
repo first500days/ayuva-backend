@@ -47,7 +47,9 @@ import { PartnerLabInventoryService } from './partner-lab-inventory.service';
 import {
   AdvanceLabOrderDto,
   CreateLabOrderDto,
+  CriticalCalloutDto,
   LabOrdersQueryDto,
+  ScanSampleDto,
   UpdateLabOrderDto,
 } from './dto/lab.dto';
 
@@ -66,6 +68,13 @@ const OPEN = [
   LabOrderStatus.REPORT_READY,
 ];
 const DICOM_MAX_BYTES = 60 * 1024 * 1024;
+const MAX_SAMPLES = 10;
+const CALLOUT_METHOD: Record<string, string> = {
+  phone: 'by phone',
+  in_person: 'in person',
+  message: 'by message',
+  other: '',
+};
 
 /** Order Pipeline (Lab Queue) and Technician Assignment. */
 @Injectable()
@@ -108,7 +117,13 @@ export class PartnerLabOrdersService {
     }
     if (q.q?.trim()) {
       const re = buildSafeRegex(q.q);
-      const or = [{ orderNo: re }, { patientName: re }, { 'items.name': re }];
+      // A scanned vial barcode finds its order too.
+      const or = [
+        { orderNo: re },
+        { patientName: re },
+        { 'items.name': re },
+        { 'samples.barcode': re },
+      ];
       filter.$and = [...((filter.$and as object[]) ?? []), { $or: or }];
     }
     const orders = await this.orderModel
@@ -147,7 +162,7 @@ export class PartnerLabOrdersService {
       ? await this.activeMember(actor, dto.technicianMemberId)
       : undefined;
     const collector = dto.collectorMemberId
-      ? await this.activeMember(actor, dto.collectorMemberId)
+      ? await this.fieldCollector(actor, dto.collectorMemberId)
       : undefined;
     const now = new Date();
     const maxTat = Math.max(...items.map((i) => i.tatHours ?? 24), 0);
@@ -267,7 +282,7 @@ export class PartnerLabOrdersService {
         order.collectorMemberId = undefined;
         order.collectorName = undefined;
       } else {
-        const m = await this.activeMember(actor, dto.collectorMemberId);
+        const m = await this.fieldCollector(actor, dto.collectorMemberId);
         if (!order.collectorMemberId?.equals(m._id)) newlyAssigned.push(m);
         order.collectorMemberId = m._id;
         order.collectorName = m.fullName;
@@ -336,16 +351,8 @@ export class PartnerLabOrdersService {
         );
     }
     const now = new Date();
-    if (target === LabOrderStatus.SAMPLE_COLLECTED) {
-      order.sampleCollection = {
-        ...this.plainCollection(order),
-        collectedAt: now,
-      };
-      order.markModified('sampleCollection');
-      // Turnaround runs from sample collection.
-      const maxTat = Math.max(...order.items.map((i) => i.tatHours ?? 24), 0);
-      order.dueAt = new Date(now.getTime() + maxTat * 3_600_000);
-    }
+    if (target === LabOrderStatus.SAMPLE_COLLECTED)
+      this.markCollected(order, now);
     order.status = target;
     order.statusHistory.push({
       at: now,
@@ -356,6 +363,204 @@ export class PartnerLabOrdersService {
     await order.save();
     await this.record(actor, order, { change: target });
     return this.toResponse(order);
+  }
+
+  /**
+   * Vial barcode scan. A new barcode is linked to the order (the first one
+   * marks the sample collected); a barcode already on this order confirms the
+   * tube; one that belongs to another order is a mix-up. Every scan is logged
+   * in Security & Logs.
+   */
+  async scanSample(actor: PartnerActor, id: string, dto: ScanSampleDto) {
+    const order = await this.load(actor, id);
+    const barcode = dto.barcode.trim().toUpperCase();
+    const now = new Date();
+    const other = await this.orderModel
+      .findOne({
+        providerId: actor.provider._id,
+        _id: { $ne: order._id },
+        'samples.barcode': barcode,
+      })
+      .select('orderNo patientName')
+      .lean()
+      .exec();
+    if (other) {
+      await this.recordScan(
+        actor,
+        order,
+        AuditAction.PARTNER_LAB_SAMPLE_MISMATCH,
+        barcode,
+        {
+          label: `${order.orderNo} · vial ${barcode} belongs to ${other.orderNo}`,
+          belongsTo: other.orderNo,
+        },
+      );
+      return {
+        outcome: 'mismatch' as const,
+        barcode,
+        belongsTo: { orderNo: other.orderNo, patientName: other.patientName },
+        order: this.toResponse(order),
+      };
+    }
+
+    const own = order.samples.find((s) => s.barcode === barcode);
+    if (own) {
+      own.verifiedAt = now;
+      own.verifiedByName = actor.member.fullName;
+      order.markModified('samples');
+      await order.save();
+      await this.recordScan(
+        actor,
+        order,
+        AuditAction.PARTNER_LAB_SAMPLE_SCAN,
+        barcode,
+        {
+          label: `${order.orderNo} · vial ${barcode} · matches`,
+          outcome: 'verified',
+        },
+      );
+      return {
+        outcome: 'verified' as const,
+        barcode,
+        belongsTo: null,
+        order: this.toResponse(order),
+      };
+    }
+
+    if (!OPEN.includes(order.status))
+      throw new BadRequestException(
+        'This order is closed — a new vial can’t be linked to it',
+      );
+    if (order.samples.length >= MAX_SAMPLES)
+      throw new BadRequestException(
+        `An order can have up to ${MAX_SAMPLES} vials`,
+      );
+    order.samples.push({
+      barcode,
+      linkedAt: now,
+      linkedByName: actor.member.fullName,
+    });
+    if (order.status === LabOrderStatus.ORDERED) {
+      this.markCollected(order, now);
+      order.status = LabOrderStatus.SAMPLE_COLLECTED;
+      order.statusHistory.push({
+        at: now,
+        status: LabOrderStatus.SAMPLE_COLLECTED,
+        byName: actor.member.fullName,
+        note: `Vial ${barcode} scanned`,
+      });
+    }
+    await order.save();
+    await this.recordScan(
+      actor,
+      order,
+      AuditAction.PARTNER_LAB_SAMPLE_SCAN,
+      barcode,
+      {
+        label: `${order.orderNo} · vial ${barcode} · linked`,
+        outcome: 'linked',
+      },
+    );
+    return {
+      outcome: 'linked' as const,
+      barcode,
+      belongsTo: null,
+      order: this.toResponse(order),
+    };
+  }
+
+  /** Records who was told about a critical value, and how (the lab's call-out log). */
+  async criticalCallout(
+    actor: PartnerActor,
+    id: string,
+    dto: CriticalCalloutDto,
+  ) {
+    const order = await this.load(actor, id);
+    const critical = await this.resultModel.exists({
+      orderId: order._id,
+      critical: true,
+    });
+    if (!critical)
+      throw new BadRequestException(
+        'This order has no critical value to call out',
+      );
+    const now = new Date();
+    const how = CALLOUT_METHOD[dto.method] ?? '';
+    order.criticalCallouts.push({
+      at: now,
+      notifiedName: dto.notifiedName.trim(),
+      method: dto.method,
+      readBack: dto.readBack ?? false,
+      note: dto.note?.trim() || undefined,
+      byName: actor.member.fullName,
+    });
+    order.statusHistory.push({
+      at: now,
+      status: order.status,
+      byName: actor.member.fullName,
+      note: `Critical value called out to ${dto.notifiedName.trim()}${how ? ` ${how}` : ''}${dto.readBack ? ' (read back)' : ''}`,
+    });
+    await order.save();
+    await this.audit.record({
+      actorId: actor.userId,
+      action: AuditAction.PARTNER_LAB_CRITICAL_CALLOUT,
+      targetType: 'PartnerLabOrder',
+      targetId: order.id,
+      metadata: {
+        providerId: actor.provider.id,
+        patientId: order.patientId.toString(),
+        orderNo: order.orderNo,
+        label: `${order.orderNo} · told ${dto.notifiedName.trim()}${how ? ` ${how}` : ''}${dto.readBack ? ', read back' : ''}`,
+        method: dto.method,
+        readBack: dto.readBack ?? false,
+      },
+      ipAddress: actor.ip,
+    });
+    return this.toResponse(order);
+  }
+
+  /**
+   * Field collectors who can be sent on home collections: on-duty ones first,
+   * then by how many visits they still have to make.
+   */
+  async collectors(actor: PartnerActor) {
+    const providerId = actor.provider._id;
+    const [members, pending] = await Promise.all([
+      this.memberModel
+        .find({ providerId, status: MemberStatus.ACTIVE, fieldCollector: true })
+        .exec(),
+      this.orderModel.aggregate<{ _id: Types.ObjectId; n: number }>([
+        {
+          $match: {
+            providerId,
+            status: LabOrderStatus.ORDERED,
+            'sampleCollection.type': 'home',
+            collectorMemberId: { $exists: true },
+          },
+        },
+        { $group: { _id: '$collectorMemberId', n: { $sum: 1 } } },
+      ]),
+    ]);
+    const visits = new Map(pending.map((p) => [p._id.toString(), p.n]));
+    return members
+      .map((m) => ({
+        id: m.id,
+        fullName: m.fullName,
+        phone: m.phone ?? null,
+        onDuty: m.onDuty ?? false,
+        dutySchedule: (m.dutySchedule ?? []).map((b) => ({
+          day: b.day,
+          start: b.start,
+          end: b.end,
+        })),
+        pendingVisits: visits.get(m.id) ?? 0,
+      }))
+      .sort(
+        (a, b) =>
+          Number(b.onDuty) - Number(a.onDuty) ||
+          a.pendingVisits - b.pendingVisits ||
+          a.fullName.localeCompare(b.fullName),
+      );
   }
 
   /** Lab Queue KPIs for the diagnostic dashboard. */
@@ -632,6 +837,50 @@ export class PartnerLabOrdersService {
     return m;
   }
 
+  /** Home collections go only to staff set up as field collectors. */
+  private async fieldCollector(actor: PartnerActor, memberId: string) {
+    const m = await this.activeMember(actor, memberId);
+    if (!m.fieldCollector)
+      throw new BadRequestException(
+        `${m.fullName} isn't a field collector — set their role type under Staff first`,
+      );
+    return m;
+  }
+
+  /** Sample collected now; turnaround runs from collection. */
+  private markCollected(order: LabOrderDocument, now: Date) {
+    order.sampleCollection = {
+      ...this.plainCollection(order),
+      collectedAt: now,
+    };
+    order.markModified('sampleCollection');
+    const maxTat = Math.max(...order.items.map((i) => i.tatHours ?? 24), 0);
+    order.dueAt = new Date(now.getTime() + maxTat * 3_600_000);
+  }
+
+  private recordScan(
+    actor: PartnerActor,
+    order: LabOrderDocument,
+    action: AuditAction,
+    barcode: string,
+    metadata: Record<string, unknown>,
+  ) {
+    return this.audit.record({
+      actorId: actor.userId,
+      action,
+      targetType: 'PartnerLabOrder',
+      targetId: order.id,
+      metadata: {
+        providerId: actor.provider.id,
+        patientId: order.patientId.toString(),
+        orderNo: order.orderNo,
+        barcode,
+        ...metadata,
+      },
+      ipAddress: actor.ip,
+    });
+  }
+
   private async tellAssignee(
     actor: PartnerActor,
     member: PartnerMemberDocument,
@@ -752,6 +1001,21 @@ export class PartnerLabOrdersService {
         status: h.status,
         byName: h.byName ?? null,
         note: h.note ?? null,
+      })),
+      samples: (o.samples ?? []).map((s) => ({
+        barcode: s.barcode,
+        linkedAt: s.linkedAt.toISOString(),
+        linkedByName: s.linkedByName ?? null,
+        verifiedAt: s.verifiedAt?.toISOString() ?? null,
+        verifiedByName: s.verifiedByName ?? null,
+      })),
+      criticalCallouts: (o.criticalCallouts ?? []).map((c) => ({
+        at: c.at.toISOString(),
+        notifiedName: c.notifiedName,
+        method: c.method,
+        readBack: c.readBack ?? false,
+        note: c.note ?? null,
+        byName: c.byName ?? null,
       })),
       createdAt: (o.createdAt ?? new Date()).toISOString(),
     };

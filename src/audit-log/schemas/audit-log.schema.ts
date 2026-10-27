@@ -104,6 +104,13 @@ export enum AuditAction {
   // Billing-desk receipts (split payments).
   PARTNER_PAYMENT_RECORD = 'partner_payment_record',
   PARTNER_PAYMENT_VOID = 'partner_payment_void',
+  // Lab sample and result trail: vial barcode scans, result entry and changes,
+  // and critical-value call-outs.
+  PARTNER_LAB_SAMPLE_SCAN = 'partner_lab_sample_scan',
+  PARTNER_LAB_SAMPLE_MISMATCH = 'partner_lab_sample_mismatch',
+  PARTNER_LAB_RESULT_ENTRY = 'partner_lab_result_entry',
+  PARTNER_LAB_RESULT_OVERRIDE = 'partner_lab_result_override',
+  PARTNER_LAB_CRITICAL_CALLOUT = 'partner_lab_critical_callout',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;

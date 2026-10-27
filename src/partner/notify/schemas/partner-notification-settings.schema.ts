@@ -85,6 +85,11 @@ export class PartnerNotificationSettings {
   // So each crossing alerts once, not on every admission while a ward stays full.
   @Prop({ type: [PartnerCapacityAlertSchema], default: [] })
   capacityAlerts: PartnerCapacityAlert[];
+
+  // Diagnostic centres: alert the lab the moment a critical (panic) value is
+  // entered, before sign-off. Unset means on.
+  @Prop()
+  criticalOnEntry?: boolean;
 }
 
 export const PartnerNotificationSettingsSchema = SchemaFactory.createForClass(

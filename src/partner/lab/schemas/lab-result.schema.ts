@@ -80,6 +80,11 @@ export class LabResult {
   @Prop({ default: false })
   critical: boolean;
 
+  // Critical values ("Test|Parameter#n") the lab has already been alerted about,
+  // so each one alerts once as it's entered rather than on every save.
+  @Prop({ type: [String], default: [] })
+  criticalAlerted: string[];
+
   @Prop() draftedByName?: string;
   @Prop() releasedByName?: string;
   @Prop() releasedAt?: Date;

@@ -31,11 +31,20 @@ export class ActivityQueryDto {
   patientId?: string;
 
   @ApiPropertyOptional({
-    enum: ['record_access', 'clinical', 'operations', 'admin', 'login'],
+    description: 'Search the detail column, e.g. an order no. or vial barcode',
   })
   @IsOptional()
-  @IsIn(['record_access', 'clinical', 'operations', 'admin', 'login'])
-  category?: 'record_access' | 'clinical' | 'operations' | 'admin' | 'login';
+  @IsString()
+  @MaxLength(80)
+  q?: string;
+
+  @ApiPropertyOptional({
+    enum: ['record_access', 'clinical', 'lab', 'operations', 'admin', 'login'],
+  })
+  @IsOptional()
+  @IsIn(['record_access', 'clinical', 'lab', 'operations', 'admin', 'login'])
+  category?:
+    'record_access' | 'clinical' | 'lab' | 'operations' | 'admin' | 'login';
 
   @ApiPropertyOptional() @IsOptional() @IsISO8601() from?: string;
   @ApiPropertyOptional() @IsOptional() @IsISO8601() to?: string;

@@ -137,9 +137,9 @@ export const TRIGGER_CATALOG: TriggerDefinition[] = [
   },
   {
     trigger: PartnerTrigger.CRITICAL_LAB_RESULT,
-    label: 'Emergency / critical lab result',
+    label: 'Critical / panic lab result',
     description:
-      'A released report contains a value in the critical range — for the referring doctor, and for the lab that produced it.',
+      'A result falls in the critical (panic) range. The lab is alerted as soon as it is entered; the referring doctor when the report is released.',
     orgTypes: ALL_ORGS,
     critical: true,
     defaultRoles: [R.ADMIN, R.DOCTOR],

@@ -19,6 +19,7 @@ import {
   AuditLog,
   AuditLogDocument,
 } from '../../audit-log/schemas/audit-log.schema';
+import { buildSafeRegex } from '../../common/utils/regex.util';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import {
   MemberStatus,
@@ -28,13 +29,15 @@ import {
 import { roleLabel } from '../rbac/partner-permissions';
 
 export type ActivityCategory =
-  'record_access' | 'clinical' | 'operations' | 'admin' | 'login';
+  'record_access' | 'clinical' | 'lab' | 'operations' | 'admin' | 'login';
 
 export interface ActivityQuery {
   memberId?: string;
   // Only staff whose primary department is this one.
   department?: string;
   patientId?: string;
+  // Order no., vial barcode or other detail text.
+  q?: string;
   category?: ActivityCategory;
   from?: string;
   to?: string;
@@ -104,6 +107,27 @@ const ACTION_META: Partial<
   [AuditAction.PARTNER_LAB_REPORT_RELEASE]: {
     category: 'clinical',
     label: 'Released lab report',
+  },
+  // Sample verification history: who scanned each tube and who put the numbers in.
+  [AuditAction.PARTNER_LAB_SAMPLE_SCAN]: {
+    category: 'lab',
+    label: 'Scanned vial barcode',
+  },
+  [AuditAction.PARTNER_LAB_SAMPLE_MISMATCH]: {
+    category: 'lab',
+    label: 'Vial barcode MISMATCH',
+  },
+  [AuditAction.PARTNER_LAB_RESULT_ENTRY]: {
+    category: 'lab',
+    label: 'Entered results',
+  },
+  [AuditAction.PARTNER_LAB_RESULT_OVERRIDE]: {
+    category: 'lab',
+    label: 'Manual result override',
+  },
+  [AuditAction.PARTNER_LAB_CRITICAL_CALLOUT]: {
+    category: 'lab',
+    label: 'Called out critical value',
   },
   [AuditAction.PARTNER_APPOINTMENT_UPDATE]: {
     category: 'operations',
@@ -201,6 +225,8 @@ export class PartnerSecurityService {
       .map((m) => m.userId);
     const range = this.range(q.from, q.to);
     const wantsAccess = !q.category || q.category === 'record_access';
+    // Free text matches the detail column: order no., vial barcode, file name…
+    const text = q.q?.trim() ? buildSafeRegex(q.q) : null;
 
     // 1. Patient-record views/downloads through share grants (attributable to a login since P04).
     let accessRows: AccessLogDocument[] = [];
@@ -215,6 +241,7 @@ export class PartnerSecurityService {
               userId: new Types.ObjectId(q.patientId),
             }),
           ...(range && { occurredAt: range }),
+          ...(text && { recordTitle: text }),
         })
         .sort({ occurredAt: -1 })
         .limit(MAX_PER_SOURCE)
@@ -234,6 +261,14 @@ export class PartnerSecurityService {
               action: { $in: actions },
               ...(q.patientId && { 'metadata.patientId': q.patientId }),
               ...(range && { createdAt: range }),
+              ...(text && {
+                $or: [
+                  { 'metadata.label': text },
+                  { 'metadata.orderNo': text },
+                  { 'metadata.barcode': text },
+                  { 'metadata.memberName': text },
+                ],
+              }),
             })
             .sort({ createdAt: -1 })
             .limit(MAX_PER_SOURCE)

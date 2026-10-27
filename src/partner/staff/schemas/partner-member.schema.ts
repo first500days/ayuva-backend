@@ -152,6 +152,11 @@ export class PartnerMember {
   @Prop({ type: [DutyBlockSchema], default: [] })
   dutySchedule: DutyBlock[];
 
+  // Diagnostic centres: a mobile sample collector who visits patients' homes,
+  // so home-collection orders can be dispatched to them.
+  @Prop({ default: false })
+  fieldCollector: boolean;
+
   // Attendance: whether they've checked in for work right now (the roster is the plan).
   @Prop({ default: false })
   onDuty: boolean;

@@ -85,8 +85,10 @@ import {
   CreateCatalogItemDto,
   CreateInventoryItemDto,
   CreateLabOrderDto,
+  CriticalCalloutDto,
   LabOrdersQueryDto,
   SaveResultDto,
+  ScanSampleDto,
   UpdateCatalogItemDto,
   UpdateInventoryItemDto,
   UpdateLabOrderDto,
@@ -305,6 +307,10 @@ export class PartnerNotifyController {
   ) {
     if (dto.capacityRules && a.orgType !== OrgType.HOSPITAL)
       throw new BadRequestException('Capacity warnings are for hospitals');
+    if (dto.criticalOnEntry !== undefined && a.orgType !== OrgType.DIAGNOSTIC)
+      throw new BadRequestException(
+        'Critical-value alerts on entry are for diagnostic centres',
+      );
     const result = await this.settings.update(a.provider._id, dto);
     await this.audit.record({
       actorId: a.userId,
@@ -316,6 +322,9 @@ export class PartnerNotifyController {
         webhook: dto.webhook?.enabled,
         ...(dto.capacityRules && {
           capacityRules: dto.capacityRules.filter((r) => r.enabled).length,
+        }),
+        ...(dto.criticalOnEntry !== undefined && {
+          criticalOnEntry: dto.criticalOnEntry,
         }),
       },
       ipAddress: a.ip,
@@ -775,6 +784,45 @@ export class PartnerLabController {
     @Body() dto: AdvanceLabOrderDto,
   ) {
     return this.orders.advance(a, id, dto);
+  }
+
+  @Post('orders/:id/samples/scan')
+  @HttpCode(200)
+  @RequirePerm(Perm.LAB_ORDERS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Vial barcode scan: links a new tube, confirms a linked one, or flags a tube that belongs to another order',
+  })
+  scanSample(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: ScanSampleDto,
+  ) {
+    return this.orders.scanSample(a, id, dto);
+  }
+
+  @Post('orders/:id/critical-callout')
+  @HttpCode(200)
+  @RequirePerm(Perm.LAB_REPORTS_DRAFT)
+  @ApiOperation({
+    summary: 'Record who was told about a critical (panic) value, and how',
+  })
+  criticalCallout(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: CriticalCalloutDto,
+  ) {
+    return this.orders.criticalCallout(a, id, dto);
+  }
+
+  @Get('collectors')
+  @RequirePerm(Perm.LAB_ORDERS_VIEW)
+  @ApiOperation({
+    summary:
+      'Field collectors for home collections — on duty first, then by pending visits',
+  })
+  collectors(@PartnerCtx() a: PartnerActor) {
+    return this.orders.collectors(a);
   }
 
   // Results (Report Builder / Uploader)

@@ -103,6 +103,19 @@ function listedDepartment(value: string, listed: string[]): string {
     );
   return match;
 }
+
+/** Labs dispatch home collections to phlebotomists and technicians marked as field collectors. */
+const FIELD_COLLECTOR_ROLES = [StaffRole.NURSE, StaffRole.TECHNICIAN];
+function assertFieldCollector(orgType: OrgType, role: StaffRole) {
+  if (orgType !== OrgType.DIAGNOSTIC)
+    throw new BadRequestException(
+      'Field collectors are for diagnostic centres',
+    );
+  if (!FIELD_COLLECTOR_ROLES.includes(role))
+    throw new BadRequestException(
+      'Only phlebotomists and technicians can be field collectors',
+    );
+}
 // Placeholder consent until the invitee accepts the terms themselves; the
 // ConsentGuard rejects it, and the account has no password until then anyway.
 const PENDING_CONSENT_VERSION = 'invite-pending';
@@ -158,6 +171,7 @@ export class PartnerStaffService {
       throw new BadRequestException(
         'Choose a primary department for this staff member',
       );
+    if (dto.fieldCollector) assertFieldCollector(actor.orgType, dto.role);
     const email = dto.email.trim().toLowerCase();
     if (await this.userModel.exists({ email })) {
       throw new ConflictException(
@@ -192,6 +206,7 @@ export class PartnerStaffService {
         title: dto.title,
         department,
         registrationNumber: dto.registrationNumber,
+        fieldCollector: dto.fieldCollector ?? false,
         inviteTokenHash: hash,
         inviteExpiresAt: new Date(Date.now() + INVITE_TTL_MS),
         invitedBy: new Types.ObjectId(actor.userId),
@@ -215,6 +230,7 @@ export class PartnerStaffService {
     await this.record(actor, AuditAction.PARTNER_STAFF_INVITE, member, {
       role: dto.role,
       email,
+      ...(member.fieldCollector && { fieldCollector: true }),
     });
     return { member: this.toResponse(member, actor), inviteUrl };
   }
@@ -267,6 +283,15 @@ export class PartnerStaffService {
       if (share !== member.revenueSharePercent)
         changes.revenueSharePercent = share ?? null;
       member.set('revenueSharePercent', share);
+    }
+    if (dto.fieldCollector) assertFieldCollector(actor.orgType, member.role);
+    // A collector moved to a role that doesn't collect stops being one.
+    const collects =
+      (dto.fieldCollector ?? member.fieldCollector ?? false) &&
+      FIELD_COLLECTOR_ROLES.includes(member.role);
+    if (collects !== (member.fieldCollector ?? false)) {
+      changes.fieldCollector = collects;
+      member.fieldCollector = collects;
     }
     const submitted =
       member.registrationNumber !== previousRegistration &&
@@ -726,6 +751,7 @@ export class PartnerStaffService {
       department: m.department ?? null,
       registrationNumber: m.registrationNumber ?? null,
       registration: registrationStateOf(m, actor.provider),
+      fieldCollector: m.fieldCollector ?? false,
       dutySchedule: (m.dutySchedule ?? []).map((b) => ({
         day: b.day,
         start: b.start,

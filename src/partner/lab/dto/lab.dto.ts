@@ -421,6 +421,49 @@ export class SaveResultDto {
   @IsString()
   @MaxLength(4000)
   comments?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Why an already-entered result is being changed — required when a save overrides one',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  overrideReason?: string;
+}
+
+/** A sample tube's barcode, from a scanner or typed in. */
+export class ScanSampleDto {
+  @ApiProperty({ example: 'VL00012345' })
+  @IsString()
+  @Matches(/^[A-Za-z0-9._-]{3,40}$/, {
+    message: 'barcode: 3–40 letters, digits, dots, dashes or underscores',
+  })
+  barcode: string;
+}
+
+/** The lab told someone (usually the ordering doctor) about a critical value. */
+export class CriticalCalloutDto {
+  @ApiProperty({ example: 'Dr. Kabir Rao' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  notifiedName: string;
+
+  @ApiProperty({ enum: ['phone', 'in_person', 'message', 'other'] })
+  @IsIn(['phone', 'in_person', 'message', 'other'])
+  method: string;
+
+  @ApiPropertyOptional({ description: 'They repeated the value back' })
+  @IsOptional()
+  @IsBoolean()
+  readBack?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }
 
 /** Multipart fields sent with an uploaded report file. */

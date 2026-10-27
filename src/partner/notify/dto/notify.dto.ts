@@ -86,6 +86,14 @@ export class UpdateNotificationSettingsDto {
   @Type(() => CapacityRuleDto)
   capacityRules?: CapacityRuleDto[];
 
+  @ApiPropertyOptional({
+    description:
+      'Diagnostic centres: send an immediate high-priority alert when a result falls in the critical (panic) range',
+  })
+  @IsOptional()
+  @IsBoolean()
+  criticalOnEntry?: boolean;
+
   @ApiPropertyOptional({ type: WebhookConfigDto })
   @IsOptional()
   @ValidateNested()

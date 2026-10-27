@@ -7,6 +7,7 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import { PartnerNotifierService } from '../notify/partner-notifier.service';
+import { PartnerNotifySettingsService } from '../notify/partner-notify-settings.service';
 import { PartnerTrigger } from '../notify/partner-triggers';
 import { PartnerDocumentsService } from '../documents/partner-documents.service';
 import {
@@ -17,8 +18,17 @@ import {
 import { LabOrderDocument, LabOrderStatus } from './schemas/lab-order.schema';
 import { LabResult, LabResultDocument } from './schemas/lab-result.schema';
 import { computeFlag, isCriticalFlag } from './lab-flags';
+import {
+  ResultRow,
+  freshCritical,
+  resultChanges,
+  resultRows,
+} from './result-changes';
 import { PartnerLabOrdersService } from './partner-lab-orders.service';
 import { SaveResultDto, UploadReportDto } from './dto/lab.dto';
+
+// Caps the log rows one save can write if a whole report is rewritten.
+const MAX_OVERRIDE_ROWS = 100;
 
 const IMAGING_CATEGORIES = ['radiology', 'imaging', 'cardiology'];
 
@@ -49,6 +59,7 @@ export class PartnerLabResultsService {
     private readonly orders: PartnerLabOrdersService,
     private readonly documents: PartnerDocumentsService,
     private readonly notifier: PartnerNotifierService,
+    private readonly notifySettings: PartnerNotifySettingsService,
     private readonly audit: AuditLogService,
   ) {}
 
@@ -78,12 +89,23 @@ export class PartnerLabResultsService {
     this.assertOpen(order);
     const existing = await this.resultModel
       .findOne({ orderId: order._id })
-      .select('status')
+      .select('status tests criticalAlerted')
       .lean()
       .exec();
     if (existing?.status === 'released')
       throw new BadRequestException('This report has already been released');
     const tests = this.withFlags(dto.tests);
+    const rows = resultRows(tests);
+    const { entered, overridden } = resultChanges(
+      resultRows(existing?.tests ?? []),
+      rows,
+    );
+    const reason = dto.overrideReason?.trim();
+    if (overridden.length && (!reason || reason.length < 5))
+      throw new BadRequestException(
+        'Give a reason for changing a result that was already entered',
+      );
+    const fresh = freshCritical(rows, existing?.criticalAlerted ?? []);
     const result = await this.resultModel.findOneAndUpdate(
       { orderId: order._id },
       {
@@ -95,12 +117,23 @@ export class PartnerLabResultsService {
           critical: tests.some((t) =>
             t.values.some((v) => isCriticalFlag(v.flag)),
           ),
+          // Only values still critical stay listed, so one that's corrected and
+          // later turns critical again alerts again.
+          criticalAlerted: rows
+            .filter((r) => isCriticalFlag(r.flag))
+            .map((r) => r.key),
           draftedByName: actor.member.fullName,
         },
         $setOnInsert: { status: 'draft' },
       },
       { upsert: true, returnDocument: 'after' },
     );
+    await this.recordEntries(actor, order, entered, overridden, reason);
+    if (
+      fresh.length &&
+      (await this.notifySettings.criticalOnEntry(actor.provider._id))
+    )
+      await this.alertCritical(actor, order, fresh);
 
     // A complete draft is waiting for sign-off; a partial one is still in processing.
     const complete = tests.every((t) => t.values.every((v) => v.value.trim()));
@@ -227,6 +260,90 @@ export class PartnerLabResultsService {
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * Security & Logs trail of who put the numbers in: one row per save that
+   * entered values, and one per value changed after it was entered.
+   */
+  private async recordEntries(
+    actor: PartnerActor,
+    order: LabOrderDocument,
+    entered: ResultRow[],
+    overridden: { row: ResultRow; from: string }[],
+    reason: string | undefined,
+  ) {
+    const meta = {
+      providerId: actor.provider.id,
+      patientId: order.patientId.toString(),
+      orderNo: order.orderNo,
+    };
+    if (entered.length) {
+      const names = entered.map((r) => r.name);
+      await this.audit.record({
+        actorId: actor.userId,
+        action: AuditAction.PARTNER_LAB_RESULT_ENTRY,
+        targetType: 'PartnerLabOrder',
+        targetId: order.id,
+        metadata: {
+          ...meta,
+          label: `${order.orderNo} · ${entered.length} value${entered.length === 1 ? '' : 's'}: ${names.slice(0, 4).join(', ')}${names.length > 4 ? '…' : ''}`,
+          count: entered.length,
+        },
+        ipAddress: actor.ip,
+      });
+    }
+    for (const { row, from } of overridden.slice(0, MAX_OVERRIDE_ROWS)) {
+      const unit = row.unit ? ` ${row.unit}` : '';
+      await this.audit.record({
+        actorId: actor.userId,
+        action: AuditAction.PARTNER_LAB_RESULT_OVERRIDE,
+        targetType: 'PartnerLabOrder',
+        targetId: order.id,
+        metadata: {
+          ...meta,
+          label: `${order.orderNo} · ${row.name}: ${from}${unit} → ${row.value ? `${row.value}${unit}` : '(cleared)'} — ${reason}`,
+          test: row.test,
+          parameter: row.name,
+          from,
+          to: row.value,
+          reason,
+        },
+        ipAddress: actor.ip,
+      });
+    }
+  }
+
+  /** "Panic value": tell the lab's managers at once, before sign-off, so they can call the ordering doctor. */
+  private async alertCritical(
+    actor: PartnerActor,
+    order: LabOrderDocument,
+    fresh: ResultRow[],
+  ) {
+    const values = fresh
+      .map(
+        (r) =>
+          `${r.name} ${r.value}${r.unit ? ` ${r.unit}` : ''} (${r.flag === 'critical_low' ? 'critically low' : 'critically high'})`,
+      )
+      .join(', ');
+    const doctor = order.referringDoctorName ?? 'the ordering doctor';
+    await this.notifier.emit(actor.provider._id, {
+      trigger: PartnerTrigger.CRITICAL_LAB_RESULT,
+      // Titles show on lock screens and desktop pop-ups, so they name no patient or value.
+      title: `CRITICAL value — ${order.orderNo}`,
+      message: `{patient}: ${values}. Call ${doctor} now and record the call-out in the Report Builder.`,
+      patientId: order.patientId.toString(),
+      safeMessage: `Order ${order.orderNo} has a critical (panic) value — call the ordering doctor now and record it in the Ayuva Partner Portal.`,
+      route: '/partner/lab/reports',
+      params: { orderId: order.id },
+      data: {
+        orderId: order.id,
+        orderNo: order.orderNo,
+        stage: 'entered',
+        criticalValues: fresh.length,
+      },
+      excludeUserId: actor.userId,
+    });
+  }
 
   private assertOpen(order: LabOrderDocument) {
     if (order.status === LabOrderStatus.DELIVERED)
@@ -392,7 +509,8 @@ export class PartnerLabResultsService {
         data,
       });
     }
-    if (critical) {
+    // Once the call-out is recorded the team has acted, so release doesn't alert them again.
+    if (critical && !order.criticalCallouts?.length) {
       await this.notifier.emit(actor.provider._id, {
         trigger: PartnerTrigger.CRITICAL_LAB_RESULT,
         title: 'CRITICAL result released',
