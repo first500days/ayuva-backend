@@ -73,12 +73,8 @@ export class AdminAdminUsersController {
   @ApiOkResponse({ type: AdminAdminUserResponseDto })
   @AuditEvent(AuditAction.ADMIN_USER_UPDATE, 'AdminUser')
   @UseInterceptors(AuditLogInterceptor)
-  update(
-    @Param('id') id: string,
-    @Body() dto: UpdateAdminUserDto,
-    @CurrentUser() user: JwtPayload,
-  ): Promise<AdminAdminUserResponseDto> {
-    return this.adminAdminUsersService.update(id, dto, user.sub);
+  update(@Param('id') id: string, @Body() dto: UpdateAdminUserDto): Promise<AdminAdminUserResponseDto> {
+    return this.adminAdminUsersService.update(id, dto);
   }
 
   @Patch(':id/deactivate')
@@ -86,11 +82,8 @@ export class AdminAdminUsersController {
   @ApiOkResponse({ type: AdminAdminUserResponseDto })
   @AuditEvent(AuditAction.ADMIN_USER_STATUS_CHANGE, 'AdminUser')
   @UseInterceptors(AuditLogInterceptor)
-  deactivate(
-    @Param('id') id: string,
-    @CurrentUser() user: JwtPayload,
-  ): Promise<AdminAdminUserResponseDto> {
-    return this.adminAdminUsersService.deactivate(id, user.sub);
+  deactivate(@Param('id') id: string): Promise<AdminAdminUserResponseDto> {
+    return this.adminAdminUsersService.deactivate(id);
   }
 
   @Patch(':id/reset-mfa')

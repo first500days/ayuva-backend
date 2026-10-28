@@ -4,8 +4,8 @@ import { Model, Types } from 'mongoose';
 import {
   AdminUser,
   AdminUserDocument,
+  AdminUserStatus,
 } from '../../core/admin-users/schemas/admin-user.schema';
-import { isActiveAdminStatus } from '../../core/admin-users/admin-user-access';
 import { Role, RoleDocument } from '../../core/roles/schemas/role.schema';
 import { allowedAdminModules, AdminModuleKey } from '../../common/admin-modules';
 
@@ -47,7 +47,7 @@ export class AdminAccessService {
     const role = entry.role
       ? await this.roleModel.findById(entry.role).lean().exec()
       : null;
-    const active = isActiveAdminStatus(entry.status);
+    const active = entry.status === AdminUserStatus.ACTIVE;
     const permissions = [
       ...new Set([...(role?.permissions ?? []), ...(entry.permissions ?? [])]),
     ];

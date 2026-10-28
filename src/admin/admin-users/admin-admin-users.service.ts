@@ -10,10 +10,6 @@ import { randomBytes } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { AdminUser, AdminUserDocument, AdminUserStatus } from '../../core/admin-users/schemas/admin-user.schema';
 import {
-  hasFullAdminAccess,
-  isActiveAdminStatus,
-} from '../../core/admin-users/admin-user-access';
-import {
   CURRENT_CONSENT_VERSION,
   User,
   UserDocument,
@@ -132,19 +128,8 @@ export class AdminAdminUsersService {
     return { ...response, temporaryPassword: password };
   }
 
-  async update(
-    id: string,
-    dto: UpdateAdminUserDto,
-    actorId: string,
-  ): Promise<AdminAdminUserResponseDto> {
+  async update(id: string, dto: UpdateAdminUserDto): Promise<AdminAdminUserResponseDto> {
     const adminUser = await this.getAdminUserOrThrow(id);
-    if (
-      dto.status !== undefined &&
-      !isActiveAdminStatus(dto.status) &&
-      isActiveAdminStatus(adminUser.status)
-    ) {
-      await this.assertCanSwitchOff(adminUser, actorId);
-    }
 
     if (dto.email !== undefined) adminUser.email = dto.email.toLowerCase();
     if (dto.fullName !== undefined) adminUser.fullName = dto.fullName;
@@ -162,14 +147,8 @@ export class AdminAdminUsersService {
     return this.findOne(adminUser.id);
   }
 
-  async deactivate(
-    id: string,
-    actorId: string,
-  ): Promise<AdminAdminUserResponseDto> {
+  async deactivate(id: string): Promise<AdminAdminUserResponseDto> {
     const adminUser = await this.getAdminUserOrThrow(id);
-    if (isActiveAdminStatus(adminUser.status)) {
-      await this.assertCanSwitchOff(adminUser, actorId);
-    }
     adminUser.status = AdminUserStatus.INACTIVE;
     await adminUser.save();
     // A deactivated admin can no longer sign in, and their refresh token stops working.
@@ -199,63 +178,6 @@ export class AdminAdminUsersService {
       metadata: { email: adminUser.email },
     });
     return this.findOne(adminUser.id);
-  }
-
-  /**
-   * Nobody can switch off their own admin access, or the last active admin
-   * with full access — either would leave no one able to turn it back on.
-   */
-  private async assertCanSwitchOff(
-    adminUser: AdminUserDocument,
-    actorId: string,
-  ): Promise<void> {
-    const login = await this.loginFor(adminUser);
-    if (adminUser.userId?.toString() === actorId || login?.id === actorId) {
-      throw new BadRequestException(
-        "You can't deactivate your own admin access — ask another Super Admin to do it",
-      );
-    }
-    const present = (v: Types.ObjectId | undefined): v is Types.ObjectId => !!v;
-    const entries = await this.adminUserModel
-      .find()
-      .select('userId email role permissions status')
-      .lean()
-      .exec();
-    const roles = await this.roleModel
-      .find({ _id: { $in: entries.map((e) => e.role).filter(present) } })
-      .select('permissions')
-      .lean()
-      .exec();
-    const rolePermissions = new Map(
-      roles.map((r) => [r._id.toString(), r.permissions]),
-    );
-    const full = (e: { role?: Types.ObjectId; permissions?: string[] }) =>
-      hasFullAdminAccess(
-        e.role ? rolePermissions.get(e.role.toString()) : undefined,
-        e.permissions,
-      );
-    if (!full(adminUser)) return;
-
-    const others = entries.filter(
-      (e) =>
-        !e._id.equals(adminUser._id) &&
-        isActiveAdminStatus(e.status) &&
-        full(e),
-    ).length;
-    // Admin logins with no directory entry keep full access (AdminAccessService).
-    const unlisted = await this.userModel
-      .countDocuments({
-        role: UserRole.ADMIN,
-        status: UserStatus.ACTIVE,
-        _id: { $nin: entries.map((e) => e.userId).filter(present) },
-        email: { $nin: entries.map((e) => e.email.toLowerCase()) },
-      })
-      .exec();
-    if (others + unlisted === 0) {
-      throw new BadRequestException(
-        'This is the last active admin with full access — give someone else full access before deactivating them',
-      );
-    }
   }
 
   private async syncLoginStatus(adminUser: AdminUserDocument): Promise<void> {
