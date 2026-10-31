@@ -11,6 +11,7 @@ function buildService() {
     create: jest.fn(),
     findOne: jest.fn(),
     findById: jest.fn(),
+    findByIdAndUpdate: jest.fn(),
   };
   const healthProfileModel = {
     countDocuments: jest
@@ -345,6 +346,80 @@ describe('AuthService', () => {
       await expect(
         service.refresh({ refreshToken: 'valid' }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+  });
+
+  describe('password recovery', () => {
+    it('sends an expiring reset code to password-enabled accounts', async () => {
+      const { service, userModel, mailService } = buildService();
+      userModel.findOne.mockResolvedValue({
+        id: 'user-1',
+        email: 'person@example.com',
+        passwordHash: 'existing-hash',
+      });
+
+      await service.forgotPassword({ email: 'Person@Example.com' });
+
+      const update = userModel.findByIdAndUpdate.mock.calls[0];
+      expect(update[0]).toBe('user-1');
+      expect(update[1].resetPasswordCode).toMatch(/^\d{6}$/);
+      expect(update[1].resetPasswordCodeExpiresAt.getTime()).toBeGreaterThan(
+        Date.now(),
+      );
+      expect(mailService.sendPasswordResetEmail).toHaveBeenCalledWith(
+        'person@example.com',
+        update[1].resetPasswordCode,
+      );
+    });
+
+    it('returns the same successful response for an unknown email', async () => {
+      const { service, userModel, mailService } = buildService();
+      userModel.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.forgotPassword({ email: 'unknown@example.com' }),
+      ).resolves.toBeUndefined();
+      expect(mailService.sendPasswordResetEmail).not.toHaveBeenCalled();
+    });
+
+    it('changes the password and consumes a valid reset code', async () => {
+      const { service, userModel, auditLogService } = buildService();
+      userModel.findOne.mockResolvedValue({
+        id: 'user-1',
+        email: 'person@example.com',
+      });
+
+      await service.resetPassword({
+        email: 'Person@Example.com',
+        code: '482913',
+        newPassword: 'NewPassword123',
+      });
+
+      const update = userModel.findByIdAndUpdate.mock.calls[0];
+      expect(update[0]).toBe('user-1');
+      expect(update[1].passwordHash).not.toBe('NewPassword123');
+      expect(update[1].resetPasswordCode).toBeNull();
+      expect(update[1].resetPasswordCodeExpiresAt).toBeNull();
+      expect(auditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'password_reset_completed',
+          actorId: 'user-1',
+        }),
+      );
+    });
+
+    it('rejects invalid or expired reset codes', async () => {
+      const { service, userModel } = buildService();
+      userModel.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.resetPassword({
+          email: 'person@example.com',
+          code: '000000',
+          newPassword: 'NewPassword123',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(userModel.findByIdAndUpdate).not.toHaveBeenCalled();
     });
   });
 
