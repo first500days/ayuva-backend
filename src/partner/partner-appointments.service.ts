@@ -15,6 +15,7 @@ import { ReminderQueueService } from '../notifications/queue/reminder-queue.serv
 import { AppNotificationsService } from '../notifications/app-notifications.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/schemas/audit-log.schema';
+import { isSlotInPast } from '../common/utils/slot-time.util';
 import { PartnerContextService } from './partner-context.service';
 import { PartnerRecordsService } from './partner-records.service';
 import { PartnerAppointmentsQueryDto } from './dto/partner.dto';
@@ -230,6 +231,10 @@ export class PartnerAppointmentsService {
       { returnDocument: 'after' },
     );
     if (!slot) throw new ConflictException('That slot is no longer available');
+    if (isSlotInPast(slot.date, slot.time)) {
+      await this.releaseSlot(slot._id);
+      throw new BadRequestException('That time has already passed — pick a later slot');
+    }
     return slot;
   }
 

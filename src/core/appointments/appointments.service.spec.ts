@@ -81,6 +81,30 @@ describe('AppointmentsService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
+    it('refuses a slot whose time has passed and reopens it', async () => {
+      const { service, providerModel, slotModel, appointmentModel } =
+        buildService();
+      providerModel.findOne.mockResolvedValue({
+        id: PROVIDER_ID,
+        status: ProviderStatus.ACTIVE,
+      });
+      slotModel.findOneAndUpdate.mockResolvedValue({
+        _id: SLOT_ID,
+        id: SLOT_ID,
+        date: new Date('2020-01-01T00:00:00Z'),
+        time: '10:00',
+      });
+
+      await expect(
+        service.create(USER_ID, { providerId: PROVIDER_ID, slotId: SLOT_ID }),
+      ).rejects.toThrow('already passed');
+      expect(appointmentModel.create).not.toHaveBeenCalled();
+      expect(slotModel.updateOne).toHaveBeenCalledWith(
+        { _id: SLOT_ID, status: 'booked' },
+        { $set: { status: 'open' } },
+      );
+    });
+
     it('rolls the slot back to open if appointment creation fails after the slot was booked', async () => {
       const { service, providerModel, slotModel, appointmentModel } =
         buildService();
@@ -90,7 +114,7 @@ describe('AppointmentsService', () => {
       });
       slotModel.findOneAndUpdate.mockResolvedValue({
         id: SLOT_ID,
-        date: new Date(),
+        date: new Date('2999-01-01T00:00:00Z'),
         time: '10:00',
       });
       appointmentModel.create.mockRejectedValue(new Error('write failed'));

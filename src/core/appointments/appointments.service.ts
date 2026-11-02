@@ -28,6 +28,7 @@ import {
   PatchAppointmentDto,
   PatientAppointmentAction,
 } from './dto/patch-appointment.dto';
+import { isSlotInPast } from '../../common/utils/slot-time.util';
 import { AppointmentResponseDto } from './dto/appointment-response.dto';
 import { ReminderQueueService } from '../../notifications/queue/reminder-queue.service';
 import { SharingService } from '../sharing/sharing.service';
@@ -86,6 +87,8 @@ export class AppointmentsService {
         'This slot is no longer available — please pick another time',
       );
     }
+
+    await this.rejectIfPast(slot);
 
     try {
       const appointment = await this.appointmentModel.create({
@@ -300,6 +303,16 @@ export class AppointmentsService {
     );
   }
 
+  /** A slot whose start time has gone can't be booked: put it back and refuse. */
+  private async rejectIfPast(slot: AppointmentSlotDocument): Promise<void> {
+    if (!isSlotInPast(slot.date, slot.time)) return;
+    await this.slotModel.updateOne(
+      { _id: slot._id, status: AppointmentSlotStatus.BOOKED },
+      { $set: { status: AppointmentSlotStatus.OPEN } },
+    );
+    throw new BadRequestException('That time has already passed — please pick a later slot');
+  }
+
   private async reschedule(
     appointment: AppointmentDocument,
     newSlotId: string,
@@ -325,6 +338,8 @@ export class AppointmentsService {
         'That slot is no longer available — please pick another time',
       );
     }
+
+    await this.rejectIfPast(newSlot);
 
     const oldSlotId = appointment.slotId;
     appointment.slotId = newSlot._id;
