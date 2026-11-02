@@ -574,6 +574,11 @@ export class AdminProvidersService {
         }
 
         if (desiredTimes.has(slot.time)) {
+          if (slot.status === AppointmentSlotStatus.BLOCKED && slot.manuallyBlocked) {
+            // Closed by hand — keep it closed (only a date block above overrides, via desiredTimes).
+            desiredTimes.delete(slot.time);
+            continue;
+          }
           if (
             slot.status !== AppointmentSlotStatus.OPEN ||
             slot.durationMin !== schedule!.slotDurationMin
@@ -586,7 +591,7 @@ export class AdminProvidersService {
                     status: AppointmentSlotStatus.OPEN,
                     durationMin: schedule!.slotDurationMin,
                   },
-                  $unset: { blockedReason: '' },
+                  $unset: { blockedReason: '', manuallyBlocked: '' },
                 },
               },
             });

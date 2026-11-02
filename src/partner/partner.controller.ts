@@ -58,6 +58,8 @@ import { Perm } from './rbac/partner-permissions';
 import {
   AssignAppointmentDto,
   PartnerAppointmentsQueryDto,
+  PartnerBlockSlotDto,
+  PartnerDaySlotsQueryDto,
   PartnerFollowUpDto,
   PartnerPaymentsQueryDto,
   PartnerRegisterDto,
@@ -218,6 +220,36 @@ export class PartnerController {
   @ApiOperation({ summary: 'Open slots, for rescheduling and follow-ups' })
   slots(@CurrentUser() u: JwtPayload, @Query() q: PartnerSlotsQueryDto) {
     return this.profile.openSlots(u.sub, q.from);
+  }
+
+  @Get('slots/day')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_VIEW)
+  @ApiOperation({ summary: 'All slots on one day (open, booked, blocked)' })
+  daySlots(@CurrentUser() u: JwtPayload, @Query() q: PartnerDaySlotsQueryDto) {
+    return this.profile.daySlots(u.sub, q.date);
+  }
+
+  @Post('slots/:id/block')
+  @HttpCode(200)
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  @ApiOperation({ summary: 'Close one open slot to new bookings' })
+  blockSlot(
+    @CurrentUser() u: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: PartnerBlockSlotDto,
+  ) {
+    return this.profile.setSlotBlocked(u.sub, id, true, dto.reason);
+  }
+
+  @Post('slots/:id/unblock')
+  @HttpCode(200)
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  @ApiOperation({ summary: 'Reopen a slot that was closed' })
+  unblockSlot(@CurrentUser() u: JwtPayload, @Param('id') id: string) {
+    return this.profile.setSlotBlocked(u.sub, id, false);
   }
 
   // ── P03 dashboard ──────────────────────────────────────────────────────────

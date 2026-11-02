@@ -1,6 +1,12 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import {
   CredentialDocType,
   Provider,
@@ -29,6 +35,13 @@ import { PartnerRecordsService } from './partner-records.service';
 import { UpdatePartnerProfileDto } from './dto/partner.dto';
 import { StaffRole, roleLabel } from './rbac/partner-permissions';
 import { registrationStateOf } from './staff/registration-status';
+
+/** Appointments in these states no longer hold their slot. */
+const CLOSED_APPOINTMENT_STATUSES = [
+  AppointmentStatus.CANCELLED_BY_PATIENT,
+  AppointmentStatus.CANCELLED_BY_PROVIDER,
+  AppointmentStatus.REFUNDED,
+];
 
 const EDITABLE_FIELDS = [
   'name',
@@ -173,6 +186,72 @@ export class PartnerProfileService {
       time: s.time,
       durationMin: s.durationMin,
     }));
+  }
+
+  /** Every slot on one day — open, booked and blocked — for the slot manager. */
+  async daySlots(userId: string, dateIso: string) {
+    const provider = await this.context.requireLive(userId);
+    const start = new Date(`${dateIso}T00:00:00.000Z`);
+    if (Number.isNaN(start.getTime())) {
+      throw new BadRequestException('date must be YYYY-MM-DD');
+    }
+    const end = new Date(start.getTime() + 86_400_000);
+    const slots = await this.slotModel
+      .find({ providerId: provider._id, date: { $gte: start, $lt: end } })
+      .sort({ time: 1 })
+      .exec();
+    const appointments = await this.appointmentModel
+      .find({
+        slotId: { $in: slots.map((s) => s._id) },
+        status: { $nin: CLOSED_APPOINTMENT_STATUSES },
+      })
+      .select('slotId status assignedName')
+      .exec();
+    const bookingBySlot = new Map(appointments.map((a) => [a.slotId.toString(), a]));
+    return {
+      date: dateIso,
+      dateBlockedReason: provider.blockedDates.find(
+        (b) => b.date.toISOString().slice(0, 10) === dateIso,
+      )?.reason,
+      slots: slots.map((s) => {
+        const booking = bookingBySlot.get(s.id);
+        return {
+          id: s.id,
+          time: s.time,
+          durationMin: s.durationMin,
+          status: s.status,
+          blockedReason: s.blockedReason,
+          appointmentStatus: booking?.status,
+          assignedName: booking?.assignedName,
+        };
+      }),
+    };
+  }
+
+  /** Close one open slot to new bookings, or reopen a slot that was closed. Booked slots are never touched. */
+  async setSlotBlocked(userId: string, slotId: string, blocked: boolean, reason?: string) {
+    const provider = await this.context.requireLive(userId);
+    if (!Types.ObjectId.isValid(slotId)) throw new NotFoundException('Slot not found');
+    const slot = await this.slotModel.findOne({ _id: slotId, providerId: provider._id });
+    if (!slot) throw new NotFoundException('Slot not found');
+    if (slot.status === AppointmentSlotStatus.BOOKED) {
+      throw new ConflictException('This slot has a booking — reschedule or cancel the appointment instead');
+    }
+    if (blocked) {
+      slot.status = AppointmentSlotStatus.BLOCKED;
+      slot.blockedReason = reason?.trim() || 'Closed by provider';
+      slot.manuallyBlocked = true;
+    } else {
+      const day = slot.date.toISOString().slice(0, 10);
+      if (provider.blockedDates.some((b) => b.date.toISOString().slice(0, 10) === day)) {
+        throw new ConflictException('This whole day is blocked — unblock the date first');
+      }
+      slot.status = AppointmentSlotStatus.OPEN;
+      slot.set('blockedReason', undefined);
+      slot.set('manuallyBlocked', undefined);
+    }
+    await slot.save();
+    return { id: slot.id, status: slot.status, blockedReason: slot.blockedReason };
   }
 
   /** P03 dashboard: today's appointments, pending items, recent shared reports. */

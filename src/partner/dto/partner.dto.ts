@@ -14,7 +14,7 @@ import {
 
   IsOptional,
   IsString,
-
+  Matches,
   Min,
   MinLength,
   ValidateNested,
@@ -169,6 +169,19 @@ export class PartnerSlotsQueryDto {
   @IsOptional()
   @IsISO8601()
   from?: string;
+}
+
+export class PartnerDaySlotsQueryDto {
+  @ApiProperty({ example: '2026-10-23' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'date must be YYYY-MM-DD' })
+  date: string;
+}
+
+export class PartnerBlockSlotDto {
+  @ApiPropertyOptional({ example: 'Doctor in surgery' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }
 
 export class PartnerPaymentsQueryDto {
