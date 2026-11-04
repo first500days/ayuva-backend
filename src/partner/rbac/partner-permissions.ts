@@ -83,6 +83,12 @@ export enum Perm {
   OT_VIEW = 'ot.view',
   // Booking cases and logging their pre-op → post-op stages.
   OT_MANAGE = 'ot.manage',
+  // Hospital lab (LIS): sample worklist and results.
+  LIS_VIEW = 'lis.view',
+  // Requesting, collecting, receiving samples and entering text results.
+  LIS_MANAGE = 'lis.manage',
+  // Pathologist sign-off of a report.
+  LIS_VERIFY = 'lis.verify',
 }
 
 const ALL = Object.values(Perm);
@@ -107,6 +113,9 @@ const ORG_SCOPED: Partial<Record<Perm, OrgType[]>> = {
   [Perm.ER_TRIAGE]: [OrgType.HOSPITAL],
   [Perm.OT_VIEW]: [OrgType.HOSPITAL],
   [Perm.OT_MANAGE]: [OrgType.HOSPITAL],
+  [Perm.LIS_VIEW]: [OrgType.HOSPITAL],
+  [Perm.LIS_MANAGE]: [OrgType.HOSPITAL],
+  [Perm.LIS_VERIFY]: [OrgType.HOSPITAL],
   // Clinicians write notes and prescriptions; a lab issues reports instead.
   [Perm.CLINICAL_WRITE]: [OrgType.CLINIC, OrgType.HOSPITAL],
 };
@@ -161,7 +170,10 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
         p !== P.CLINICAL_WRITE &&
         p !== P.RECORDS_VIEW &&
         p !== P.PHARMACY_DISPENSE &&
-        p !== P.ER_TRIAGE,
+        p !== P.ER_TRIAGE &&
+        p !== P.LIS_VIEW &&
+        p !== P.LIS_MANAGE &&
+        p !== P.LIS_VERIFY,
     ),
     [StaffRole.DOCTOR]: [
       P.DASHBOARD,
@@ -181,6 +193,9 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.ER_TRIAGE,
       P.OT_VIEW,
       P.OT_MANAGE,
+      P.LIS_VIEW,
+      P.LIS_MANAGE,
+      P.LIS_VERIFY,
     ],
     [StaffRole.NURSE]: [
       P.DASHBOARD,
@@ -197,6 +212,8 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.ER_TRIAGE,
       P.OT_VIEW,
       P.OT_MANAGE,
+      P.LIS_VIEW,
+      P.LIS_MANAGE,
     ],
     [StaffRole.RECEPTIONIST]: [
       P.DASHBOARD,
@@ -228,6 +245,8 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.SUPPLY_VIEW,
       P.SUPPLY_MANAGE,
       P.OT_VIEW,
+      P.LIS_VIEW,
+      P.LIS_MANAGE,
     ],
     [StaffRole.PHARMACIST]: [
       P.DASHBOARD,

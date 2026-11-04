@@ -120,6 +120,10 @@ const ACTION_META: Partial<
     category: 'clinical',
     label: 'Updated OT case',
   },
+  [AuditAction.PARTNER_LIS_UPDATE]: {
+    category: 'lab',
+    label: 'Updated lab sample',
+  },
   // Sample verification history: who scanned each tube and who put the numbers in.
   [AuditAction.PARTNER_LAB_SAMPLE_SCAN]: {
     category: 'lab',
