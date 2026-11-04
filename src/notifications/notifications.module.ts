@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { DeviceToken, DeviceTokenSchema } from './schemas/device-token.schema';
-import { AppNotification, AppNotificationSchema } from './schemas/app-notification.schema';
+import {
+  AppNotification,
+  AppNotificationSchema,
+} from './schemas/app-notification.schema';
 import { DevicesController } from './devices.controller';
 import { DevicesService } from './devices.service';
 import { AppNotificationsController } from './app-notifications.controller';
@@ -12,6 +15,7 @@ import { ReminderQueueService } from './queue/reminder-queue.service';
 import { ReminderProcessor } from './queue/reminder.processor';
 import { fcmSenderProvider } from './fcm/fcm.provider';
 import { SMS_SENDER, smsSenderProvider } from './sms/sms-sender';
+import { WHATSAPP_SENDER, whatsAppSenderProvider } from './sms/whatsapp-sender';
 import { User, UserSchema } from '../core/users/schemas/user.schema';
 
 /**
@@ -38,9 +42,15 @@ import { User, UserSchema } from '../core/users/schemas/user.schema';
     reminderQueueProvider,
     fcmSenderProvider,
     smsSenderProvider,
+    whatsAppSenderProvider,
     ReminderQueueService,
     ReminderProcessor,
   ],
-  exports: [ReminderQueueService, AppNotificationsService, SMS_SENDER],
+  exports: [
+    ReminderQueueService,
+    AppNotificationsService,
+    SMS_SENDER,
+    WHATSAPP_SENDER,
+  ],
 })
 export class NotificationsModule {}

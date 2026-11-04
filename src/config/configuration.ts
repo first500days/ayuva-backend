@@ -101,6 +101,10 @@ export default () => ({
     twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
     twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
     from: process.env.SMS_FROM,
+    whatsappFrom: process.env.TWILIO_WHATSAPP_FROM,
+    whatsappContentSid: process.env.TWILIO_WHATSAPP_CONTENT_SID,
+    // Link in prescription notices (patient app download / open page).
+    patientAppUrl: process.env.PATIENT_APP_URL,
   },
   apple: {
     // Comma-separated audiences accepted on Apple identity tokens: the iOS

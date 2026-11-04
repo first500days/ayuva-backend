@@ -349,6 +349,13 @@ export class PharmacyDto {
   @ApiProperty() @IsEmail() email: string;
 }
 
+export const RX_DISPATCH_TARGETS = [
+  'vault',
+  'internal_pharmacy',
+  'sms',
+  'whatsapp',
+] as const;
+
 export class SignPrescriptionDto {
   @ApiProperty({
     description:
@@ -375,6 +382,18 @@ export class SignPrescriptionDto {
   @IsOptional()
   @IsBoolean()
   acknowledgeWarnings?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    enum: RX_DISPATCH_TARGETS,
+    description:
+      "Where to send it: the patient's Ayuva app (vault), the hospital's internal pharmacy, an SMS and/or WhatsApp notice to the patient (no medical details — a link to the app). Defaults to the vault.",
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(4)
+  @IsIn(RX_DISPATCH_TARGETS, { each: true })
+  dispatchTo?: (typeof RX_DISPATCH_TARGETS)[number][];
 
   @ApiPropertyOptional({
     type: PharmacyDto,

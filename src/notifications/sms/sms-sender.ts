@@ -10,21 +10,27 @@ export const SMS_SENDER = 'SMS_SENDER';
  * falls back to logging.
  */
 export interface SmsSender {
+  /** Whether messages really leave the platform (false for the log-only sender). */
+  readonly live?: boolean;
   /** `to` is E.164. Resolves false when the message could not be sent. */
   send(to: string, body: string): Promise<boolean>;
 }
 
 export class LogSmsSender implements SmsSender {
+  readonly live = false;
   private readonly logger = new Logger(LogSmsSender.name);
 
   async send(to: string, body: string): Promise<boolean> {
     // Never log the body in full: it may be an OTP.
-    this.logger.log(`[log-only SMS] -> to=${maskPhone(to)} (${body.length} chars)`);
+    this.logger.log(
+      `[log-only SMS] -> to=${maskPhone(to)} (${body.length} chars)`,
+    );
     return true;
   }
 }
 
 export class TwilioSmsSender implements SmsSender {
+  readonly live = true;
   private readonly logger = new Logger(TwilioSmsSender.name);
 
   constructor(
@@ -45,7 +51,9 @@ export class TwilioSmsSender implements SmsSender {
         body: new URLSearchParams({ To: to, From: this.from, Body: body }),
       });
       if (!res.ok) {
-        this.logger.error(`Twilio send to ${maskPhone(to)} failed: HTTP ${res.status}`);
+        this.logger.error(
+          `Twilio send to ${maskPhone(to)} failed: HTTP ${res.status}`,
+        );
         return false;
       }
       return true;
@@ -57,7 +65,9 @@ export class TwilioSmsSender implements SmsSender {
 }
 
 export function maskPhone(phone: string): string {
-  return phone.length > 4 ? `${'*'.repeat(phone.length - 4)}${phone.slice(-4)}` : '****';
+  return phone.length > 4
+    ? `${'*'.repeat(phone.length - 4)}${phone.slice(-4)}`
+    : '****';
 }
 
 export const smsSenderProvider: Provider = {

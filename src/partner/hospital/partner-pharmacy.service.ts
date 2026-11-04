@@ -59,10 +59,22 @@ export class PartnerPharmacyService {
       status: PrescriptionStatus.SIGNED,
       signedAt: { $gte: new Date(Date.now() - (q.days ?? 30) * DAY) },
     };
+    // Prescriptions the doctor sent to the pharmacy (and older ones, signed before the choice existed).
+    const and: QueryFilter<PrescriptionDocument>[] = [
+      {
+        $or: [
+          { dispatchTo: 'internal_pharmacy' },
+          { dispatchTo: { $exists: false } },
+        ],
+      },
+    ];
     if (q.q?.trim()) {
       const rx = buildSafeRegex(q.q);
-      filter.$or = [{ rxNumber: rx }, { patientName: rx }, { doctorName: rx }];
+      and.push({
+        $or: [{ rxNumber: rx }, { patientName: rx }, { doctorName: rx }],
+      });
     }
+    filter.$and = and;
     const list = await this.rxModel
       .find(filter)
       .sort({ signedAt: -1 })

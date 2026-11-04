@@ -46,6 +46,15 @@ export class RxSafetyReview {
 export const RxSafetyReviewSchema =
   SchemaFactory.createForClass(RxSafetyReview);
 
+@Schema({ _id: false })
+export class RxDispatchResult {
+  @Prop() pharmacy?: string;
+  @Prop() sms?: string;
+  @Prop() whatsapp?: string;
+}
+export const RxDispatchResultSchema =
+  SchemaFactory.createForClass(RxDispatchResult);
+
 export type PrescriptionDocument = HydratedDocument<Prescription>;
 
 /**
@@ -155,6 +164,15 @@ export class Prescription {
 
   @Prop({ type: RxSafetyReviewSchema })
   safetyReview?: RxSafetyReview;
+
+  // Where the signed prescription went: vault | internal_pharmacy | sms | whatsapp.
+  // Absent on prescriptions signed before the choice existed.
+  @Prop({ type: [String], default: undefined })
+  dispatchTo?: string[];
+
+  // Per channel: sent | logged (no provider configured) | failed | no_phone | queued.
+  @Prop({ type: RxDispatchResultSchema })
+  dispatchResult?: RxDispatchResult;
 
   @Prop()
   cancelledAt?: Date;

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -37,6 +38,13 @@ import {
 } from './dto/clinical.dto';
 import { PartnerPatientsService } from './partner-patients.service';
 import { PartnerSafetyService } from './partner-safety.service';
+import { ConfigService } from '@nestjs/config';
+import { User, UserDocument } from '../../core/users/schemas/user.schema';
+import { SMS_SENDER } from '../../notifications/sms/sms-sender';
+import type { SmsSender } from '../../notifications/sms/sms-sender';
+import { WHATSAPP_SENDER } from '../../notifications/sms/whatsapp-sender';
+import type { WhatsAppSender } from '../../notifications/sms/whatsapp-sender';
+import { OrgType } from '../rbac/partner-permissions';
 import { blocksSigning } from './rx-safety';
 import { resolveDiagnosisCodes } from './diagnosis-codes';
 import {
@@ -62,6 +70,10 @@ export class PartnerPrescriptionsService {
     private readonly mail: MailService,
     private readonly audit: AuditLogService,
     private readonly safety: PartnerSafetyService,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    @Inject(SMS_SENDER) private readonly sms: SmsSender,
+    @Inject(WHATSAPP_SENDER) private readonly whatsapp: WhatsAppSender,
+    private readonly config: ConfigService,
   ) {}
 
   async list(actor: PartnerActor, q: PrescriptionsQueryDto) {
@@ -213,6 +225,17 @@ export class PartnerPrescriptionsService {
       })),
       acknowledged: serious.length > 0,
     };
+    // Where it goes. SMS / WhatsApp only point to the vault copy, so they imply it.
+    const targets = new Set<string>(
+      dto.dispatchTo ?? (dto.sendToVault === false ? [] : ['vault']),
+    );
+    if (targets.has('sms') || targets.has('whatsapp')) targets.add('vault');
+    if (targets.has('internal_pharmacy') && actor.orgType !== OrgType.HOSPITAL)
+      throw new BadRequestException(
+        'Only a hospital with a pharmacy can send prescriptions to an internal pharmacy',
+      );
+    const toVault = targets.has('vault');
+    rx.dispatchTo = [...targets];
     const signedAt = new Date();
     rx.doctorName = actor.member.fullName;
     rx.doctorTitle = actor.member.title;
@@ -226,7 +249,7 @@ export class PartnerPrescriptionsService {
 
     const pdf = this.documents.prescriptionPdf(rx, actor.provider);
     const fileName = `Prescription ${rx.rxNumber} - ${actor.provider.name}.pdf`;
-    if (dto.sendToVault !== false) {
+    if (toVault) {
       const record = await this.documents.deliverToVault({
         patientId: rx.patientId,
         buffer: pdf,
@@ -258,6 +281,10 @@ export class PartnerPrescriptionsService {
       if (sent) rx.pharmacySentAt = new Date();
       else this.logger.warn(`Pharmacy email for ${rx.rxNumber} failed`);
     }
+    rx.dispatchResult = {
+      ...(targets.has('internal_pharmacy') && { pharmacy: 'queued' }),
+      ...(await this.notifyPatient(rx, targets)),
+    };
     await rx.save();
     await this.record(actor, AuditAction.PARTNER_RX_SIGN, rx, {
       rxNumber: rx.rxNumber,
@@ -265,8 +292,9 @@ export class PartnerPrescriptionsService {
       diagnoses: rx.diagnoses.map((d) => d.icd11),
       registration: regNo,
       attested: true,
-      toVault: dto.sendToVault !== false,
+      toVault,
       toPharmacy: !!rx.pharmacySentAt,
+      dispatchTo: rx.dispatchTo,
       ...(rx.safetyReview?.warnings.length && {
         safetyWarnings: rx.safetyReview.warnings.length,
         acknowledged: rx.safetyReview.acknowledged,
@@ -328,6 +356,44 @@ export class PartnerPrescriptionsService {
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * SMS / WhatsApp notice to the patient. It carries no medical details —
+   * no doctor, medicine or diagnosis — only that something is waiting in
+   * the Ayuva app (and the app link when one is configured).
+   */
+  private async notifyPatient(
+    rx: PrescriptionDocument,
+    targets: Set<string>,
+  ): Promise<{ sms?: string; whatsapp?: string }> {
+    if (!targets.has('sms') && !targets.has('whatsapp')) return {};
+    const patient = await this.userModel
+      .findById(rx.patientId)
+      .select('phone')
+      .lean()
+      .exec();
+    const phone = patient?.phone;
+    const link = this.config.get<string>('sms.patientAppUrl') || undefined;
+    const body = `Ayuva: you have a new document in your Medical Vault. Open the Ayuva app to view it.${link ? ` ${link}` : ''}`;
+    const out: { sms?: string; whatsapp?: string } = {};
+    if (targets.has('sms'))
+      out.sms = !phone
+        ? 'no_phone'
+        : (await this.sms.send(phone, body))
+          ? this.sms.live === false
+            ? 'logged'
+            : 'sent'
+          : 'failed';
+    if (targets.has('whatsapp'))
+      out.whatsapp = !phone
+        ? 'no_phone'
+        : (await this.whatsapp.send(phone, body, link))
+          ? this.whatsapp.live
+            ? 'sent'
+            : 'logged'
+          : 'failed';
+    return out;
+  }
 
   private contentHash(
     rx: PrescriptionDocument,
@@ -480,6 +546,14 @@ export class PartnerPrescriptionsService {
       followUpDate: r.followUpDate?.toISOString().slice(0, 10) ?? null,
       signedAt: r.signedAt?.toISOString() ?? null,
       signatureHash: r.signatureHash ?? null,
+      dispatchTo: r.dispatchTo ?? null,
+      dispatchResult: r.dispatchResult
+        ? {
+            pharmacy: r.dispatchResult.pharmacy ?? null,
+            sms: r.dispatchResult.sms ?? null,
+            whatsapp: r.dispatchResult.whatsapp ?? null,
+          }
+        : null,
       safetyReview: r.safetyReview
         ? {
             checkedAt: r.safetyReview.checkedAt.toISOString(),
