@@ -319,6 +319,8 @@ export class PartnerPrescriptionsService {
         i.route,
         i.instructions,
         i.quantity,
+        // Appended only when set, so prescriptions without refills hash exactly as before.
+        ...(i.refills ? [i.refills] : []),
       ]),
       diagnosis: rx.diagnosis,
       diagnoses: rx.diagnoses.map((d) => [d.icd11, d.snomed]),
@@ -434,6 +436,7 @@ export class PartnerPrescriptionsService {
         route: i.route ?? '',
         instructions: i.instructions ?? '',
         quantity: i.quantity ?? '',
+        refills: i.refills ?? 0,
       })),
       diagnosis: r.diagnosis,
       diagnoses: (r.diagnoses ?? []).map((d) => ({

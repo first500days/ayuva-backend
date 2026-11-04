@@ -77,7 +77,11 @@ export class PartnerDocumentsService {
   async deliverToVault(d: VaultDelivery): Promise<MedicalRecordDocument> {
     const patientId = d.patientId.toString();
     const fileRef = await this.storage.upload(d.buffer, d.fileName, patientId);
-    const patient = await this.userModel.findById(patientId).select('consent').lean().exec();
+    const patient = await this.userModel
+      .findById(patientId)
+      .select('consent')
+      .lean()
+      .exec();
     const record = await this.recordModel.create({
       patientId: new Types.ObjectId(patientId),
       fileRef,
@@ -178,7 +182,11 @@ export class PartnerDocumentsService {
         [it.form, it.medicine, it.strength].filter(Boolean).join(' '),
         [it.dose, it.frequency, it.route].filter(Boolean).join(' · '),
         it.duration,
-        [it.instructions, it.quantity ? `Qty ${it.quantity}` : '']
+        [
+          it.instructions,
+          it.quantity ? `Qty ${it.quantity}` : '',
+          it.refills ? `Refills ${it.refills}` : '',
+        ]
           .filter(Boolean)
           .join(' · '),
       ]),

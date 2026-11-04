@@ -20,6 +20,8 @@ export class RxItem {
   @Prop({ trim: true }) route?: string;
   @Prop({ trim: true }) instructions?: string;
   @Prop({ trim: true }) quantity?: string;
+  // Times the patient may have this line dispensed again without a new prescription.
+  @Prop({ min: 0, max: 12 }) refills?: number;
 }
 export const RxItemSchema = SchemaFactory.createForClass(RxItem);
 

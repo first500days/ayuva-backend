@@ -8,11 +8,14 @@ import {
   IsBoolean,
   IsEmail,
   IsIn,
+  IsInt,
   IsISO8601,
   IsMongoId,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -256,6 +259,12 @@ export class RxItemDto {
   @IsString()
   @MaxLength(20)
   quantity?: string;
+  @ApiPropertyOptional({ example: 0, description: 'Refills allowed (0–12)' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(12)
+  refills?: number;
 }
 
 export class CreatePrescriptionDto {
