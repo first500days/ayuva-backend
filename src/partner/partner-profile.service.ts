@@ -102,6 +102,8 @@ export class PartnerProfileService {
         onDuty: m.onDuty ?? false,
         dutyStatusAt: m.dutyStatusAt?.toISOString() ?? null,
         permissions: ctx.permissions,
+        // The member's own portal preferences (imaging layouts, macros…).
+        preferences: m.preferences ?? {},
       },
     };
   }

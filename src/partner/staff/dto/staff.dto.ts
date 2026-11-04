@@ -7,7 +7,9 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsIn,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Matches,
@@ -147,6 +149,26 @@ export class UpdateStaffDto {
 /** On-duty check-in / check-out. */
 export class DutyStatusDto {
   @ApiProperty() @IsBoolean() onDuty: boolean;
+}
+
+/** Portal features that keep per-member preferences. */
+export const PREFERENCE_KEYS = [
+  'imaging',
+  'clinical',
+  'sidebar',
+  'lab',
+] as const;
+
+export class SavePreferenceDto {
+  @ApiProperty({ enum: PREFERENCE_KEYS })
+  @IsIn(PREFERENCE_KEYS)
+  key: (typeof PREFERENCE_KEYS)[number];
+
+  @ApiProperty({
+    description: 'The whole preference object for that feature (max 16 KB)',
+  })
+  @IsObject()
+  value: Record<string, unknown>;
 }
 
 /** What a member may change about themselves (no role or department changes). */

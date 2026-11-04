@@ -58,6 +58,7 @@ import {
   AcceptInviteDto,
   DutyBlockDto,
   InviteStaffDto,
+  SavePreferenceDto,
   UpdateOwnStaffProfileDto,
   UpdateStaffDto,
 } from './dto/staff.dto';
@@ -65,6 +66,7 @@ import { FreezeAccountDto } from '../security/dto/security.dto';
 import { registrationStateOf } from './registration-status';
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const PREFERENCE_MAX_BYTES = 16 * 1024;
 
 /** Each block ends after it starts, and one person's shifts on a day never overlap (split shifts are fine). */
 function assertValidRoster(blocks: DutyBlockDto[]) {
@@ -301,6 +303,26 @@ export class PartnerStaffService {
     await this.record(actor, AuditAction.PARTNER_STAFF_UPDATE, member, changes);
     if (submitted) await this.alertRegistrationSubmitted(actor, member);
     return this.toResponse(member, actor);
+  }
+
+  /**
+   * Saves one feature's preferences for the signed-in member (e.g. their
+   * imaging layouts). Not audited: it changes nothing anyone else sees.
+   */
+  async savePreference(actor: PartnerActor, dto: SavePreferenceDto) {
+    const size = Buffer.byteLength(JSON.stringify(dto.value), 'utf8');
+    if (size > PREFERENCE_MAX_BYTES)
+      throw new BadRequestException(
+        'That preference is too large to save (16 KB at most)',
+      );
+    const member = actor.member;
+    member.preferences = {
+      ...(member.preferences ?? {}),
+      [dto.key]: dto.value,
+    };
+    member.markModified('preferences');
+    await member.save();
+    return { preferences: member.preferences };
   }
 
   async updateOwnProfile(actor: PartnerActor, dto: UpdateOwnStaffProfileDto) {

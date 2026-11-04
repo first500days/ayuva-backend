@@ -188,6 +188,11 @@ export class PartnerMember {
   @Prop()
   lastActiveAt?: Date;
 
+  // The member's own portal preferences (imaging layouts, note macros…), keyed
+  // by feature. Belong to the person, so they follow them across devices.
+  @Prop({ type: SchemaTypes.Mixed, default: {} })
+  preferences: Record<string, unknown>;
+
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -39,6 +39,7 @@ import { PartnerStaffService } from './staff/partner-staff.service';
 import {
   DutyStatusDto,
   InviteStaffDto,
+  SavePreferenceDto,
   UpdateOwnStaffProfileDto,
   UpdateStaffDto,
 } from './staff/dto/staff.dto';
@@ -173,6 +174,18 @@ export class PartnerStaffController {
   @ApiOperation({ summary: 'Check in / check out — my on-duty status' })
   myDuty(@PartnerCtx() a: PartnerActor, @Body() dto: DutyStatusDto) {
     return this.staff.setDuty(a, null, dto.onDuty);
+  }
+
+  @Put('me/preferences')
+  @ApiOperation({
+    summary:
+      'Save one of my portal preferences (imaging layouts, note macros, sidebar)',
+  })
+  savePreference(
+    @PartnerCtx() a: PartnerActor,
+    @Body() dto: SavePreferenceDto,
+  ) {
+    return this.staff.savePreference(a, dto);
   }
 
   @Post()
