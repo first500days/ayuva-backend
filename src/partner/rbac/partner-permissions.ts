@@ -33,6 +33,8 @@ export enum StaffRole {
   TECHNICIAN = 'technician',
   RECEPTIONIST = 'receptionist',
   BILLING = 'billing',
+  // Hospital pharmacy: dispenses against e-prescriptions (a registered pharmacist).
+  PHARMACIST = 'pharmacist',
 }
 
 export enum Perm {
@@ -63,6 +65,10 @@ export enum Perm {
   STAFF_MANAGE = 'staff.manage',
   ORG_SETTINGS = 'org.settings',
   SECURITY_AUDIT = 'security.audit',
+  // Hospital pharmacy store: medicines, batches, receipts and write-offs.
+  PHARMACY_STOCK = 'pharmacy.stock',
+  // Reading signed prescriptions and dispensing against them (pharmacists).
+  PHARMACY_DISPENSE = 'pharmacy.dispense',
 }
 
 const ALL = Object.values(Perm);
@@ -78,6 +84,8 @@ const ORG_SCOPED: Partial<Record<Perm, OrgType[]>> = {
   [Perm.WARDS_VIEW]: [OrgType.HOSPITAL],
   [Perm.WARDS_MANAGE]: [OrgType.HOSPITAL],
   [Perm.CLAIMS_MANAGE]: [OrgType.HOSPITAL],
+  [Perm.PHARMACY_STOCK]: [OrgType.HOSPITAL],
+  [Perm.PHARMACY_DISPENSE]: [OrgType.HOSPITAL],
   // Clinicians write notes and prescriptions; a lab issues reports instead.
   [Perm.CLINICAL_WRITE]: [OrgType.CLINIC, OrgType.HOSPITAL],
 };
@@ -123,10 +131,15 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
     ],
     [StaffRole.BILLING]: [P.DASHBOARD, P.BILLING_VIEW, P.ANALYTICS],
     [StaffRole.TECHNICIAN]: [P.DASHBOARD, P.APPOINTMENTS_VIEW, P.IMAGING_VIEW],
+    [StaffRole.PHARMACIST]: [],
   },
   [OrgType.HOSPITAL]: {
+    // Runs the pharmacy store but doesn't read prescriptions (minimum necessary).
     [StaffRole.ADMIN]: ALL.filter(
-      (p) => p !== P.CLINICAL_WRITE && p !== P.RECORDS_VIEW,
+      (p) =>
+        p !== P.CLINICAL_WRITE &&
+        p !== P.RECORDS_VIEW &&
+        p !== P.PHARMACY_DISPENSE,
     ),
     [StaffRole.DOCTOR]: [
       P.DASHBOARD,
@@ -174,6 +187,12 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.DASHBOARD,
       P.WARDS_VIEW,
       P.IMAGING_VIEW,
+      P.STAFF_VIEW,
+    ],
+    [StaffRole.PHARMACIST]: [
+      P.DASHBOARD,
+      P.PHARMACY_STOCK,
+      P.PHARMACY_DISPENSE,
       P.STAFF_VIEW,
     ],
   },
@@ -224,6 +243,7 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.ANALYTICS,
       P.LAB_ORDERS_VIEW,
     ],
+    [StaffRole.PHARMACIST]: [],
   },
 };
 
@@ -252,6 +272,7 @@ export function assignableRoles(orgType: OrgType): StaffRole[] {
         StaffRole.ADMIN,
         StaffRole.DOCTOR,
         StaffRole.NURSE,
+        StaffRole.PHARMACIST,
         StaffRole.RECEPTIONIST,
         StaffRole.BILLING,
         StaffRole.TECHNICIAN,
@@ -295,5 +316,7 @@ export function roleLabel(orgType: OrgType, role: StaffRole): string {
       return 'Receptionist';
     case StaffRole.BILLING:
       return 'Billing & Accounts';
+    case StaffRole.PHARMACIST:
+      return 'Pharmacist';
   }
 }

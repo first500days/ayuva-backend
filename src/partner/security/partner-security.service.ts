@@ -108,6 +108,10 @@ const ACTION_META: Partial<
     category: 'clinical',
     label: 'Released lab report',
   },
+  [AuditAction.PARTNER_PHARMACY_DISPENSE]: {
+    category: 'clinical',
+    label: 'Dispensed medicines',
+  },
   // Sample verification history: who scanned each tube and who put the numbers in.
   [AuditAction.PARTNER_LAB_SAMPLE_SCAN]: {
     category: 'lab',
@@ -152,6 +156,10 @@ const ACTION_META: Partial<
   [AuditAction.PARTNER_PAYMENT_VOID]: {
     category: 'operations',
     label: 'Voided desk payment',
+  },
+  [AuditAction.PARTNER_STOCK_UPDATE]: {
+    category: 'operations',
+    label: 'Updated store stock',
   },
   [AuditAction.PARTNER_STAFF_INVITE]: {
     category: 'admin',

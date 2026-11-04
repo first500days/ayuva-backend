@@ -111,6 +111,8 @@ export enum AuditAction {
   PARTNER_LAB_RESULT_ENTRY = 'partner_lab_result_entry',
   PARTNER_LAB_RESULT_OVERRIDE = 'partner_lab_result_override',
   PARTNER_LAB_CRITICAL_CALLOUT = 'partner_lab_critical_callout',
+  PARTNER_STOCK_UPDATE = 'partner_stock_update',
+  PARTNER_PHARMACY_DISPENSE = 'partner_pharmacy_dispense',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;
