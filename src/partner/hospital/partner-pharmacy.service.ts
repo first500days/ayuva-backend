@@ -30,6 +30,7 @@ import { PartnerStockService, TakenStock } from './partner-stock.service';
 import { DispenseDto, PharmacyQueueQueryDto } from './dto/stores.dto';
 import { matchScore } from './medicine-match';
 import { usableQuantity } from './stock';
+import { dayKey } from './clock';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -379,7 +380,5 @@ export class PartnerPharmacyService {
 }
 
 function dispenseNo() {
-  const d = new Date();
-  const ymd = `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-  return `DSP-${ymd}-${randomBytes(3).toString('hex').toUpperCase()}`;
+  return `DSP-${dayKey(new Date())}-${randomBytes(3).toString('hex').toUpperCase()}`;
 }

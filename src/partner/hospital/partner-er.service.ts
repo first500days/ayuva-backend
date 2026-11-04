@@ -30,6 +30,7 @@ import {
   TriageDto,
   UpdateErPatientDto,
 } from './dto/er.dto';
+import { dayKey, dayStart } from './clock';
 import {
   TRIAGE_LEVELS,
   TriageLevel,
@@ -362,15 +363,13 @@ export class PartnerErService {
   }
 
   private async nextErNo(actor: PartnerActor, at: Date, bump: number) {
-    const start = new Date(at);
-    start.setHours(0, 0, 0, 0);
+    const start = dayStart(at);
     const end = new Date(start.getTime() + 24 * HOUR);
     const count = await this.visitModel.countDocuments({
       providerId: actor.provider._id,
       arrivedAt: { $gte: start, $lt: end },
     });
-    const ymd = `${String(start.getFullYear()).slice(2)}${String(start.getMonth() + 1).padStart(2, '0')}${String(start.getDate()).padStart(2, '0')}`;
-    return `ER-${ymd}-${String(count + 1 + bump).padStart(3, '0')}`;
+    return `ER-${dayKey(at)}-${String(count + 1 + bump).padStart(3, '0')}`;
   }
 
   private assertOpen(visit: ErVisitDocument) {
