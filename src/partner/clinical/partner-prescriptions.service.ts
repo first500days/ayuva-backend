@@ -36,6 +36,8 @@ import {
   UpdatePrescriptionDto,
 } from './dto/clinical.dto';
 import { PartnerPatientsService } from './partner-patients.service';
+import { PartnerSafetyService } from './partner-safety.service';
+import { blocksSigning } from './rx-safety';
 import { resolveDiagnosisCodes } from './diagnosis-codes';
 import {
   registrationStateOf,
@@ -59,6 +61,7 @@ export class PartnerPrescriptionsService {
     private readonly notifications: AppNotificationsService,
     private readonly mail: MailService,
     private readonly audit: AuditLogService,
+    private readonly safety: PartnerSafetyService,
   ) {}
 
   async list(actor: PartnerActor, q: PrescriptionsQueryDto) {
@@ -186,6 +189,30 @@ export class PartnerPrescriptionsService {
       );
     }
     const regNo = registration.number;
+    // Allergy / interaction / duplicate checks: serious ones must be acknowledged.
+    const review = await this.safety.review(
+      actor,
+      rx.patientId,
+      rx.items,
+      rx._id,
+    );
+    const serious = review.warnings.filter(blocksSigning);
+    if (serious.length && !dto.acknowledgeWarnings)
+      throw new BadRequestException(
+        `Review the ${serious.length} safety warning${serious.length === 1 ? '' : 's'} before signing: ${serious
+          .slice(0, 2)
+          .map((w) => w.message)
+          .join(' ')}`,
+      );
+    rx.safetyReview = {
+      checkedAt: new Date(),
+      warnings: review.warnings.map((w) => ({
+        severity: w.severity,
+        kind: w.kind,
+        message: w.message,
+      })),
+      acknowledged: serious.length > 0,
+    };
     const signedAt = new Date();
     rx.doctorName = actor.member.fullName;
     rx.doctorTitle = actor.member.title;
@@ -240,6 +267,10 @@ export class PartnerPrescriptionsService {
       attested: true,
       toVault: dto.sendToVault !== false,
       toPharmacy: !!rx.pharmacySentAt,
+      ...(rx.safetyReview?.warnings.length && {
+        safetyWarnings: rx.safetyReview.warnings.length,
+        acknowledged: rx.safetyReview.acknowledged,
+      }),
     });
     return this.toResponse(rx);
   }
@@ -449,6 +480,13 @@ export class PartnerPrescriptionsService {
       followUpDate: r.followUpDate?.toISOString().slice(0, 10) ?? null,
       signedAt: r.signedAt?.toISOString() ?? null,
       signatureHash: r.signatureHash ?? null,
+      safetyReview: r.safetyReview
+        ? {
+            checkedAt: r.safetyReview.checkedAt.toISOString(),
+            warnings: r.safetyReview.warnings,
+            acknowledged: r.safetyReview.acknowledged,
+          }
+        : null,
       attestedAt: r.attestedAt?.toISOString() ?? null,
       deliveredToVaultAt: r.deliveredToVaultAt?.toISOString() ?? null,
       pharmacy: r.pharmacy?.email

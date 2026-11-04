@@ -112,6 +112,10 @@ const ACTION_META: Partial<
     category: 'clinical',
     label: 'Dispensed medicines',
   },
+  [AuditAction.PARTNER_ALLERGY_UPDATE]: {
+    category: 'clinical',
+    label: 'Updated allergy list',
+  },
   [AuditAction.PARTNER_ER_UPDATE]: {
     category: 'clinical',
     label: 'Updated emergency visit',

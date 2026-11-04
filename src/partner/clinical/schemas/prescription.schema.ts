@@ -32,6 +32,20 @@ export class RxPharmacy {
 }
 export const RxPharmacySchema = SchemaFactory.createForClass(RxPharmacy);
 
+/** Safety warnings shown at signing and whether the prescriber acknowledged them. */
+@Schema({ _id: false })
+export class RxSafetyReview {
+  @Prop({ required: true }) checkedAt: Date;
+  @Prop({
+    type: [{ severity: String, kind: String, message: String, _id: false }],
+    default: [],
+  })
+  warnings: { severity: string; kind: string; message: string }[];
+  @Prop({ default: false }) acknowledged: boolean;
+}
+export const RxSafetyReviewSchema =
+  SchemaFactory.createForClass(RxSafetyReview);
+
 export type PrescriptionDocument = HydratedDocument<Prescription>;
 
 /**
@@ -138,6 +152,9 @@ export class Prescription {
 
   @Prop()
   pharmacySentAt?: Date;
+
+  @Prop({ type: RxSafetyReviewSchema })
+  safetyReview?: RxSafetyReview;
 
   @Prop()
   cancelledAt?: Date;

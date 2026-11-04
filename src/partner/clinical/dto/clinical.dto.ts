@@ -369,6 +369,14 @@ export class SignPrescriptionDto {
   sendToVault?: boolean;
 
   @ApiPropertyOptional({
+    description:
+      'The prescriber reviewed the allergy / interaction warnings shown and prescribes anyway',
+  })
+  @IsOptional()
+  @IsBoolean()
+  acknowledgeWarnings?: boolean;
+
+  @ApiPropertyOptional({
     type: PharmacyDto,
     description: 'Also email the signed PDF to a pharmacy',
   })
