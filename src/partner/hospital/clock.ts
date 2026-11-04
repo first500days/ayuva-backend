@@ -5,13 +5,13 @@
  */
 
 const zone = (): string => process.env.SLOT_TIMEZONE ?? 'Asia/Kolkata';
-const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
+type Weekday = 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat';
 
 export interface WallClock {
   year: number;
   month: number; // 1–12
   day: number;
-  weekday: (typeof WEEKDAYS)[number];
+  weekday: Weekday;
   /** Minutes since local midnight. */
   minutes: number;
 }
@@ -32,7 +32,7 @@ export function wallClock(d: Date, tz = zone()): WallClock {
     year: Number(get('year')),
     month: Number(get('month')),
     day: Number(get('day')),
-    weekday: get('weekday').slice(0, 3).toLowerCase() as WallClock['weekday'],
+    weekday: get('weekday').slice(0, 3).toLowerCase() as Weekday,
     minutes: Number(get('hour')) * 60 + Number(get('minute')),
   };
 }
