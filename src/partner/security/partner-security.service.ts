@@ -112,6 +112,10 @@ const ACTION_META: Partial<
     category: 'clinical',
     label: 'Dispensed medicines',
   },
+  [AuditAction.PARTNER_ER_UPDATE]: {
+    category: 'clinical',
+    label: 'Updated emergency visit',
+  },
   // Sample verification history: who scanned each tube and who put the numbers in.
   [AuditAction.PARTNER_LAB_SAMPLE_SCAN]: {
     category: 'lab',

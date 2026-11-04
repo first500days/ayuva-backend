@@ -73,6 +73,12 @@ export enum Perm {
   SUPPLY_VIEW = 'supply.view',
   // Receiving and issuing supplies, logging equipment maintenance.
   SUPPLY_MANAGE = 'supply.manage',
+  // Emergency board.
+  ER_VIEW = 'er.view',
+  // Registering casualty patients and updating their details.
+  ER_MANAGE = 'er.manage',
+  // Triage, doctor pick-up and disposition (clinical staff).
+  ER_TRIAGE = 'er.triage',
 }
 
 const ALL = Object.values(Perm);
@@ -92,6 +98,9 @@ const ORG_SCOPED: Partial<Record<Perm, OrgType[]>> = {
   [Perm.PHARMACY_DISPENSE]: [OrgType.HOSPITAL],
   [Perm.SUPPLY_VIEW]: [OrgType.HOSPITAL],
   [Perm.SUPPLY_MANAGE]: [OrgType.HOSPITAL],
+  [Perm.ER_VIEW]: [OrgType.HOSPITAL],
+  [Perm.ER_MANAGE]: [OrgType.HOSPITAL],
+  [Perm.ER_TRIAGE]: [OrgType.HOSPITAL],
   // Clinicians write notes and prescriptions; a lab issues reports instead.
   [Perm.CLINICAL_WRITE]: [OrgType.CLINIC, OrgType.HOSPITAL],
 };
@@ -145,7 +154,8 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       (p) =>
         p !== P.CLINICAL_WRITE &&
         p !== P.RECORDS_VIEW &&
-        p !== P.PHARMACY_DISPENSE,
+        p !== P.PHARMACY_DISPENSE &&
+        p !== P.ER_TRIAGE,
     ),
     [StaffRole.DOCTOR]: [
       P.DASHBOARD,
@@ -160,6 +170,9 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.WARDS_MANAGE,
       P.IMAGING_VIEW,
       P.STAFF_VIEW,
+      P.ER_VIEW,
+      P.ER_MANAGE,
+      P.ER_TRIAGE,
     ],
     [StaffRole.NURSE]: [
       P.DASHBOARD,
@@ -171,6 +184,9 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.REFERRALS_VIEW,
       P.STAFF_VIEW,
       P.SUPPLY_VIEW,
+      P.ER_VIEW,
+      P.ER_MANAGE,
+      P.ER_TRIAGE,
     ],
     [StaffRole.RECEPTIONIST]: [
       P.DASHBOARD,
@@ -182,6 +198,8 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.REFERRALS_VIEW,
       P.REFERRALS_MANAGE,
       P.STAFF_VIEW,
+      P.ER_VIEW,
+      P.ER_MANAGE,
     ],
     [StaffRole.BILLING]: [
       P.DASHBOARD,

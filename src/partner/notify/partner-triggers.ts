@@ -14,6 +14,7 @@ export enum PartnerTrigger {
   ADMISSION_UPDATE = 'admission_update',
   CAPACITY_WARNING = 'capacity_warning',
   STAFF_JOINED = 'staff_joined',
+  ER_CRITICAL_ARRIVAL = 'er_critical_arrival',
 }
 
 /**
@@ -163,6 +164,16 @@ export const TRIGGER_CATALOG: TriggerDefinition[] = [
     orgTypes: [OrgType.HOSPITAL],
     critical: true,
     defaultRoles: [R.ADMIN, R.NURSE],
+    defaultChannels: channels(['inApp', 'desktop']),
+  },
+  {
+    trigger: PartnerTrigger.ER_CRITICAL_ARRIVAL,
+    label: 'Emergency: Level 1–2 patient',
+    description:
+      'A patient is triaged Level 1 (resuscitation) or 2 (emergent) in the Emergency department. Email and SMS carry no patient details.',
+    orgTypes: [OrgType.HOSPITAL],
+    critical: true,
+    defaultRoles: [R.DOCTOR, R.NURSE],
     defaultChannels: channels(['inApp', 'desktop']),
   },
   {
