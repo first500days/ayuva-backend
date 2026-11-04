@@ -12,10 +12,11 @@ import {
   Query,
   Res,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiConsumes,
@@ -88,6 +89,7 @@ import {
   CreateLabOrderDto,
   CriticalCalloutDto,
   LabOrdersQueryDto,
+  RemoveImagingDto,
   SaveResultDto,
   ScanSampleDto,
   UpdateCatalogItemDto,
@@ -122,6 +124,8 @@ import { AuditAction } from '../audit-log/schemas/audit-log.schema';
 
 const REPORT_MAX_BYTES = 20 * 1024 * 1024;
 const DICOM_MAX_BYTES = 60 * 1024 * 1024;
+/** Files per study-folder upload request (the portal sends folders in batches). */
+const IMAGING_BATCH_FILES = 25;
 
 function sendFile(
   res: Response,
@@ -928,6 +932,39 @@ export class PartnerLabController {
     return this.orders.addImaging(a, id, file, description);
   }
 
+  @Post('orders/:id/imaging/batch')
+  @RequirePerm(Perm.LAB_ORDERS_MANAGE)
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary:
+      'Attach part of a study folder (up to 25 files): DICOM slices, ECG, video loops or slides',
+  })
+  @UseInterceptors(
+    FilesInterceptor('files', IMAGING_BATCH_FILES, {
+      storage: memoryStorage(),
+      limits: { fileSize: DICOM_MAX_BYTES, files: IMAGING_BATCH_FILES },
+    }),
+  )
+  addImagingBatch(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    return this.orders.addImagingBatch(a, id, files);
+  }
+
+  @Post('orders/:id/imaging/remove')
+  @HttpCode(200)
+  @RequirePerm(Perm.LAB_ORDERS_MANAGE)
+  @ApiOperation({ summary: 'Remove several imaging files (e.g. a whole series)' })
+  removeImagingMany(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: RemoveImagingDto,
+  ) {
+    return this.orders.removeImagingMany(a, id, dto.fileIds);
+  }
+
   @Get('orders/:id/imaging/:fileId')
   @RequirePerm(Perm.IMAGING_VIEW)
   async readImaging(
@@ -936,8 +973,12 @@ export class PartnerLabController {
     @Param('fileId') fileId: string,
     @Res() res: Response,
   ) {
-    const { buffer, fileName } = await this.orders.readImaging(a, id, fileId);
-    sendFile(res, buffer, fileName, 'application/dicom', false);
+    const { buffer, fileName, mime } = await this.orders.readImaging(
+      a,
+      id,
+      fileId,
+    );
+    sendFile(res, buffer, fileName, mime, false);
   }
 
   @Delete('orders/:id/imaging/:fileId')

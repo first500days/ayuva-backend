@@ -7,7 +7,6 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomBytes } from 'node:crypto';
-import { extname } from 'node:path';
 import {
   Appointment,
   AppointmentDocument,
@@ -19,7 +18,12 @@ import {
 import { AppNotificationsService } from '../../notifications/app-notifications.service';
 import { StorageService } from '../../storage/storage.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
+import {
+  AuditAction,
+  AuditLog,
+  AuditLogDocument,
+} from '../../audit-log/schemas/audit-log.schema';
+import { classifyImaging } from './imaging-files';
 import { buildSafeRegex } from '../../common/utils/regex.util';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import { Perm } from '../rbac/partner-permissions';
@@ -36,6 +40,7 @@ import {
   ReferralPriority,
 } from '../referrals/schemas/referral.schema';
 import {
+  ImagingFile,
   LabOrderDocument,
   LabOrderStatus,
   PartnerLabOrder,
@@ -68,6 +73,27 @@ const OPEN = [
   LabOrderStatus.REPORT_READY,
 ];
 const DICOM_MAX_BYTES = 60 * 1024 * 1024;
+/** One imaging-view audit entry per person per study within this window. */
+const IMAGING_VIEW_WINDOW_MS = 30 * 60 * 1000;
+
+/** An imaging attachment as the portal sees it (series identifiers included). */
+function imagingItem(f: ImagingFile & { _id: Types.ObjectId }) {
+  return {
+    id: f._id.toString(),
+    fileName: f.fileName,
+    size: f.size,
+    uploadedAt: f.uploadedAt.toISOString(),
+    uploadedByName: f.uploadedByName ?? null,
+    description: f.description ?? null,
+    kind: f.kind ?? 'dicom',
+    modality: f.modality ?? null,
+    studyUid: f.studyUid ?? null,
+    seriesUid: f.seriesUid ?? null,
+    seriesNumber: f.seriesNumber ?? null,
+    seriesDescription: f.seriesDescription ?? null,
+    instanceNumber: f.instanceNumber ?? null,
+  };
+}
 const MAX_SAMPLES = 10;
 const CALLOUT_METHOD: Record<string, string> = {
   phone: 'by phone',
@@ -97,6 +123,8 @@ export class PartnerLabOrdersService {
     private readonly notifications: AppNotificationsService,
     private readonly storage: StorageService,
     private readonly audit: AuditLogService,
+    @InjectModel(AuditLog.name)
+    private readonly auditModel: Model<AuditLogDocument>,
   ) {}
 
   async list(actor: PartnerActor, q: LabOrdersQueryDto) {
@@ -683,27 +711,25 @@ export class PartnerLabOrdersService {
     };
   }
 
-  // ── Imaging (DICOM) ───────────────────────────────────────────────────────
+  // ── Imaging (DICOM, ECG waveforms, video loops, slides) ──────────────────
 
-  async addImaging(
+  /**
+   * Stores one imaging file on the order. Returns why it was skipped instead
+   * when it isn't an imaging file, is too large, or is a DICOM instance the
+   * order already has (re-uploading a study folder doesn't duplicate slices).
+   */
+  private async storeImaging(
     actor: PartnerActor,
-    id: string,
-    file: Express.Multer.File | undefined,
+    order: LabOrderDocument,
+    file: Express.Multer.File,
     description?: string,
-  ) {
-    const order = await this.load(actor, id);
-    if (!file) throw new BadRequestException('Attach a DICOM (.dcm) file');
-    if (file.size > DICOM_MAX_BYTES)
-      throw new BadRequestException('DICOM files are limited to 60 MB each');
-    const isDicom =
-      ['.dcm', '.dicom'].includes(extname(file.originalname).toLowerCase()) ||
-      file.mimetype === 'application/dicom' ||
-      (file.buffer.length > 132 &&
-        file.buffer.subarray(128, 132).toString('latin1') === 'DICM');
-    if (!isDicom)
-      throw new BadRequestException(
-        'Only DICOM (.dcm) files can be attached as imaging',
-      );
+  ): Promise<string | null> {
+    if (file.size > DICOM_MAX_BYTES) return 'over 60 MB';
+    const meta = classifyImaging(file.buffer, file.originalname);
+    if (!meta)
+      return 'not DICOM, an ECG (aECG/MFER), a video loop or a TIFF/SVS slide';
+    if (meta.sopUid && order.imaging.some((f) => f.sopUid === meta.sopUid))
+      return 'already attached';
     const fileRef = await this.storage.upload(
       file.buffer,
       file.originalname,
@@ -717,13 +743,57 @@ export class PartnerLabOrdersService {
       uploadedAt: new Date(),
       uploadedByName: actor.member.fullName,
       description,
+      ...meta,
     });
+    return null;
+  }
+
+  async addImaging(
+    actor: PartnerActor,
+    id: string,
+    file: Express.Multer.File | undefined,
+    description?: string,
+  ) {
+    const order = await this.load(actor, id);
+    if (!file) throw new BadRequestException('Attach an imaging file');
+    const skipped = await this.storeImaging(actor, order, file, description);
+    if (skipped === 'already attached') return this.toResponse(order);
+    if (skipped)
+      throw new BadRequestException(`${file.originalname}: ${skipped}`);
     await order.save();
     await this.record(actor, order, {
       change: 'imaging_added',
       file: file.originalname,
     });
     return this.toResponse(order);
+  }
+
+  /**
+   * A batch of a study folder (CT/MR studies are hundreds of slices): every
+   * file is stored or skipped with a reason, then the order is saved once.
+   */
+  async addImagingBatch(
+    actor: PartnerActor,
+    id: string,
+    files: Express.Multer.File[] | undefined,
+  ) {
+    const order = await this.load(actor, id);
+    if (!files?.length) throw new BadRequestException('Attach imaging files');
+    const skipped: { fileName: string; reason: string }[] = [];
+    let added = 0;
+    for (const file of files) {
+      const reason = await this.storeImaging(actor, order, file);
+      if (reason) skipped.push({ fileName: file.originalname, reason });
+      else added++;
+    }
+    if (added > 0) {
+      await order.save();
+      await this.record(actor, order, {
+        change: 'imaging_added',
+        files: added,
+      });
+    }
+    return { added, skipped, order: this.toResponse(order) };
   }
 
   /** The centre itself, or the organisation that referred the patient, may open a study. */
@@ -740,19 +810,36 @@ export class PartnerLabOrdersService {
     const file = order.imaging.find((f) => f._id.toString() === fileId);
     if (!file) throw new NotFoundException('Imaging file not found');
     const buffer = await this.storage.read(file.fileRef);
-    await this.audit.record({
-      actorId: actor.userId,
+    // Opening a study reads every slice; log the view once per person per
+    // study per half hour rather than once per slice.
+    const recent = await this.auditModel.exists({
+      actorId: new Types.ObjectId(actor.userId),
       action: AuditAction.PARTNER_IMAGING_VIEW,
-      targetType: 'PartnerLabOrder',
-      targetId: order.id,
-      metadata: {
-        providerId: actor.provider.id,
-        patientId: order.patientId.toString(),
-        label: file.fileName,
-      },
-      ipAddress: actor.ip,
+      targetId: order._id,
+      createdAt: { $gte: new Date(Date.now() - IMAGING_VIEW_WINDOW_MS) },
     });
-    return { buffer, fileName: file.fileName };
+    if (!recent) {
+      await this.audit.record({
+        actorId: actor.userId,
+        action: AuditAction.PARTNER_IMAGING_VIEW,
+        targetType: 'PartnerLabOrder',
+        targetId: order.id,
+        metadata: {
+          providerId: actor.provider.id,
+          patientId: order.patientId.toString(),
+          label:
+            order.imaging.length > 1
+              ? `${order.orderNo} imaging (${order.imaging.length} files)`
+              : file.fileName,
+        },
+        ipAddress: actor.ip,
+      });
+    }
+    return {
+      buffer,
+      fileName: file.fileName,
+      mime: file.mime ?? 'application/dicom',
+    };
   }
 
   /** Studies a referring organisation can open for its patients. */
@@ -785,26 +872,27 @@ export class PartnerLabOrdersService {
       tests: o.items.map((i) => i.name),
       status: o.status,
       pacsUrl: o.pacsUrl ?? null,
-      imaging: o.imaging.map((f) => ({
-        id: f._id.toString(),
-        fileName: f.fileName,
-        size: f.size,
-        uploadedAt: f.uploadedAt.toISOString(),
-        description: f.description ?? null,
-      })),
+      imaging: o.imaging.map((f) => imagingItem(f)),
     }));
   }
 
   async removeImaging(actor: PartnerActor, id: string, fileId: string) {
+    return this.removeImagingMany(actor, id, [fileId]);
+  }
+
+  /** Removes files (e.g. a whole series) from the order and from storage. */
+  async removeImagingMany(actor: PartnerActor, id: string, fileIds: string[]) {
     const order = await this.load(actor, id);
-    const file = order.imaging.find((f) => f._id.toString() === fileId);
-    if (!file) throw new NotFoundException('Imaging file not found');
-    order.imaging = order.imaging.filter((f) => f._id.toString() !== fileId);
+    const ids = new Set(fileIds);
+    const gone = order.imaging.filter((f) => ids.has(f._id.toString()));
+    if (gone.length === 0)
+      throw new NotFoundException('Imaging file not found');
+    order.imaging = order.imaging.filter((f) => !ids.has(f._id.toString()));
     await order.save();
-    await this.storage.remove(file.fileRef);
+    await Promise.all(gone.map((f) => this.storage.remove(f.fileRef)));
     await this.record(actor, order, {
       change: 'imaging_removed',
-      file: file.fileName,
+      ...(gone.length === 1 ? { file: gone[0].fileName } : { files: gone.length }),
     });
     return this.toResponse(order);
   }
@@ -981,14 +1069,7 @@ export class PartnerLabOrdersService {
       overdue: !!o.dueAt && OPEN.includes(o.status) && o.dueAt.getTime() < now,
       deliveredAt: o.deliveredAt?.toISOString() ?? null,
       vaultRecordId: o.vaultRecordId?.toString() ?? null,
-      imaging: o.imaging.map((f) => ({
-        id: f._id.toString(),
-        fileName: f.fileName,
-        size: f.size,
-        uploadedAt: f.uploadedAt.toISOString(),
-        uploadedByName: f.uploadedByName ?? null,
-        description: f.description ?? null,
-      })),
+      imaging: o.imaging.map((f) => imagingItem(f)),
       pacsUrl: o.pacsUrl ?? null,
       payment: {
         status: o.payment?.status ?? 'unpaid',

@@ -70,7 +70,12 @@ export class CriticalCallout {
 export const CriticalCalloutSchema =
   SchemaFactory.createForClass(CriticalCallout);
 
-/** A DICOM file attached to an order — encrypted at rest like vault files. */
+/**
+ * An imaging file attached to an order — a DICOM slice, an ECG waveform, a
+ * video loop or a pathology slide — encrypted at rest like vault files. DICOM
+ * identifiers are kept so the viewer can group slices into series without
+ * downloading them.
+ */
 @Schema()
 export class ImagingFile {
   @Prop({ required: true }) fileRef: string;
@@ -79,6 +84,16 @@ export class ImagingFile {
   @Prop({ required: true }) uploadedAt: Date;
   @Prop() uploadedByName?: string;
   @Prop() description?: string;
+  // 'dicom' | 'ecg' | 'video' | 'slide'
+  @Prop({ default: 'dicom' }) kind: string;
+  @Prop() mime?: string;
+  @Prop() studyUid?: string;
+  @Prop() seriesUid?: string;
+  @Prop() sopUid?: string;
+  @Prop() modality?: string;
+  @Prop() seriesNumber?: number;
+  @Prop() seriesDescription?: string;
+  @Prop() instanceNumber?: number;
 }
 export const ImagingFileSchema = SchemaFactory.createForClass(ImagingFile);
 

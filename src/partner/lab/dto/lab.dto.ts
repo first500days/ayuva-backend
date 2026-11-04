@@ -432,6 +432,16 @@ export class SaveResultDto {
   overrideReason?: string;
 }
 
+/** Imaging files to take off an order together (e.g. a whole series). */
+export class RemoveImagingDto {
+  @ApiProperty({ type: [String], description: 'Imaging file ids to remove' })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(5000)
+  @IsMongoId({ each: true })
+  fileIds: string[];
+}
+
 /** A sample tube's barcode, from a scanner or typed in. */
 export class ScanSampleDto {
   @ApiProperty({ example: 'VL00012345' })
