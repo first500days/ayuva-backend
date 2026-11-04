@@ -140,6 +140,14 @@ import { PartnerAssetsService } from './hospital/partner-assets.service';
 import { ErVisit, ErVisitSchema } from './hospital/schemas/er-visit.schema';
 import { PartnerErService } from './hospital/partner-er.service';
 import { PartnerErController } from './hospital/partner-er.controller';
+import {
+  OtCase,
+  OtCaseSchema,
+  OtRoom,
+  OtRoomSchema,
+} from './hospital/schemas/ot.schema';
+import { PartnerOtService } from './hospital/partner-ot.service';
+import { PartnerOtController } from './hospital/partner-ot.controller';
 
 /**
  * Partner Portal API (Product Journey §2, wireframes P01–P06) plus the
@@ -184,6 +192,8 @@ import { PartnerErController } from './hospital/partner-er.controller';
       { name: Dispense.name, schema: DispenseSchema },
       { name: PartnerAsset.name, schema: PartnerAssetSchema },
       { name: ErVisit.name, schema: ErVisitSchema },
+      { name: OtRoom.name, schema: OtRoomSchema },
+      { name: OtCase.name, schema: OtCaseSchema },
     ]),
   ],
   controllers: [
@@ -199,6 +209,7 @@ import { PartnerErController } from './hospital/partner-er.controller';
     PartnerPharmacyController,
     PartnerSupplyController,
     PartnerErController,
+    PartnerOtController,
   ],
   providers: [
     PartnerContextService,
@@ -229,6 +240,7 @@ import { PartnerErController } from './hospital/partner-er.controller';
     PartnerPharmacyService,
     PartnerAssetsService,
     PartnerErService,
+    PartnerOtService,
   ],
 })
 export class PartnerModule {}

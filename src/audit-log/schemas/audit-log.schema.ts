@@ -115,6 +115,7 @@ export enum AuditAction {
   PARTNER_PHARMACY_DISPENSE = 'partner_pharmacy_dispense',
   PARTNER_ASSET_UPDATE = 'partner_asset_update',
   PARTNER_ER_UPDATE = 'partner_er_update',
+  PARTNER_OT_UPDATE = 'partner_ot_update',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;
