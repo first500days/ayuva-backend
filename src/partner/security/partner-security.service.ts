@@ -161,6 +161,10 @@ const ACTION_META: Partial<
     category: 'operations',
     label: 'Updated store stock',
   },
+  [AuditAction.PARTNER_ASSET_UPDATE]: {
+    category: 'operations',
+    label: 'Updated equipment record',
+  },
   [AuditAction.PARTNER_STAFF_INVITE]: {
     category: 'admin',
     label: 'Invited staff member',

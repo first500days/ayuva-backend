@@ -25,6 +25,7 @@ import {
 import {
   AdjustStockDto,
   CreateStockItemDto,
+  IssueStockDto,
   ReceiveStockDto,
   StockItemsQueryDto,
   StockMovesQueryDto,
@@ -482,6 +483,44 @@ export class PartnerStockService {
       return row;
     });
     await this.moveModel.insertMany(rows.reverse());
+  }
+
+  /** Central supply: issue to a department, ward, theatre or patient. */
+  async issue(
+    actor: PartnerActor,
+    store: StoreKind,
+    id: string,
+    dto: IssueStockDto,
+  ) {
+    const item = await this.load(actor, store, id);
+    if (
+      (item.category === 'implant' || item.serialised) &&
+      !dto.patientName?.trim()
+    )
+      throw new BadRequestException(
+        `Record the patient receiving ${item.name} — implants are traced to the patient`,
+      );
+    const taken = await this.take(actor, store, id, dto.quantity, {
+      batchId: dto.batchId,
+      serials: dto.serials,
+    });
+    try {
+      await this.recordIssue(actor, store, taken, {
+        reason: 'issued',
+        ref: { type: dto.to.type, label: dto.to.label },
+        patientName: dto.patientName || undefined,
+        note: dto.note || undefined,
+      });
+    } catch (err) {
+      await taken.undo();
+      throw err;
+    }
+    await this.record(actor, item, {
+      change: 'issued',
+      quantity: dto.quantity,
+      to: dto.to.label,
+    });
+    return this.toResponse(await this.load(actor, store, id), new Date());
   }
 
   // ── Ledger ────────────────────────────────────────────────────────────────

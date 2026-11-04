@@ -128,7 +128,15 @@ import {
 import { Dispense, DispenseSchema } from './hospital/schemas/dispense.schema';
 import { PartnerStockService } from './hospital/partner-stock.service';
 import { PartnerPharmacyService } from './hospital/partner-pharmacy.service';
-import { PartnerPharmacyController } from './hospital/partner-stores.controller';
+import {
+  PartnerPharmacyController,
+  PartnerSupplyController,
+} from './hospital/partner-stores.controller';
+import {
+  PartnerAsset,
+  PartnerAssetSchema,
+} from './hospital/schemas/asset.schema';
+import { PartnerAssetsService } from './hospital/partner-assets.service';
 
 /**
  * Partner Portal API (Product Journey §2, wireframes P01–P06) plus the
@@ -171,6 +179,7 @@ import { PartnerPharmacyController } from './hospital/partner-stores.controller'
       { name: StockItem.name, schema: StockItemSchema },
       { name: StockMove.name, schema: StockMoveSchema },
       { name: Dispense.name, schema: DispenseSchema },
+      { name: PartnerAsset.name, schema: PartnerAssetSchema },
     ]),
   ],
   controllers: [
@@ -184,6 +193,7 @@ import { PartnerPharmacyController } from './hospital/partner-stores.controller'
     PartnerLabController,
     PartnerHospitalController,
     PartnerPharmacyController,
+    PartnerSupplyController,
   ],
   providers: [
     PartnerContextService,
@@ -212,6 +222,7 @@ import { PartnerPharmacyController } from './hospital/partner-stores.controller'
     PartnerCapacityService,
     PartnerStockService,
     PartnerPharmacyService,
+    PartnerAssetsService,
   ],
 })
 export class PartnerModule {}

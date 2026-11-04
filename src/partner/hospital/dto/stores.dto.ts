@@ -23,6 +23,12 @@ import {
   DRUG_SCHEDULES,
 } from '../schemas/stock-item.schema';
 import { STOCK_REASONS } from '../schemas/stock-move.schema';
+import {
+  ASSET_CATEGORIES,
+  AssetStatus,
+  MAINTENANCE_TYPES,
+} from '../schemas/asset.schema';
+import type { MaintenanceType } from '../schemas/asset.schema';
 import type { StockReason } from '../schemas/stock-move.schema';
 
 const trim = ({ value }: { value: unknown }) =>
@@ -332,4 +338,261 @@ export class DispenseDto {
 
 export class StockSearchQueryDto {
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(80) q: string;
+}
+
+// ── Central supply ───────────────────────────────────────────────────────────
+
+export const ISSUE_TARGETS = ['department', 'ward', 'ot', 'patient'] as const;
+
+export class IssueTargetDto {
+  @ApiProperty({ enum: ISSUE_TARGETS })
+  @IsIn(ISSUE_TARGETS)
+  type: (typeof ISSUE_TARGETS)[number];
+
+  @ApiProperty({ example: 'Ward 3B' })
+  @Transform(trim)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  label: string;
+}
+
+export class IssueStockDto {
+  @ApiProperty() @IsInt() @Min(1) @Max(100_000) quantity: number;
+  @ApiPropertyOptional() @IsOptional() @IsMongoId() batchId?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Serial-tracked items: the units issued',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsString({ each: true })
+  serials?: string[];
+
+  @ApiProperty({ type: IssueTargetDto })
+  @ValidateNested()
+  @Type(() => IssueTargetDto)
+  to: IssueTargetDto;
+
+  @ApiPropertyOptional({ description: 'Required for implants (traceability)' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  patientName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(300)
+  note?: string;
+}
+
+export class CreateAssetDto {
+  @ApiProperty({ example: 'BME-0042' })
+  @Transform(trim)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  tag: string;
+
+  @ApiProperty({ example: 'Defibrillator' })
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  name: string;
+
+  @ApiPropertyOptional({ enum: ASSET_CATEGORIES })
+  @IsOptional()
+  @IsIn(ASSET_CATEGORIES)
+  category?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  department?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  location?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  make?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  modelNo?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  serialNo?: string;
+  @ApiPropertyOptional() @IsOptional() @IsISO8601() purchasedAt?: string;
+  @ApiPropertyOptional() @IsOptional() @IsISO8601() warrantyUntil?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  amcVendor?: string;
+  @ApiPropertyOptional() @IsOptional() @IsISO8601() amcUntil?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3650)
+  serviceIntervalDays?: number;
+  @ApiPropertyOptional({
+    description: 'Last preventive service (sets the next due date)',
+  })
+  @IsOptional()
+  @IsISO8601()
+  lastServiceAt?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3650)
+  calibrationIntervalDays?: number;
+  @ApiPropertyOptional() @IsOptional() @IsISO8601() lastCalibratedAt?: string;
+}
+
+export class UpdateAssetDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  name?: string;
+  @ApiPropertyOptional({ enum: ASSET_CATEGORIES })
+  @IsOptional()
+  @IsIn(ASSET_CATEGORIES)
+  category?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  department?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  location?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  make?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  modelNo?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  serialNo?: string;
+  @ApiPropertyOptional() @IsOptional() @IsISO8601() purchasedAt?: string;
+  @ApiPropertyOptional() @IsOptional() @IsISO8601() warrantyUntil?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  amcVendor?: string;
+  @ApiPropertyOptional() @IsOptional() @IsISO8601() amcUntil?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3650)
+  serviceIntervalDays?: number;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3650)
+  calibrationIntervalDays?: number;
+  @ApiPropertyOptional({
+    enum: [AssetStatus.CONDEMNED, AssetStatus.OPERATIONAL],
+  })
+  @IsOptional()
+  @IsIn([AssetStatus.CONDEMNED, AssetStatus.OPERATIONAL])
+  status?: AssetStatus;
+}
+
+export class LogMaintenanceDto {
+  @ApiProperty({ enum: MAINTENANCE_TYPES })
+  @IsIn(MAINTENANCE_TYPES)
+  type: MaintenanceType;
+  @ApiPropertyOptional({ description: 'When it happened (default now)' })
+  @IsOptional()
+  @IsISO8601()
+  at?: string;
+
+  @ApiProperty({ example: 'Quarterly PM — battery and pads replaced' })
+  @Transform(trim)
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  summary: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  vendor?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  engineer?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100_000_000)
+  cost?: number;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(10_000)
+  downtimeHours?: number;
+
+  @ApiProperty({
+    enum: [
+      AssetStatus.OPERATIONAL,
+      AssetStatus.MAINTENANCE,
+      AssetStatus.OUT_OF_SERVICE,
+    ],
+  })
+  @IsIn([
+    AssetStatus.OPERATIONAL,
+    AssetStatus.MAINTENANCE,
+    AssetStatus.OUT_OF_SERVICE,
+  ])
+  statusAfter: AssetStatus;
 }

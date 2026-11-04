@@ -69,6 +69,10 @@ export enum Perm {
   PHARMACY_STOCK = 'pharmacy.stock',
   // Reading signed prescriptions and dispensing against them (pharmacists).
   PHARMACY_DISPENSE = 'pharmacy.dispense',
+  // Central Supply: consumable/implant stock levels and the equipment register.
+  SUPPLY_VIEW = 'supply.view',
+  // Receiving and issuing supplies, logging equipment maintenance.
+  SUPPLY_MANAGE = 'supply.manage',
 }
 
 const ALL = Object.values(Perm);
@@ -86,6 +90,8 @@ const ORG_SCOPED: Partial<Record<Perm, OrgType[]>> = {
   [Perm.CLAIMS_MANAGE]: [OrgType.HOSPITAL],
   [Perm.PHARMACY_STOCK]: [OrgType.HOSPITAL],
   [Perm.PHARMACY_DISPENSE]: [OrgType.HOSPITAL],
+  [Perm.SUPPLY_VIEW]: [OrgType.HOSPITAL],
+  [Perm.SUPPLY_MANAGE]: [OrgType.HOSPITAL],
   // Clinicians write notes and prescriptions; a lab issues reports instead.
   [Perm.CLINICAL_WRITE]: [OrgType.CLINIC, OrgType.HOSPITAL],
 };
@@ -164,6 +170,7 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.WARDS_MANAGE,
       P.REFERRALS_VIEW,
       P.STAFF_VIEW,
+      P.SUPPLY_VIEW,
     ],
     [StaffRole.RECEPTIONIST]: [
       P.DASHBOARD,
@@ -183,11 +190,14 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.ANALYTICS,
       P.PATIENTS_VIEW,
     ],
+    // Biomedical / stores technicians run central supply and equipment upkeep.
     [StaffRole.TECHNICIAN]: [
       P.DASHBOARD,
       P.WARDS_VIEW,
       P.IMAGING_VIEW,
       P.STAFF_VIEW,
+      P.SUPPLY_VIEW,
+      P.SUPPLY_MANAGE,
     ],
     [StaffRole.PHARMACIST]: [
       P.DASHBOARD,
