@@ -187,6 +187,9 @@ import {
   LabAnalyserSchema,
 } from './lab/schemas/analyser.schema';
 import { PartnerAnalysersService } from './lab/partner-analysers.service';
+import { TrendLink, TrendLinkSchema } from './lab/schemas/trend-link.schema';
+import { PartnerTrendLinksService } from './lab/partner-trend-links.service';
+import { PublicTrendsController } from './lab/public-trends.controller';
 import {
   LisIngestController,
   PartnerAnalysersController,
@@ -253,6 +256,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
       { name: QcRun.name, schema: QcRunSchema },
       { name: LabAnalyser.name, schema: LabAnalyserSchema },
       { name: AnalyserMessage.name, schema: AnalyserMessageSchema },
+      { name: TrendLink.name, schema: TrendLinkSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },
     ]),
   ],
@@ -278,6 +282,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerLabRoutesController,
     PartnerAnalysersController,
     LisIngestController,
+    PublicTrendsController,
   ],
   providers: [
     PartnerContextService,
@@ -304,6 +309,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerQcService,
     PartnerLabRoutesService,
     PartnerAnalysersService,
+    PartnerTrendLinksService,
     PartnerWardsService,
     PartnerClaimsService,
     PartnerAnalyticsService,

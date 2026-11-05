@@ -294,6 +294,7 @@ export class PartnerDocumentsService {
     order: LabOrderDocument,
     result: LabResultDocument,
     provider: ProviderDocument,
+    trendUrl?: string,
   ): Buffer {
     const pdf = new PdfBuilder({ title: `Lab report ${order.orderNo}` })
       .banner(
@@ -350,6 +351,12 @@ export class PartnerDocumentsService {
       );
     }
     if (result.comments) pdf.heading('Comments').text(result.comments);
+    if (trendUrl)
+      pdf
+        .heading('Your results over time')
+        .text(
+          `See graphs of these results alongside your earlier tests here on your phone: ${trendUrl} — you'll be asked a quick question to confirm it's you. The link works for 90 days.`,
+        );
     if (result.status === 'released') {
       pdf.signature([
         result.releasedByName ?? 'Authorised signatory',

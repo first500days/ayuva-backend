@@ -82,6 +82,8 @@ import { PartnerLabInventoryService } from './lab/partner-lab-inventory.service'
 import { PartnerLabOrdersService } from './lab/partner-lab-orders.service';
 import { PartnerLabResultsService } from './lab/partner-lab-results.service';
 import { PartnerLabCriticalService } from './lab/partner-lab-critical.service';
+import { PartnerTrendLinksService } from './lab/partner-trend-links.service';
+import { LabOrderStatus } from './lab/schemas/lab-order.schema';
 import {
   AdjustStockDto,
   AdvanceLabOrderDto,
@@ -716,7 +718,37 @@ export class PartnerLabController {
     private readonly orders: PartnerLabOrdersService,
     private readonly results: PartnerLabResultsService,
     private readonly critical: PartnerLabCriticalService,
+    private readonly trendLinks: PartnerTrendLinksService,
   ) {}
+
+  @Post('orders/:id/trend-link')
+  @HttpCode(200)
+  @RequirePerm(Perm.LAB_REPORTS_RELEASE)
+  @ApiOperation({
+    summary:
+      "A new 'results over time' link for a released report (earlier links stop working)",
+  })
+  async newTrendLink(@PartnerCtx() a: PartnerActor, @Param('id') id: string) {
+    const order = await this.orders.load(a, id);
+    if (order.status !== LabOrderStatus.DELIVERED)
+      throw new BadRequestException('Release the report first');
+    const link = await this.trendLinks.create(a, order);
+    if (!link)
+      throw new BadRequestException(
+        'The patient has no mobile number or birth date on record to protect the link with',
+      );
+    return link;
+  }
+
+  @Post('orders/:id/trend-link/revoke')
+  @HttpCode(200)
+  @RequirePerm(Perm.LAB_REPORTS_RELEASE)
+  async revokeTrendLink(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+  ) {
+    return this.trendLinks.revoke(a, await this.orders.load(a, id));
+  }
 
   @Get('critical')
   @RequirePerm(Perm.LAB_REPORTS_DRAFT)

@@ -26,6 +26,7 @@ import {
 } from './result-changes';
 import { PartnerLabOrdersService } from './partner-lab-orders.service';
 import { PartnerLabCriticalService } from './partner-lab-critical.service';
+import { PartnerTrendLinksService } from './partner-trend-links.service';
 import {
   ReleaseResultDto,
   SaveResultDto,
@@ -85,6 +86,7 @@ export class PartnerLabResultsService {
     private readonly catalogModel: Model<LabCatalogItemDocument>,
     private readonly orders: PartnerLabOrdersService,
     private readonly critical: PartnerLabCriticalService,
+    private readonly trendLinks: PartnerTrendLinksService,
     private readonly documents: PartnerDocumentsService,
     private readonly notifier: PartnerNotifierService,
     private readonly notifySettings: PartnerNotifySettingsService,
@@ -255,7 +257,14 @@ export class PartnerLabResultsService {
     result.status = 'released';
     result.releasedAt = new Date();
     result.releasedByName = actor.member.fullName;
-    const pdf = this.documents.labReportPdf(order, result, actor.provider);
+    // The patient's "results over time" page, linked from the report itself.
+    const trendLink = await this.trendLinks.create(actor, order);
+    const pdf = this.documents.labReportPdf(
+      order,
+      result,
+      actor.provider,
+      trendLink?.url,
+    );
     const record = await this.deliver(
       actor,
       order,
@@ -274,7 +283,7 @@ export class PartnerLabResultsService {
         ? { checks: checks.map((c) => c.code), checksNote: note ?? null }
         : {},
     );
-    return this.toResponse(result, order);
+    return { ...this.toResponse(result, order), trendLink };
   }
 
   /** Uploads a finished report file (PDF/image) straight to the patient's vault. */
