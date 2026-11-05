@@ -164,6 +164,12 @@ import {
 } from './clinical/schemas/case-message.schema';
 import { PartnerDiscussionService } from './clinical/partner-discussion.service';
 import { PartnerLabCriticalService } from './lab/partner-lab-critical.service';
+import {
+  ColdChainRun,
+  ColdChainRunSchema,
+} from './lab/schemas/cold-chain-run.schema';
+import { PartnerColdChainService } from './lab/partner-cold-chain.service';
+import { PartnerColdChainController } from './lab/partner-cold-chain.controller';
 import { PartnerDiscussionController } from './clinical/partner-discussion.controller';
 import {
   HealthProfile,
@@ -221,6 +227,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
       { name: LisSample.name, schema: LisSampleSchema },
       { name: PatientAllergy.name, schema: PatientAllergySchema },
       { name: CaseMessage.name, schema: CaseMessageSchema },
+      { name: ColdChainRun.name, schema: ColdChainRunSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },
     ]),
   ],
@@ -241,6 +248,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerLisController,
     PartnerSafetyController,
     PartnerDiscussionController,
+    PartnerColdChainController,
   ],
   providers: [
     PartnerContextService,
@@ -263,6 +271,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerLabOrdersService,
     PartnerLabResultsService,
     PartnerLabCriticalService,
+    PartnerColdChainService,
     PartnerWardsService,
     PartnerClaimsService,
     PartnerAnalyticsService,

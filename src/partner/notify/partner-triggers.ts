@@ -16,6 +16,7 @@ export enum PartnerTrigger {
   STAFF_JOINED = 'staff_joined',
   ER_CRITICAL_ARRIVAL = 'er_critical_arrival',
   CLINICAL_MENTION = 'clinical_mention',
+  COLD_CHAIN_EXCURSION = 'cold_chain_excursion',
 }
 
 /**
@@ -189,6 +190,16 @@ export const TRIGGER_CATALOG: TriggerDefinition[] = [
     defaultRoles: [],
     defaultChannels: channels(['inApp', 'desktop']),
     directOnly: true,
+  },
+  {
+    trigger: PartnerTrigger.COLD_CHAIN_EXCURSION,
+    label: 'Cold-chain excursion',
+    description:
+      'A transport box with home-collected samples was outside its temperature range in transit. Samples are named only inside the portal.',
+    orgTypes: [OrgType.DIAGNOSTIC],
+    critical: false,
+    defaultRoles: [R.ADMIN, R.TECHNICIAN],
+    defaultChannels: channels(['inApp', 'desktop']),
   },
   {
     trigger: PartnerTrigger.STAFF_JOINED,

@@ -120,6 +120,10 @@ const ACTION_META: Partial<
     category: 'clinical',
     label: 'Case discussion message',
   },
+  [AuditAction.PARTNER_COLD_CHAIN]: {
+    category: 'clinical',
+    label: 'Cold-chain transit log',
+  },
   [AuditAction.PARTNER_ER_UPDATE]: {
     category: 'clinical',
     label: 'Updated emergency visit',

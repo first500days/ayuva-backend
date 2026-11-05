@@ -56,6 +56,7 @@ import { LabResult, LabResultDocument } from './schemas/lab-result.schema';
 import { LabCatalogItemDocument } from './schemas/lab-catalog-item.schema';
 import { PartnerLabCatalogService } from './partner-lab-catalog.service';
 import { PartnerLabInventoryService } from './partner-lab-inventory.service';
+import { PartnerColdChainService } from './partner-cold-chain.service';
 import {
   AdvanceLabOrderDto,
   CreateLabOrderDto,
@@ -150,6 +151,7 @@ export class PartnerLabOrdersService {
     private readonly notifications: AppNotificationsService,
     private readonly storage: StorageService,
     private readonly audit: AuditLogService,
+    private readonly coldChain: PartnerColdChainService,
     @InjectModel(AuditLog.name)
     private readonly auditModel: Model<AuditLogDocument>,
   ) {}
@@ -550,7 +552,12 @@ export class PartnerLabOrdersService {
       .exec();
     if (!order) return { outcome: 'unknown' as const, barcode };
     const sample = order.samples.find((x) => x.barcode === barcode)!;
+    const transit =
+      (await this.coldChain.vialTransit(actor.provider._id, [barcode])).get(
+        barcode,
+      ) ?? null;
     const view = () => ({
+      transit,
       order: {
         id: order.id,
         orderNo: order.orderNo,
@@ -694,12 +701,20 @@ export class PartnerLabOrdersService {
         };
       }),
     );
+    const transit = await this.coldChain.vialTransit(
+      actor.provider._id,
+      rows.map((r) => r.barcode),
+    );
+    const all = rows.map((r) => ({
+      ...r,
+      transit: transit.get(r.barcode) ?? null,
+    }));
     const filtered =
       q.stage === 'open'
-        ? rows.filter((r) => r.stage !== 'stored' && r.stage !== 'rejected')
+        ? all.filter((r) => r.stage !== 'stored' && r.stage !== 'rejected')
         : q.stage
-          ? rows.filter((r) => r.stage === q.stage)
-          : rows;
+          ? all.filter((r) => r.stage === q.stage)
+          : all;
     return filtered.sort((a, b) => b.lastAt.localeCompare(a.lastAt));
   }
 
