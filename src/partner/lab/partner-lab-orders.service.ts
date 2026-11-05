@@ -43,8 +43,15 @@ import {
   ImagingFile,
   LabOrderDocument,
   LabOrderStatus,
+  LabSample,
   PartnerLabOrder,
 } from './schemas/lab-order.schema';
+import {
+  STAGE_LABEL,
+  SampleStage,
+  labelCode,
+  labelTypes,
+} from './sample-tracking';
 import { LabResult, LabResultDocument } from './schemas/lab-result.schema';
 import { LabCatalogItemDocument } from './schemas/lab-catalog-item.schema';
 import { PartnerLabCatalogService } from './partner-lab-catalog.service';
@@ -54,7 +61,10 @@ import {
   CreateLabOrderDto,
   CriticalCalloutDto,
   LabOrdersQueryDto,
+  PrintLabelsDto,
+  SampleBoardQueryDto,
   ScanSampleDto,
+  TrackScanDto,
   UpdateLabOrderDto,
 } from './dto/lab.dto';
 
@@ -92,6 +102,23 @@ function imagingItem(f: ImagingFile & { _id: Types.ObjectId }) {
     seriesNumber: f.seriesNumber ?? null,
     seriesDescription: f.seriesDescription ?? null,
     instanceNumber: f.instanceNumber ?? null,
+  };
+}
+function sampleView(s: LabSample) {
+  return {
+    barcode: s.barcode,
+    linkedAt: s.linkedAt.toISOString(),
+    linkedByName: s.linkedByName ?? null,
+    verifiedAt: s.verifiedAt?.toISOString() ?? null,
+    verifiedByName: s.verifiedByName ?? null,
+    stage: s.stage ?? 'collected',
+    sampleType: s.sampleType ?? null,
+    events: (s.events ?? []).map((e) => ({
+      at: e.at.toISOString(),
+      stage: e.stage,
+      byName: e.byName ?? null,
+      note: e.note ?? null,
+    })),
   };
 }
 const MAX_SAMPLES = 10;
@@ -435,6 +462,15 @@ export class PartnerLabOrdersService {
     if (own) {
       own.verifiedAt = now;
       own.verifiedByName = actor.member.fullName;
+      if (own.stage === 'labelled') {
+        own.stage = 'collected';
+        own.events.push({
+          at: now,
+          stage: 'collected',
+          byName: actor.member.fullName,
+        });
+        this.collectIfOrdered(actor, order, barcode, now);
+      }
       order.markModified('samples');
       await order.save();
       await this.recordScan(
@@ -467,6 +503,8 @@ export class PartnerLabOrdersService {
       barcode,
       linkedAt: now,
       linkedByName: actor.member.fullName,
+      stage: 'collected',
+      events: [{ at: now, stage: 'collected', byName: actor.member.fullName }],
     });
     if (order.status === LabOrderStatus.ORDERED) {
       this.markCollected(order, now);
@@ -495,6 +533,192 @@ export class PartnerLabOrdersService {
       belongsTo: null,
       order: this.toResponse(order),
     };
+  }
+
+  /**
+   * A scan at a tracking station (collection, reception, analyser, storage,
+   * rejection): finds the vial's order by barcode alone and moves it on.
+   */
+  async trackScan(actor: PartnerActor, dto: TrackScanDto) {
+    const barcode = dto.barcode.trim().toUpperCase();
+    const stage = dto.stage as SampleStage;
+    const note = dto.note?.trim();
+    if (stage === 'rejected' && (!note || note.length < 3))
+      throw new BadRequestException('Say why the vial is rejected');
+    const order = await this.orderModel
+      .findOne({ providerId: actor.provider._id, 'samples.barcode': barcode })
+      .exec();
+    if (!order) return { outcome: 'unknown' as const, barcode };
+    const sample = order.samples.find((x) => x.barcode === barcode)!;
+    const view = () => ({
+      order: {
+        id: order.id,
+        orderNo: order.orderNo,
+        patientName: order.patientName,
+        status: order.status,
+      },
+      sample: sampleView(sample),
+    });
+    const closed = !OPEN.includes(order.status);
+    if (closed && stage !== 'stored')
+      return { outcome: 'closed' as const, barcode, ...view() };
+    if (sample.stage === 'rejected')
+      return { outcome: 'rejected_vial' as const, barcode, ...view() };
+    if (sample.stage === stage)
+      return { outcome: 'already' as const, barcode, ...view() };
+
+    const now = new Date();
+    const by = actor.member.fullName;
+    sample.stage = stage;
+    sample.events.push({ at: now, stage, byName: by, ...(note && { note }) });
+    order.markModified('samples');
+    if (stage === 'collected' || stage === 'received')
+      this.collectIfOrdered(actor, order, barcode, now);
+    if (stage === 'in_analysis') {
+      this.collectIfOrdered(actor, order, barcode, now);
+      if (order.status === LabOrderStatus.SAMPLE_COLLECTED) {
+        order.status = LabOrderStatus.PROCESSING;
+        order.statusHistory.push({
+          at: now,
+          status: LabOrderStatus.PROCESSING,
+          byName: by,
+          note: `Vial ${barcode} loaded for analysis`,
+        });
+      }
+    }
+    if (stage === 'rejected')
+      order.statusHistory.push({
+        at: now,
+        status: order.status,
+        byName: by,
+        note: `Vial ${barcode} rejected — ${note}. Recollect.`,
+      });
+    await order.save();
+    await this.recordScan(
+      actor,
+      order,
+      AuditAction.PARTNER_LAB_SAMPLE_SCAN,
+      barcode,
+      {
+        label: `${order.orderNo} · vial ${barcode} · ${STAGE_LABEL[stage]}`,
+        outcome: stage,
+      },
+    );
+    return { outcome: 'updated' as const, barcode, ...view() };
+  }
+
+  /** Creates barcode labels for an order's vials (one per sample type) and returns every unused label to print. */
+  async printLabels(actor: PartnerActor, id: string, dto: PrintLabelsDto) {
+    const order = await this.load(actor, id);
+    if (!OPEN.includes(order.status))
+      throw new BadRequestException('This order is closed');
+    const wanted = (dto.sampleTypes ?? labelTypes(order.items))
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (order.samples.length + wanted.length > MAX_SAMPLES)
+      throw new BadRequestException(
+        `An order can have up to ${MAX_SAMPLES} vials`,
+      );
+    const now = new Date();
+    let n = order.samples.length;
+    for (const sampleType of wanted) {
+      let barcode = '';
+      do {
+        n += 1;
+        barcode = labelCode(order.orderNo, n);
+      } while (order.samples.some((x) => x.barcode === barcode));
+      order.samples.push({
+        barcode,
+        linkedAt: now,
+        linkedByName: actor.member.fullName,
+        stage: 'labelled',
+        sampleType,
+        events: [{ at: now, stage: 'labelled', byName: actor.member.fullName }],
+      });
+    }
+    if (wanted.length) {
+      order.markModified('samples');
+      await order.save();
+      await this.recordScan(
+        actor,
+        order,
+        AuditAction.PARTNER_LAB_SAMPLE_SCAN,
+        wanted.length === 1
+          ? order.samples[order.samples.length - 1].barcode
+          : `${wanted.length} labels`,
+        {
+          label: `${order.orderNo} · ${wanted.length} label${wanted.length === 1 ? '' : 's'} printed`,
+          outcome: 'labelled',
+        },
+      );
+    }
+    const tests = order.items.map((i) => i.code || i.name).join(', ');
+    return {
+      order: this.toResponse(order),
+      labels: order.samples
+        .filter((x) => x.stage === 'labelled')
+        .map((x) => ({
+          barcode: x.barcode,
+          sampleType: x.sampleType ?? null,
+          orderNo: order.orderNo,
+          patientName: order.patientName,
+          tests,
+          printedAt: x.linkedAt.toISOString(),
+        })),
+    };
+  }
+
+  /** Every vial on open (or recently closed) orders, newest scan first. */
+  async sampleBoard(actor: PartnerActor, q: SampleBoardQueryDto) {
+    const since = new Date(Date.now() - 2 * 86_400_000);
+    const orders = await this.orderModel
+      .find({
+        providerId: actor.provider._id,
+        'samples.0': { $exists: true },
+        $or: [{ status: { $in: OPEN } }, { updatedAt: { $gte: since } }],
+      })
+      .sort({ updatedAt: -1 })
+      .limit(200)
+      .exec();
+    const rows = orders.flatMap((o) =>
+      o.samples.map((x) => {
+        const last = x.events?.[x.events.length - 1];
+        return {
+          ...sampleView(x),
+          orderId: o.id,
+          orderNo: o.orderNo,
+          patientName: o.patientName,
+          orderStatus: o.status,
+          lastAt: (last?.at ?? x.linkedAt).toISOString(),
+          lastBy: last?.byName ?? x.linkedByName ?? null,
+        };
+      }),
+    );
+    const filtered =
+      q.stage === 'open'
+        ? rows.filter((r) => r.stage !== 'stored' && r.stage !== 'rejected')
+        : q.stage
+          ? rows.filter((r) => r.stage === q.stage)
+          : rows;
+    return filtered.sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+  }
+
+  /** The first vial collected or received moves an ordered test on to "sample collected". */
+  private collectIfOrdered(
+    actor: PartnerActor,
+    order: LabOrderDocument,
+    barcode: string,
+    now: Date,
+  ) {
+    if (order.status !== LabOrderStatus.ORDERED) return;
+    this.markCollected(order, now);
+    order.status = LabOrderStatus.SAMPLE_COLLECTED;
+    order.statusHistory.push({
+      at: now,
+      status: LabOrderStatus.SAMPLE_COLLECTED,
+      byName: actor.member.fullName,
+      note: `Vial ${barcode} scanned`,
+    });
   }
 
   /** Records who was told about a critical value, and how (the lab's call-out log). */
@@ -892,7 +1116,9 @@ export class PartnerLabOrdersService {
     await Promise.all(gone.map((f) => this.storage.remove(f.fileRef)));
     await this.record(actor, order, {
       change: 'imaging_removed',
-      ...(gone.length === 1 ? { file: gone[0].fileName } : { files: gone.length }),
+      ...(gone.length === 1
+        ? { file: gone[0].fileName }
+        : { files: gone.length }),
     });
     return this.toResponse(order);
   }
@@ -1083,13 +1309,7 @@ export class PartnerLabOrdersService {
         byName: h.byName ?? null,
         note: h.note ?? null,
       })),
-      samples: (o.samples ?? []).map((s) => ({
-        barcode: s.barcode,
-        linkedAt: s.linkedAt.toISOString(),
-        linkedByName: s.linkedByName ?? null,
-        verifiedAt: s.verifiedAt?.toISOString() ?? null,
-        verifiedByName: s.verifiedByName ?? null,
-      })),
+      samples: (o.samples ?? []).map((s) => sampleView(s)),
       criticalCallouts: (o.criticalCallouts ?? []).map((c) => ({
         at: c.at.toISOString(),
         notifiedName: c.notifiedName,

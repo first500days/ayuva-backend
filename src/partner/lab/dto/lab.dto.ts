@@ -26,6 +26,8 @@ const toBool = ({ value }: { value: unknown }) =>
     ? undefined
     : value === true || value === 'true' || value === '1';
 
+import { SAMPLE_STAGES, STATION_STAGES } from '../sample-tracking';
+
 export class LabParameterDto {
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(80) name: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(30) unit?: string;
@@ -510,4 +512,46 @@ export class ReleaseResultDto {
   @IsString()
   @MaxLength(500)
   checksNote?: string;
+}
+
+export class TrackScanDto {
+  @ApiProperty({ example: 'LAB-20261105-A1B2-1' })
+  @IsString()
+  @Matches(/^[A-Za-z0-9._-]{3,40}$/, {
+    message: 'barcode: 3–40 letters, digits, dots, dashes or underscores',
+  })
+  barcode: string;
+
+  @ApiProperty({ enum: STATION_STAGES })
+  @IsIn(STATION_STAGES)
+  stage: string;
+
+  @ApiPropertyOptional({
+    description: 'Why a vial is rejected (required then)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  note?: string;
+}
+
+export class PrintLabelsDto {
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Sample types to label (one vial each); default: one per sample type the tests need. [] reprints existing labels.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  sampleTypes?: string[];
+}
+
+export class SampleBoardQueryDto {
+  @ApiPropertyOptional({ enum: ['open', ...SAMPLE_STAGES] })
+  @IsOptional()
+  @IsIn(['open', ...SAMPLE_STAGES])
+  stage?: string;
 }

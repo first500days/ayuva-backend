@@ -91,8 +91,11 @@ import {
   CreateLabOrderDto,
   CriticalCalloutDto,
   LabOrdersQueryDto,
+  PrintLabelsDto,
   ReleaseResultDto,
   RemoveImagingDto,
+  SampleBoardQueryDto,
+  TrackScanDto,
   SaveResultDto,
   ScanSampleDto,
   UpdateCatalogItemDto,
@@ -813,6 +816,39 @@ export class PartnerLabController {
   @RequirePerm(Perm.LAB_ORDERS_VIEW)
   listOrders(@PartnerCtx() a: PartnerActor, @Query() q: LabOrdersQueryDto) {
     return this.orders.list(a, q);
+  }
+
+  // Sample tracking (barcode stations)
+  @Post('scan')
+  @HttpCode(200)
+  @RequirePerm(Perm.LAB_ORDERS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Tracking-station scan: finds the vial by barcode and records collected / received / in analysis / stored / rejected',
+  })
+  trackScan(@PartnerCtx() a: PartnerActor, @Body() dto: TrackScanDto) {
+    return this.orders.trackScan(a, dto);
+  }
+
+  @Get('samples')
+  @RequirePerm(Perm.LAB_ORDERS_VIEW)
+  sampleBoard(@PartnerCtx() a: PartnerActor, @Query() q: SampleBoardQueryDto) {
+    return this.orders.sampleBoard(a, q);
+  }
+
+  @Post('orders/:id/labels')
+  @HttpCode(200)
+  @RequirePerm(Perm.LAB_ORDERS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Create barcode labels for the vials an order needs; returns the labels to print',
+  })
+  printLabels(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: PrintLabelsDto,
+  ) {
+    return this.orders.printLabels(a, id, dto);
   }
 
   @Get('orders/:id')

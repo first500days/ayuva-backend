@@ -43,6 +43,16 @@ export class LabOrderEvent {
 }
 export const LabOrderEventSchema = SchemaFactory.createForClass(LabOrderEvent);
 
+/** One scan of a vial at a station (see sample-tracking.ts). */
+@Schema({ _id: false })
+export class SampleEvent {
+  @Prop({ required: true }) at: Date;
+  @Prop({ required: true }) stage: string;
+  @Prop() byName?: string;
+  @Prop() note?: string;
+}
+export const SampleEventSchema = SchemaFactory.createForClass(SampleEvent);
+
 /** A sample tube linked to the order by scanning its barcode label. */
 @Schema({ _id: false })
 export class LabSample {
@@ -52,6 +62,10 @@ export class LabSample {
   // The last scan confirming the tube belongs to this order (e.g. before results are entered).
   @Prop() verifiedAt?: Date;
   @Prop() verifiedByName?: string;
+  /** Where the vial is now: labelled, collected, received, in_analysis, stored or rejected. */
+  @Prop({ default: 'collected' }) stage: string;
+  @Prop() sampleType?: string;
+  @Prop({ type: [SampleEventSchema], default: [] }) events: SampleEvent[];
 }
 export const LabSampleSchema = SchemaFactory.createForClass(LabSample);
 
