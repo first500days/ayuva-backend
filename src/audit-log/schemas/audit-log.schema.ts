@@ -118,6 +118,7 @@ export enum AuditAction {
   PARTNER_OT_UPDATE = 'partner_ot_update',
   PARTNER_LIS_UPDATE = 'partner_lis_update',
   PARTNER_ALLERGY_UPDATE = 'partner_allergy_update',
+  PARTNER_CASE_MESSAGE = 'partner_case_message',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;

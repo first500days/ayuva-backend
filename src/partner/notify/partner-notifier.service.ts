@@ -29,6 +29,7 @@ import {
 import {
   PartnerTrigger,
   TRIGGER_CATALOG,
+  triggerDefinition,
   TriggerDefinition,
   feedTrigger,
 } from './partner-triggers';
@@ -178,9 +179,11 @@ export class PartnerNotifierService {
       .find({ providerId, status: MemberStatus.ACTIVE })
       .exec();
     const explicit = new Set(event.memberIds ?? []);
+    // Direct events (e.g. @mentions) reach only the people named, whatever roles are set.
+    const byRole = !triggerDefinition(event.trigger).directOnly;
     const recipients = members.filter(
       (m) =>
-        (rule.roles.includes(m.role) || explicit.has(m.id)) &&
+        ((byRole && rule.roles.includes(m.role)) || explicit.has(m.id)) &&
         m.userId.toString() !== event.excludeUserId,
     );
     const safe =

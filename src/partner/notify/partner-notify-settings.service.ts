@@ -57,6 +57,7 @@ export class PartnerNotifySettingsService {
           label: def.label,
           description: def.description,
           critical: def.critical,
+          directOnly: def.directOnly ?? false,
         };
       }),
       webhook: {

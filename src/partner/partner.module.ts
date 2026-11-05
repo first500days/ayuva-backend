@@ -159,6 +159,12 @@ import {
   PatientAllergySchema,
 } from './clinical/schemas/patient-allergy.schema';
 import {
+  CaseMessage,
+  CaseMessageSchema,
+} from './clinical/schemas/case-message.schema';
+import { PartnerDiscussionService } from './clinical/partner-discussion.service';
+import { PartnerDiscussionController } from './clinical/partner-discussion.controller';
+import {
   HealthProfile,
   HealthProfileSchema,
 } from '../core/health-profile/schemas/health-profile.schema';
@@ -213,6 +219,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
       { name: OtCase.name, schema: OtCaseSchema },
       { name: LisSample.name, schema: LisSampleSchema },
       { name: PatientAllergy.name, schema: PatientAllergySchema },
+      { name: CaseMessage.name, schema: CaseMessageSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },
     ]),
   ],
@@ -232,6 +239,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerOtController,
     PartnerLisController,
     PartnerSafetyController,
+    PartnerDiscussionController,
   ],
   providers: [
     PartnerContextService,
@@ -266,6 +274,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerLisService,
     PartnerSafetyService,
     PartnerBriefService,
+    PartnerDiscussionService,
   ],
 })
 export class PartnerModule {}

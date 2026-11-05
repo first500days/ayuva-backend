@@ -15,6 +15,7 @@ export enum PartnerTrigger {
   CAPACITY_WARNING = 'capacity_warning',
   STAFF_JOINED = 'staff_joined',
   ER_CRITICAL_ARRIVAL = 'er_critical_arrival',
+  CLINICAL_MENTION = 'clinical_mention',
 }
 
 /**
@@ -54,6 +55,8 @@ export interface TriggerDefinition {
   critical: boolean;
   defaultRoles: StaffRole[];
   defaultChannels: Record<PartnerChannel, boolean>;
+  /** Goes only to the people the event names (e.g. @mentions); role settings don't apply. */
+  directOnly?: boolean;
 }
 
 const ALL_ORGS = [OrgType.CLINIC, OrgType.HOSPITAL, OrgType.DIAGNOSTIC];
@@ -175,6 +178,17 @@ export const TRIGGER_CATALOG: TriggerDefinition[] = [
     critical: true,
     defaultRoles: [R.DOCTOR, R.NURSE],
     defaultChannels: channels(['inApp', 'desktop']),
+  },
+  {
+    trigger: PartnerTrigger.CLINICAL_MENTION,
+    label: 'Mentioned in a case discussion',
+    description:
+      "A colleague @mentions you in a patient's case discussion. Only the people mentioned are told; email and SMS carry no patient details.",
+    orgTypes: ALL_ORGS,
+    critical: false,
+    defaultRoles: [],
+    defaultChannels: channels(['inApp', 'desktop']),
+    directOnly: true,
   },
   {
     trigger: PartnerTrigger.STAFF_JOINED,

@@ -116,6 +116,10 @@ const ACTION_META: Partial<
     category: 'clinical',
     label: 'Updated allergy list',
   },
+  [AuditAction.PARTNER_CASE_MESSAGE]: {
+    category: 'clinical',
+    label: 'Case discussion message',
+  },
   [AuditAction.PARTNER_ER_UPDATE]: {
     category: 'clinical',
     label: 'Updated emergency visit',
