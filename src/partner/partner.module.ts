@@ -178,6 +178,8 @@ import {
 } from './lab/schemas/qc.schema';
 import { PartnerQcService } from './lab/partner-qc.service';
 import { PartnerQcController } from './lab/partner-qc.controller';
+import { PartnerLabRoutesService } from './lab/partner-lab-routes.service';
+import { PartnerLabRoutesController } from './lab/partner-lab-routes.controller';
 import { PartnerDiscussionController } from './clinical/partner-discussion.controller';
 import {
   HealthProfile,
@@ -260,6 +262,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerDiscussionController,
     PartnerColdChainController,
     PartnerQcController,
+    PartnerLabRoutesController,
   ],
   providers: [
     PartnerContextService,
@@ -284,6 +287,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerLabCriticalService,
     PartnerColdChainService,
     PartnerQcService,
+    PartnerLabRoutesService,
     PartnerWardsService,
     PartnerClaimsService,
     PartnerAnalyticsService,

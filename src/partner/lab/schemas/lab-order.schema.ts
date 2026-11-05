@@ -25,12 +25,28 @@ export class LabOrderItem {
 export const LabOrderItemSchema = SchemaFactory.createForClass(LabOrderItem);
 
 @Schema({ _id: false })
+export class VisitEvent {
+  @Prop({ required: true }) at: Date;
+  @Prop({ required: true }) status: string;
+  @Prop() byName?: string;
+  @Prop() note?: string;
+}
+export const VisitEventSchema = SchemaFactory.createForClass(VisitEvent);
+
+@Schema({ _id: false })
 export class LabCollection {
   // 'lab' (walk-in / at centre) | 'home'
   @Prop({ required: true, default: 'lab' }) type: string;
   @Prop({ trim: true }) address?: string;
   @Prop() scheduledAt?: Date;
   @Prop() collectedAt?: Date;
+  /** Home visits: the address pin, the collector's pickup status and the planned stop number. */
+  @Prop() lat?: number;
+  @Prop() lng?: number;
+  @Prop() visitStatus?: string;
+  @Prop() routeSeq?: number;
+  @Prop({ type: [VisitEventSchema], default: undefined })
+  visitEvents?: VisitEvent[];
 }
 export const LabCollectionSchema = SchemaFactory.createForClass(LabCollection);
 

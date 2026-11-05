@@ -41,6 +41,7 @@ import {
 } from '../referrals/schemas/referral.schema';
 import {
   ImagingFile,
+  LabCollection,
   LabOrderDocument,
   LabOrderStatus,
   LabSample,
@@ -352,8 +353,15 @@ export class PartnerLabOrdersService {
       dto.address !== undefined ||
       dto.scheduledAt !== undefined
     ) {
+      const current = this.plainCollection(order);
+      // A new address no longer matches the old pin or route position.
+      if (dto.address !== undefined && dto.address !== current.address) {
+        delete current.lat;
+        delete current.lng;
+        delete current.routeSeq;
+      }
       order.sampleCollection = {
-        ...this.plainCollection(order),
+        ...current,
         ...(dto.collectionType && { type: dto.collectionType }),
         ...(dto.address !== undefined && { address: dto.address }),
         ...(dto.scheduledAt !== undefined && {
@@ -716,6 +724,19 @@ export class PartnerLabOrdersService {
           ? all.filter((r) => r.stage === q.stage)
           : all;
     return filtered.sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+  }
+
+  /** A home visit marked collected moves an ordered test on to "sample collected". */
+  collectFromVisit(actor: PartnerActor, order: LabOrderDocument, now: Date) {
+    if (order.status !== LabOrderStatus.ORDERED) return;
+    this.markCollected(order, now);
+    order.status = LabOrderStatus.SAMPLE_COLLECTED;
+    order.statusHistory.push({
+      at: now,
+      status: LabOrderStatus.SAMPLE_COLLECTED,
+      byName: actor.member.fullName,
+      note: 'Collected at the home visit',
+    });
   }
 
   /** The first vial collected or received moves an ordered test on to "sample collected". */
@@ -1230,14 +1251,11 @@ export class PartnerLabOrdersService {
       .catch(() => undefined);
   }
 
-  private plainCollection(order: LabOrderDocument) {
-    const c = order.sampleCollection ?? { type: 'lab' };
-    return {
-      type: c.type ?? 'lab',
-      address: c.address,
-      scheduledAt: c.scheduledAt,
-      collectedAt: c.collectedAt,
-    };
+  /** Everything already in the collection (pin, visit status…), as a plain object to build on. */
+  private plainCollection(order: LabOrderDocument): LabCollection {
+    const c = (order.toObject() as { sampleCollection?: LabCollection })
+      .sampleCollection;
+    return { ...(c ?? {}), type: c?.type ?? 'lab' };
   }
 
   private async newOrderNo(at: Date): Promise<string> {
@@ -1297,6 +1315,7 @@ export class PartnerLabOrdersService {
         address: o.sampleCollection?.address ?? null,
         scheduledAt: o.sampleCollection?.scheduledAt?.toISOString() ?? null,
         collectedAt: o.sampleCollection?.collectedAt?.toISOString() ?? null,
+        visitStatus: o.sampleCollection?.visitStatus ?? null,
       },
       priority: o.priority,
       status: o.status,
