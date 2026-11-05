@@ -38,6 +38,7 @@ import { MedicalRecordResponseDto } from './dto/medical-record-response.dto';
 import { MedicalRecordDetailResponseDto } from './dto/medical-record-detail-response.dto';
 import { MedicalRecordType } from './schemas/medical-record.schema';
 import { PlainLanguageResponseDto } from './dto/plain-language-response.dto';
+import { AskRecordsDto, AskRecordsResponseDto } from './dto/ask-records.dto';
 import { AuditLogInterceptor } from '../../audit-log/interceptors/audit-log.interceptor';
 import { AuditEvent } from '../../audit-log/decorators/audit-event.decorator';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
@@ -146,6 +147,20 @@ export class RecordsController {
     @Param('id') id: string,
   ): Promise<void> {
     return this.recordsService.remove(user.sub, id);
+  }
+
+  @Post('ask')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '"Ask Your Records": answer a question about your own history (last test, how many, a value from your lab PDFs, or a search). Rule-based.',
+  })
+  @ApiOkResponse({ type: AskRecordsResponseDto })
+  ask(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: AskRecordsDto,
+  ): Promise<AskRecordsResponseDto> {
+    return this.recordsService.ask(user.sub, dto.question);
   }
 
   @Get(':id/plain-language')

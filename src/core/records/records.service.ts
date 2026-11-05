@@ -38,6 +38,32 @@ import {
 } from './document-detect';
 import { readDocumentText } from './document-text';
 import { simplifyDocument, type PlainLanguageGuide } from './plain-language';
+import { parseQuestion } from './ask-records';
+import type { AskRecordsResponseDto } from './dto/ask-records.dto';
+
+const FOLDER_WORDS: Record<MedicalRecordType, [string, string]> = {
+  [MedicalRecordType.LAB_REPORT]: ['lab report', 'lab reports'],
+  [MedicalRecordType.SCAN]: ['scan', 'scans'],
+  [MedicalRecordType.PRESCRIPTION]: ['prescription', 'prescriptions'],
+  [MedicalRecordType.DISCHARGE]: ['discharge summary', 'discharge summaries'],
+  [MedicalRecordType.INSURANCE]: ['insurance document', 'insurance documents'],
+  [MedicalRecordType.VACCINATION]: [
+    'vaccination record',
+    'vaccination records',
+  ],
+  [MedicalRecordType.CERTIFICATE]: ['certificate', 'certificates'],
+};
+// Lab PDFs read to answer a value question, newest first.
+const ASK_MAX_REPORTS = 12;
+
+const dateText = (d: Date) =>
+  d.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  });
+const num = (n: number) => String(Number(n.toFixed(3)));
 
 export const ALLOWED_RECORD_MIME_TYPES = [
   'application/pdf',
@@ -270,6 +296,125 @@ export class RecordsService {
       buffer,
       fileName: record.originalFileName,
       mimeType: record.mimeType ?? guessMimeType(record.originalFileName),
+    };
+  }
+
+  /**
+   * "Ask Your Records": a question about the patient's own history, answered
+   * from their vault by rules — dates, counts, values read from their lab
+   * PDFs, or a search — always with the records it came from.
+   */
+  async ask(userId: string, question: string): Promise<AskRecordsResponseDto> {
+    const intent = parseQuestion(question);
+    const docs = await this.recordModel
+      .find({
+        patientId: new Types.ObjectId(userId),
+        kind: {
+          $nin: [
+            MedicalRecordKind.SIMPLIFICATION,
+            MedicalRecordKind.VISIT_SUMMARY,
+          ],
+        },
+        ...('type' in intent && intent.type && { type: intent.type }),
+      })
+      .exec();
+    const when = (r: MedicalRecordDocument) =>
+      r.recordDate ?? r.uploadedAt ?? new Date(0);
+    docs.sort((a, b) => when(b).getTime() - when(a).getTime());
+    const from = (r: MedicalRecordDocument) =>
+      r.providerName ? ` from ${r.providerName}` : '';
+    const [one, many] =
+      'type' in intent && intent.type
+        ? FOLDER_WORDS[intent.type]
+        : ['record', 'records'];
+
+    if (intent.kind === 'latest' || intent.kind === 'earliest') {
+      const r = intent.kind === 'latest' ? docs[0] : docs[docs.length - 1];
+      return {
+        basis: 'dates',
+        answer: r
+          ? `Your ${intent.kind === 'latest' ? 'most recent' : 'first'} ${one} is "${r.originalFileName}", dated ${dateText(when(r))}${from(r)}.`
+          : `I couldn't find any ${many} in your records.`,
+        records: r ? [this.toResponse(r)] : [],
+      };
+    }
+
+    if (intent.kind === 'count') {
+      const since = intent.since;
+      const hits = since ? docs.filter((r) => when(r) >= since) : docs;
+      return {
+        basis: 'count',
+        answer: `You have ${hits.length} ${hits.length === 1 ? one : many}${since ? ` since ${dateText(since)}` : ''}.`,
+        records: hits.slice(0, 5).map((r) => this.toResponse(r)),
+      };
+    }
+
+    if (intent.kind === 'value') {
+      const labs = docs
+        .filter((r) => r.type === MedicalRecordType.LAB_REPORT)
+        .slice(0, ASK_MAX_REPORTS);
+      const found: { r: MedicalRecordDocument; text: string }[] = [];
+      for (const r of labs) {
+        if (found.length >= 3) break;
+        const text = await this.storageService
+          .read(r.fileRef)
+          .then((buf) =>
+            readDocumentText(
+              buf,
+              r.mimeType ?? guessMimeType(r.originalFileName),
+            ),
+          )
+          .catch(() => '');
+        const v = simplifyDocument(text).values.find((x) =>
+          intent.marker.pattern.test(x.name),
+        );
+        if (!v) continue;
+        found.push({
+          r,
+          text:
+            `${num(v.value)} ${v.unit}`.trim() +
+            ` on ${dateText(when(r))}${from(r)} — ${v.position} the range printed on that report (${num(v.low)}–${num(v.high)})`,
+        });
+      }
+      const label = intent.marker.label;
+      return {
+        basis: 'values',
+        answer: found.length
+          ? `Your ${label} was ${found[0].text}.` +
+            (found.length > 1
+              ? ` Before that: ${found
+                  .slice(1)
+                  .map((f) => f.text.split(' — ')[0])
+                  .join('; ')}.`
+              : '')
+          : labs.length
+            ? `I couldn't find a ${label} value in the text of your lab reports. Photos and scanned reports can't be read yet.`
+            : "You don't have any lab reports in your records yet.",
+        records: found.map((f) => this.toResponse(f.r)),
+      };
+    }
+
+    const words = intent.words;
+    const matches = words.length
+      ? docs.filter((r) =>
+          words.some((w) => {
+            const re = buildSafeRegex(w);
+            return (
+              re.test(r.originalFileName) ||
+              re.test(r.providerName ?? '') ||
+              (r.tags ?? []).some((t) => re.test(t))
+            );
+          }),
+        )
+      : intent.type
+        ? docs
+        : [];
+    return {
+      basis: 'search',
+      answer: matches.length
+        ? `I found ${matches.length} ${matches.length === 1 ? one : many}${words.length ? ` matching "${words.join(' ')}"` : ''}.`
+        : 'I couldn\'t find anything for that. Try "When was my last blood test?" or "What was my HbA1c?"',
+      records: matches.slice(0, 5).map((r) => this.toResponse(r)),
     };
   }
 
