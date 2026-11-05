@@ -90,6 +90,7 @@ import {
   CreateLabOrderDto,
   CriticalCalloutDto,
   LabOrdersQueryDto,
+  ReleaseResultDto,
   RemoveImagingDto,
   SaveResultDto,
   ScanSampleDto,
@@ -913,8 +914,12 @@ export class PartnerLabController {
     summary:
       "Sign off and deliver the report to the patient's vault; alerts the referrer (critical → emergency alert)",
   })
-  release(@PartnerCtx() a: PartnerActor, @Param('id') id: string) {
-    return this.results.release(a, id);
+  release(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: ReleaseResultDto,
+  ) {
+    return this.results.release(a, id, dto);
   }
 
   @Post('orders/:id/report-upload')

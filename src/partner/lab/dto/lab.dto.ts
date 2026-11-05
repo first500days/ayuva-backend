@@ -492,3 +492,22 @@ export class UploadReportDto {
   @MaxLength(2000)
   comments?: string;
 }
+
+export class ReleaseResultDto {
+  @ApiPropertyOptional({
+    description:
+      'Confirms the delta / contamination checks were reviewed; required when any are flagged',
+  })
+  @IsOptional()
+  @IsBoolean()
+  acknowledgeChecks?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'What was done about a possible contamination (required when one is flagged)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  checksNote?: string;
+}

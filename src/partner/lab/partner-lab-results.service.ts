@@ -25,7 +25,17 @@ import {
   resultRows,
 } from './result-changes';
 import { PartnerLabOrdersService } from './partner-lab-orders.service';
-import { SaveResultDto, UploadReportDto } from './dto/lab.dto';
+import {
+  ReleaseResultDto,
+  SaveResultDto,
+  UploadReportDto,
+} from './dto/lab.dto';
+import {
+  HistoryPoint,
+  ResultCheck,
+  numericValue,
+  resultChecks,
+} from './result-checks';
 
 // Caps the log rows one save can write if a whole report is rewritten.
 const MAX_OVERRIDE_ROWS = 100;
@@ -49,6 +59,22 @@ interface ResultTestInput {
 }
 
 /** Report Builder (structured values → PDF) and Report Uploader (file → vault). */
+/** Delta checks look back this far (the longest rule window). */
+const HISTORY_DAYS = 60;
+
+const checkEntry = (c: ResultCheck) => ({
+  kind: c.kind,
+  code: c.code,
+  severity: c.severity,
+  parameters: c.parameters,
+  message: c.message,
+  ...(c.previous && {
+    previousValue: c.previous.value,
+    previousUnit: c.previous.unit ?? undefined,
+    previousAt: c.previous.at,
+  }),
+});
+
 @Injectable()
 export class PartnerLabResultsService {
   constructor(
@@ -106,6 +132,7 @@ export class PartnerLabResultsService {
         'Give a reason for changing a result that was already entered',
       );
     const fresh = freshCritical(rows, existing?.criticalAlerted ?? []);
+    const checks = resultChecks(rows, await this.historyFor(order));
     const result = await this.resultModel.findOneAndUpdate(
       { orderId: order._id },
       {
@@ -122,6 +149,7 @@ export class PartnerLabResultsService {
           criticalAlerted: rows
             .filter((r) => isCriticalFlag(r.flag))
             .map((r) => r.key),
+          checks: checks.map(checkEntry),
           draftedByName: actor.member.fullName,
         },
         $setOnInsert: { status: 'draft' },
@@ -161,7 +189,11 @@ export class PartnerLabResultsService {
   }
 
   /** Pathologist sign-off: renders the PDF into the patient's vault and closes the order. */
-  async release(actor: PartnerActor, orderId: string) {
+  async release(
+    actor: PartnerActor,
+    orderId: string,
+    dto: ReleaseResultDto = {},
+  ) {
     const order = await this.orders.load(actor, orderId);
     this.assertOpen(order);
     const result = await this.resultModel.findOne({ orderId: order._id });
@@ -171,6 +203,21 @@ export class PartnerLabResultsService {
       );
     if (!result.tests.some((t) => t.values.some((v) => v.value?.trim()))) {
       throw new BadRequestException('The report has no values yet');
+    }
+    // Flagged delta / contamination checks need a person to look before sign-off.
+    const checks = result.checks ?? [];
+    const note = dto.checksNote?.trim();
+    if (checks.length && !dto.acknowledgeChecks)
+      throw new BadRequestException(
+        'Review the result checks (unusual change or possible contamination) and confirm before releasing',
+      );
+    if (checks.some((c) => c.severity === 'hold') && (!note || note.length < 5))
+      throw new BadRequestException(
+        'A possible contamination is flagged — say what was done (e.g. recollected and confirmed) before releasing',
+      );
+    if (checks.length) {
+      result.checksAcknowledgedBy = actor.member.fullName;
+      result.checksNote = note || undefined;
     }
     result.set('tests', this.withFlags(result.toObject().tests));
     result.critical = result.tests.some((t) =>
@@ -189,7 +236,15 @@ export class PartnerLabResultsService {
     );
     result.recordId = record._id;
     await result.save();
-    await this.closeOrder(actor, order, record._id, result.critical);
+    await this.closeOrder(
+      actor,
+      order,
+      record._id,
+      result.critical,
+      checks.length
+        ? { checks: checks.map((c) => c.code), checksNote: note ?? null }
+        : {},
+    );
     return this.toResponse(result, order);
   }
 
@@ -472,6 +527,7 @@ export class PartnerLabResultsService {
     order: LabOrderDocument,
     recordId: Types.ObjectId,
     critical: boolean,
+    extra: Record<string, unknown> = {},
   ) {
     const now = new Date();
     order.status = LabOrderStatus.DELIVERED;
@@ -533,9 +589,45 @@ export class PartnerLabResultsService {
         patientId: order.patientId.toString(),
         label: order.orderNo,
         critical,
+        ...extra,
       },
       ipAddress: actor.ip,
     });
+  }
+
+  /** The patient's earlier released results here (for delta checks), newest first. */
+  private async historyFor(order: LabOrderDocument): Promise<HistoryPoint[]> {
+    const since = new Date(Date.now() - HISTORY_DAYS * 86_400_000);
+    const earlier = await this.resultModel
+      .find({
+        providerId: order.providerId,
+        patientId: order.patientId,
+        orderId: { $ne: order._id },
+        status: 'released',
+        releasedAt: { $gte: since },
+      })
+      .select('tests releasedAt')
+      .sort({ releasedAt: -1 })
+      .limit(30)
+      .lean()
+      .exec();
+    return earlier.flatMap((r) =>
+      r.tests.flatMap((t) =>
+        t.values.flatMap((v) => {
+          const value = numericValue(v.value);
+          return value === null
+            ? []
+            : [
+                {
+                  name: v.name,
+                  unit: v.unit ?? null,
+                  value,
+                  at: r.releasedAt ?? new Date(0),
+                },
+              ];
+        }),
+      ),
+    );
   }
 
   toResponse(r: LabResultDocument, order: LabOrderDocument) {
@@ -560,6 +652,23 @@ export class PartnerLabResultsService {
         })),
       })),
       draftedByName: r.draftedByName ?? null,
+      checks: (r.checks ?? []).map((c) => ({
+        kind: c.kind,
+        code: c.code,
+        severity: c.severity,
+        parameters: c.parameters,
+        message: c.message,
+        previous:
+          c.previousValue !== undefined && c.previousAt
+            ? {
+                value: c.previousValue,
+                unit: c.previousUnit ?? null,
+                at: c.previousAt.toISOString(),
+              }
+            : null,
+      })),
+      checksAcknowledgedBy: r.checksAcknowledgedBy ?? null,
+      checksNote: r.checksNote ?? null,
       releasedByName: r.releasedByName ?? null,
       releasedAt: r.releasedAt?.toISOString() ?? null,
       recordId: r.recordId?.toString() ?? null,

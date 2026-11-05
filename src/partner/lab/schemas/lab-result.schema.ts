@@ -41,6 +41,20 @@ export type LabResultDocument = HydratedDocument<LabResult>;
  * the patient's vault. Released values feed lab-trend charts on the Patient
  * Timeline for doctors the patient has shared that report with.
  */
+@Schema({ _id: false })
+export class ResultCheckEntry {
+  @Prop({ required: true }) kind: string;
+  @Prop({ required: true }) code: string;
+  @Prop({ required: true }) severity: string;
+  @Prop({ type: [String], default: [] }) parameters: string[];
+  @Prop({ required: true }) message: string;
+  @Prop() previousValue?: number;
+  @Prop() previousUnit?: string;
+  @Prop() previousAt?: Date;
+}
+export const ResultCheckEntrySchema =
+  SchemaFactory.createForClass(ResultCheckEntry);
+
 @Schema({ timestamps: true, collection: 'partner_lab_results' })
 export class LabResult {
   @Prop({
@@ -84,6 +98,12 @@ export class LabResult {
   // so each one alerts once as it's entered rather than on every save.
   @Prop({ type: [String], default: [] })
   criticalAlerted: string[];
+
+  /** Delta and contamination checks from the last save (see result-checks.ts). */
+  @Prop({ type: [ResultCheckEntrySchema], default: [] })
+  checks: ResultCheckEntry[];
+  @Prop() checksAcknowledgedBy?: string;
+  @Prop() checksNote?: string;
 
   @Prop() draftedByName?: string;
   @Prop() releasedByName?: string;
