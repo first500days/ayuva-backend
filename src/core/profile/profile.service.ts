@@ -107,6 +107,7 @@ export class ProfileService {
           gender: dto.gender,
           conditions: dto.conditions,
           allergies: dto.allergies,
+          ...(dto.bloodGroup !== undefined && { bloodGroup: dto.bloodGroup }),
         },
       },
       { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true },

@@ -17,6 +17,9 @@ export class HealthProfileResponseDto {
 
   @ApiProperty({ type: [String], example: ['Penicillin', 'Peanuts'] })
   allergies: string[];
+
+  @ApiProperty({ type: String, nullable: true, example: 'B+' })
+  bloodGroup: string | null;
 }
 
 export class EmergencyContactResponseDto {

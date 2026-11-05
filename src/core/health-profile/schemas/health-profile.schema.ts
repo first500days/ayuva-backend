@@ -31,6 +31,10 @@ export class HealthProfile {
 
   @Prop({ type: [String], default: [] })
   allergies: string[];
+
+  // Shown to first responders on the app's SOS screen. Unset until the patient says.
+  @Prop()
+  bloodGroup?: string;
 }
 
 export const HealthProfileSchema = SchemaFactory.createForClass(HealthProfile);

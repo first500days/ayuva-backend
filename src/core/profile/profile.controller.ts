@@ -84,6 +84,7 @@ export class ProfileController {
       gender: profile?.gender ?? '',
       conditions: profile?.conditions ?? [],
       allergies: profile?.allergies ?? [],
+      bloodGroup: profile?.bloodGroup || null,
     };
   }
 
@@ -104,6 +105,7 @@ export class ProfileController {
       gender: profile.gender,
       conditions: profile.conditions,
       allergies: profile.allergies,
+      bloodGroup: profile.bloodGroup || null,
     };
   }
 

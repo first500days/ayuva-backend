@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
   IsArray,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -10,6 +11,17 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { IsBirthDate } from '../../../common/validators/is-birth-date.decorator';
+
+export const BLOOD_GROUPS = [
+  'A+',
+  'A-',
+  'B+',
+  'B-',
+  'AB+',
+  'AB-',
+  'O+',
+  'O-',
+] as const;
 
 export class CreateHealthProfileDto {
   // Required unless an older app build sends only `age`. The server derives
@@ -43,4 +55,12 @@ export class CreateHealthProfileDto {
   @IsString({ each: true })
   @ArrayMaxSize(50)
   allergies: string[];
+
+  // Optional so older app builds, which don't send it, never wipe it. "" clears it.
+  @ApiPropertyOptional({ enum: [...BLOOD_GROUPS, ''], example: 'B+' })
+  @IsOptional()
+  @IsIn([...BLOOD_GROUPS, ''], {
+    message: 'Choose a blood group like B+ or O-',
+  })
+  bloodGroup?: string;
 }
