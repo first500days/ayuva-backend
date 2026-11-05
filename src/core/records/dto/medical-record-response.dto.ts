@@ -1,3 +1,4 @@
+import type { DocumentDetection } from '../document-detect';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   MedicalRecordKind,
@@ -32,6 +33,20 @@ export class MedicalRecordResponseDto {
 
   @ApiPropertyOptional({ example: 'Dr. Mehta' })
   providerName?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Upload only: the folder, clinical date and provider read from the document ' +
+      '(its text, or failing that its file name), each with where it came from. ' +
+      'Rule-based; the patient confirms or corrects them.',
+    example: {
+      textRead: true,
+      type: { value: 'lab_report', from: 'text' },
+      recordDate: { value: '2026-10-12', from: 'text' },
+      providerName: { value: 'Thyrocare', from: 'text' },
+    },
+  })
+  detected?: DocumentDetection;
 
   @ApiPropertyOptional({
     description: 'Source record of a simplification or visit summary',

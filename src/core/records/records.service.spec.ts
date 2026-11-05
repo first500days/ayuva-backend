@@ -1,6 +1,11 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { RecordsService } from './records.service';
+
+// Upload reads a PDF's text with pdf.js, an ES module Jest can't load; no text here.
+jest.mock('./document-text', () => ({
+  readDocumentText: jest.fn().mockResolvedValue(''),
+}));
 import {
   MedicalRecordKind,
   MedicalRecordType,

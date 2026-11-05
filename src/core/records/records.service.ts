@@ -31,6 +31,12 @@ import { UploadRecordDto } from './dto/upload-record.dto';
 import { UpdateRecordDto } from './dto/update-record.dto';
 import { QueryRecordsDto } from './dto/query-records.dto';
 import { buildSafeRegex } from '../../common/utils/regex.util';
+import {
+  detectDocument,
+  FILENAME_TYPE_PATTERNS,
+  type DocumentDetection,
+} from './document-detect';
+import { readDocumentText } from './document-text';
 
 export const ALLOWED_RECORD_MIME_TYPES = [
   'application/pdf',
@@ -43,24 +49,8 @@ export const ALLOWED_RECORD_MIME_TYPES = [
 // Priority-ordered filename heuristics. Phase 3 replaces this with real
 // OCR/AI-assisted classification (PRD FR-8.3) — this rule-based pass is the
 // permanent fallback/first-pass, not a placeholder to be deleted outright.
-const CATEGORY_PATTERNS: Array<[RegExp, MedicalRecordType]> = [
-  [/discharge|summary/i, MedicalRecordType.DISCHARGE],
-  [
-    /\b(rx|prescription|medication|pharmacy)\b/i,
-    MedicalRecordType.PRESCRIPTION,
-  ],
-  [/vaccin|immuni[sz]ation|booster/i, MedicalRecordType.VACCINATION],
-  [/insurance|policy|claim|tpa/i, MedicalRecordType.INSURANCE],
-  [/certificate|fitness|sick[-_ ]?leave/i, MedicalRecordType.CERTIFICATE],
-  [
-    /blood|cbc|lipid|glucose|hba1c|panel|h(a)?ematology|ecg|ekg/i,
-    MedicalRecordType.LAB_REPORT,
-  ],
-  [
-    /x-?ray|mri|ct[-_ ]?scan|ultrasound|echo|scan|imaging|radiology/i,
-    MedicalRecordType.SCAN,
-  ],
-];
+// File-name folder hints live with the rest of the document reading.
+const CATEGORY_PATTERNS = FILENAME_TYPE_PATTERNS;
 
 @Injectable()
 export class RecordsService {
@@ -104,13 +94,43 @@ export class RecordsService {
       await this.getOwnedAppointmentOrThrow(userId, options.appointmentId);
     }
 
+    // A patient's own document: read its folder, date and provider from the
+    // text it carries (and its file name) for whatever they didn't say.
+    const detection =
+      kind === MedicalRecordKind.ORIGINAL &&
+      (!options.type || !options.recordDate || !options.providerName)
+        ? detectDocument({
+            text: await readDocumentText(file.buffer, file.mimetype),
+            fileName: file.originalname,
+          })
+        : undefined;
+    const detected: DocumentDetection | undefined = detection && {
+      textRead: detection.textRead,
+      ...(!options.type && detection.type && { type: detection.type }),
+      ...(!options.recordDate &&
+        detection.recordDate && { recordDate: detection.recordDate }),
+      ...(!options.providerName &&
+        detection.providerName && { providerName: detection.providerName }),
+    };
+
     // A saved explanation lives in its source's folder, next to it.
     const type =
       options.type ??
       source?.type ??
       (kind === MedicalRecordKind.VISIT_SUMMARY
         ? MedicalRecordType.PRESCRIPTION
-        : this.categorize(file.originalname, file.mimetype));
+        : (detected?.type?.value ??
+          this.categorize(file.originalname, file.mimetype)));
+    const providerName =
+      options.providerName ??
+      source?.providerName ??
+      detected?.providerName?.value;
+    const recordDate = options.recordDate
+      ? new Date(options.recordDate)
+      : (source?.recordDate ??
+        (detected?.recordDate
+          ? new Date(detected.recordDate.value)
+          : undefined));
 
     // The device filename only feeds the folder guess above and the patient's
     // own vault title; the stored key and every other screen get a system name.
@@ -135,14 +155,8 @@ export class RecordsService {
       ...(options.appointmentId && {
         attachedAppointmentId: new Types.ObjectId(options.appointmentId),
       }),
-      ...((options.providerName ?? source?.providerName) && {
-        providerName: options.providerName ?? source?.providerName,
-      }),
-      ...((options.recordDate || source?.recordDate) && {
-        recordDate: options.recordDate
-          ? new Date(options.recordDate)
-          : source?.recordDate,
-      }),
+      ...(providerName && { providerName }),
+      ...(recordDate && { recordDate }),
     });
 
     // Push text can show on a lock screen, so it names the system file, not the device one.
@@ -152,7 +166,8 @@ export class RecordsService {
       fileName: systemName,
     });
 
-    return this.toResponse(record);
+    // `detected` tells the app what was read, so the patient can confirm or correct it.
+    return { ...this.toResponse(record), ...(detected && { detected }) };
   }
 
   /** U08 vault listing: folder, free-text (name/tag/provider), tag, kind and clinical-date filters. */
