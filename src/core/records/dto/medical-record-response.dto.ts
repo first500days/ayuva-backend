@@ -34,6 +34,14 @@ export class MedicalRecordResponseDto {
   @ApiPropertyOptional({ example: 'Dr. Mehta' })
   providerName?: string;
 
+  @ApiProperty({
+    enum: ['uploaded', 'provider'],
+    description:
+      'uploaded: the patient filed it; provider: a lab or clinic delivered it. ' +
+      'providerName alone is not enough — a patient upload names the lab on the report.',
+  })
+  source: 'uploaded' | 'provider';
+
   @ApiPropertyOptional({
     description:
       'Upload only: the folder, clinical date and provider read from the document ' +

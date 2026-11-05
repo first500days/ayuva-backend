@@ -157,6 +157,7 @@ export class RecordsService {
       }),
       ...(providerName && { providerName }),
       ...(recordDate && { recordDate }),
+      patientUploaded: true,
     });
 
     // Push text can show on a lock screen, so it names the system file, not the device one.
@@ -387,6 +388,11 @@ export class RecordsService {
       recordDate: record.recordDate?.toISOString() ?? uploadedAt,
       tags: record.tags ?? [],
       providerName: record.providerName,
+      // Older patient uploads had no provider name; deliveries always carry one.
+      source:
+        record.patientUploaded || !record.providerName
+          ? 'uploaded'
+          : 'provider',
       derivedFromRecordId: record.derivedFromRecordId?.toString(),
       attachedAppointmentId: record.attachedAppointmentId?.toString(),
     };

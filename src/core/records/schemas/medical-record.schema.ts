@@ -241,6 +241,12 @@ export class MedicalRecord {
   @Prop({ trim: true })
   providerName?: string;
 
+  // The patient filed it themselves (POST /records), as opposed to a lab or
+  // clinic delivering it. A patient upload can carry a providerName too — the
+  // lab named on the report — so that field alone can't tell them apart.
+  @Prop()
+  patientUploaded?: boolean;
+
   @Prop({ type: [String], default: [] })
   tags: string[];
 
