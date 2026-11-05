@@ -221,6 +221,37 @@ describe('ReminderProcessor (BullMQ consumer)', () => {
       expect(mail.sendMail).not.toHaveBeenCalled();
     });
 
+    it('skips dose pushes when the phone schedules them itself, but keeps refill alerts', async () => {
+      const { deviceTokenModel, fcmSender } = buildProcessor({
+        email: 'pat@example.com',
+        notificationPrefs: { medicationRemindersOnDevice: true },
+      });
+      withDevice(deviceTokenModel);
+
+      await capturedProcessor!({
+        data: {
+          type: ReminderJobName.MEDICATION,
+          medicationId: 'med-1',
+          userId: 'user-1',
+          name: 'Amlodipine',
+          dosage: '5 mg',
+          scheduleTime: '08:00',
+        },
+      });
+      expect(fcmSender.send).not.toHaveBeenCalled();
+
+      await capturedProcessor!({
+        data: {
+          type: ReminderJobName.REFILL,
+          medicationId: 'med-1',
+          userId: 'user-1',
+          name: 'Amlodipine',
+          suppliesRemainingDays: 3,
+        },
+      });
+      expect(fcmSender.send).toHaveBeenCalled();
+    });
+
     it('still emails a reminder when push is off — channels are independent', async () => {
       const { deviceTokenModel, fcmSender, mail } = buildProcessor({
         email: 'pat@example.com',

@@ -55,6 +55,12 @@ export class NotificationPrefs {
   @Prop({ default: false }) marketing: boolean;
 
   @Prop({ default: true }) hideSensitiveOnLockScreen: boolean;
+
+  /**
+   * The app schedules dose reminders on the phone itself (they fire offline
+   * and cover family members); the server then skips its own dose pushes.
+   */
+  @Prop({ default: false }) medicationRemindersOnDevice: boolean;
 }
 export const NotificationPrefsSchema =
   SchemaFactory.createForClass(NotificationPrefs);

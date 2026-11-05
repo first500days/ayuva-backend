@@ -29,6 +29,7 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPreferencesDto = {
   family: true,
   marketing: false,
   hideSensitiveOnLockScreen: true,
+  medicationRemindersOnDevice: false,
 };
 
 @Injectable()

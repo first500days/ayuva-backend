@@ -135,6 +135,10 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
       this.logger.debug(`User ${data.userId} muted ${routing.pref}; skipping ${data.type}`);
       return;
     }
+    // Dose reminders already fire from the phone itself; a push too would double them.
+    if (data.type === ReminderJobName.MEDICATION && prefs.medicationRemindersOnDevice) {
+      return;
+    }
 
     await Promise.all([
       prefs.push ? this.sendPush(data.userId, payload, prefs) : undefined,

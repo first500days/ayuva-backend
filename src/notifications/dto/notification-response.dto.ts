@@ -73,6 +73,12 @@ export class NotificationPreferencesDto {
   @ApiProperty({ description: 'When on, lock-screen previews use lockScreenText only' })
   @IsBoolean()
   hideSensitiveOnLockScreen: boolean;
+  @ApiProperty({
+    description:
+      'The app schedules dose reminders on the phone; the server skips its dose pushes',
+  })
+  @IsBoolean()
+  medicationRemindersOnDevice: boolean;
 }
 
 /** PUT body: every field optional so older app builds (no channel switches) keep working. */
@@ -87,4 +93,5 @@ export class UpdateNotificationPreferencesDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() family?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() marketing?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() hideSensitiveOnLockScreen?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() medicationRemindersOnDevice?: boolean;
 }
