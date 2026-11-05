@@ -22,6 +22,11 @@ import { LabOrderDocument } from '../lab/schemas/lab-order.schema';
 import { LabResultDocument } from '../lab/schemas/lab-result.schema';
 import { AdmissionDocument } from '../hospital/schemas/admission.schema';
 import { ReferralDocument } from '../referrals/schemas/referral.schema';
+import {
+  SKETCH_H,
+  SKETCH_TEMPLATES,
+  SKETCH_W,
+} from '../clinical/sketch-templates';
 
 export interface VaultDelivery {
   patientId: Types.ObjectId | string;
@@ -251,6 +256,32 @@ export class PartnerDocumentsService {
     block('Plan', s.plan);
     block('Advice', s.advice);
     block('Follow-up', s.followUp);
+    if (note.sketches?.length) {
+      pdf.heading('Sketches');
+      pdf.drawings(
+        note.sketches.map((k, i) => {
+          const t = SKETCH_TEMPLATES.find((x) => x.id === k.template);
+          return {
+            caption: k.caption || `${t?.label ?? 'Sketch'} (${i + 1})`,
+            paths: [
+              ...(t?.lines ?? []).map((l) => ({
+                ...l,
+                color: OUTLINE,
+                width: 1.4,
+              })),
+              ...k.strokes.map((st) => ({
+                points: st.p,
+                color: hexRgb(st.c),
+                width: st.w,
+              })),
+            ],
+            labels: t?.labels ?? [],
+          };
+        }),
+        SKETCH_W,
+        SKETCH_H,
+      );
+    }
     pdf.signature([note.authorName, `Signed ${fmtDateTime(note.signedAt)}`]);
     return pdf
       .footer(
@@ -413,6 +444,13 @@ export class PartnerDocumentsService {
   private address(p: ProviderDocument): string {
     return p.locations?.[0]?.address ?? '';
   }
+}
+
+const OUTLINE: Rgb = [0.6, 0.65, 0.68];
+
+function hexRgb(hex: string): Rgb {
+  const v = /^#?([0-9a-f]{6})$/i.exec(hex)?.[1] ?? '111827';
+  return [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16) / 255) as Rgb;
 }
 
 const VITAL_LABELS: Record<string, string> = {

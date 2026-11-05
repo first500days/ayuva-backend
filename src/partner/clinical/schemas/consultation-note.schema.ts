@@ -31,6 +31,26 @@ export class NoteVitals {
 }
 export const NoteVitalsSchema = SchemaFactory.createForClass(NoteVitals);
 
+/** One pen stroke: colour, width and a flat [x0, y0, x1, y1, …] polyline in the 400 × 500 sketch space. */
+@Schema({ _id: false })
+export class SketchStroke {
+  @Prop({ required: true }) c: string;
+  @Prop({ required: true }) w: number;
+  @Prop({ type: [Number], default: [] }) p: number[];
+}
+export const SketchStrokeSchema = SchemaFactory.createForClass(SketchStroke);
+
+/** A drawing on an anatomical outline (or blank), kept with the note and printed on the visit summary. */
+@Schema()
+export class NoteSketch {
+  _id?: Types.ObjectId;
+  @Prop({ required: true }) template: string;
+  @Prop({ default: '' }) caption: string;
+  @Prop({ type: [SketchStrokeSchema], default: [] }) strokes: SketchStroke[];
+  @Prop() updatedAt?: Date;
+}
+export const NoteSketchSchema = SchemaFactory.createForClass(NoteSketch);
+
 export type ConsultationNoteDocument = HydratedDocument<ConsultationNote>;
 
 /**
@@ -94,6 +114,9 @@ export class ConsultationNote {
 
   @Prop({ type: [CodedDiagnosisSchema], default: [] })
   diagnoses: CodedDiagnosis[];
+
+  @Prop({ type: [NoteSketchSchema], default: [] })
+  sketches: NoteSketch[];
 
   // 'mock' | 'real' when the AYUVA Scribe structured it, 'manual' when typed straight into sections.
   @Prop({ type: String, enum: ['mock', 'real', 'manual'], default: 'manual' })

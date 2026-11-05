@@ -3,6 +3,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   Equals,
   IsArray,
   IsBoolean,
@@ -436,4 +437,44 @@ export class PrescriptionsQueryDto {
   @Transform(toBool)
   @IsBoolean()
   mine?: boolean;
+}
+
+export const SKETCH_TEMPLATE_IDS = ['body-front', 'body-back', 'head', 'blank'];
+export const SKETCH_COLORS = ['#dc2626', '#2563eb', '#111827', '#16a34a'];
+export const SKETCH_WIDTHS = [2, 4, 8];
+
+export class SketchStrokeDto {
+  @ApiProperty({ enum: SKETCH_COLORS }) @IsIn(SKETCH_COLORS) c: string;
+  @ApiProperty({ enum: SKETCH_WIDTHS }) @IsIn(SKETCH_WIDTHS) w: number;
+
+  @ApiProperty({
+    type: [Number],
+    description: 'Flat [x0, y0, x1, y1, …] in the 400 × 500 sketch space',
+  })
+  @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(4000)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(500, { each: true })
+  p: number[];
+}
+
+export class SaveSketchDto {
+  @ApiProperty({ enum: SKETCH_TEMPLATE_IDS })
+  @IsIn(SKETCH_TEMPLATE_IDS)
+  template: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  caption?: string;
+
+  @ApiProperty({ type: [SketchStrokeDto] })
+  @IsArray()
+  @ArrayMaxSize(300)
+  @ValidateNested({ each: true })
+  @Type(() => SketchStrokeDto)
+  strokes: SketchStrokeDto[];
 }

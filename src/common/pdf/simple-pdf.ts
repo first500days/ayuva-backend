@@ -335,6 +335,75 @@ export class PdfBuilder {
     return this;
   }
 
+  /**
+   * Line drawings (clinical sketches), two to a row, each scaled into a frame
+   * with its caption underneath. Paths are polylines in a viewW × viewH space.
+   */
+  drawings(
+    items: {
+      caption: string;
+      paths: {
+        points: number[];
+        color: Rgb;
+        width: number;
+        dashed?: boolean;
+        closed?: boolean;
+      }[];
+      labels?: { x: number; y: number; text: string }[];
+    }[],
+    viewW: number,
+    viewH: number,
+    boxH = 230,
+  ) {
+    const gap = 16;
+    const cellW = (this.contentWidth - gap) / 2;
+    const scale = Math.min(cellW / viewW, boxH / viewH);
+    const drawW = viewW * scale;
+    for (let i = 0; i < items.length; i += 2) {
+      this.ensure(boxH + 26);
+      const top = this.y;
+      const row = items.slice(i, i + 2);
+      row.forEach((item, j) => {
+        const x0 = this.margin + j * (cellW + gap);
+        const ox = x0 + (cellW - drawW) / 2;
+        const X = (x: number) => ox + x * scale;
+        const Y = (y: number) => PAGE_H - top - y * scale;
+        this.raw(
+          `q ${rgb(COLORS.rule)} RG 0.6 w ${n(x0)} ${n(PAGE_H - top - boxH)} ${n(cellW)} ${n(boxH)} re S Q`,
+        );
+        for (const path of item.paths) {
+          const pts = path.points;
+          if (pts.length < 2) continue;
+          // A single point (a tap) still shows, as a dot.
+          const xs = pts.length === 2 ? [...pts, pts[0] + 0.01, pts[1]] : pts;
+          const seg = [`${n(X(xs[0]))} ${n(Y(xs[1]))} m`];
+          for (let k = 2; k + 1 < xs.length; k += 2)
+            seg.push(`${n(X(xs[k]))} ${n(Y(xs[k + 1]))} l`);
+          this.raw(
+            `q ${rgb(path.color)} RG ${n(Math.max(0.4, path.width * scale))} w 1 J 1 j ${path.dashed ? '[3 3] 0 d ' : ''}${seg.join(' ')}${path.closed ? ' h' : ''} S Q`,
+          );
+        }
+        for (const l of item.labels ?? [])
+          this.raw(
+            this.textOp(l.text, X(l.x), Y(l.y), 9, 'bold', COLORS.muted),
+          );
+        if (item.caption)
+          this.raw(
+            this.textOp(
+              this.fit(item.caption, cellW, 9, 'regular'),
+              x0,
+              PAGE_H - top - boxH - 12,
+              9,
+              'regular',
+              COLORS.ink,
+            ),
+          );
+      });
+      this.y = top + boxH + 22;
+    }
+    return this;
+  }
+
   space(pts: number) {
     this.y += pts;
     return this;

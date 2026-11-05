@@ -63,6 +63,7 @@ import {
   NotesQueryDto,
   PatientsQueryDto,
   PrescriptionsQueryDto,
+  SaveSketchDto,
   ScribeStructureDto,
   SignPrescriptionDto,
   UpdateNoteDto,
@@ -490,6 +491,41 @@ export class PartnerClinicalController {
   @RequirePerm(Perm.CLINICAL_WRITE)
   signNote(@PartnerCtx() a: PartnerActor, @Param('id') id: string) {
     return this.notes.sign(a, id);
+  }
+
+  @Post('notes/:id/sketches')
+  @RequirePerm(Perm.CLINICAL_WRITE)
+  @ApiOperation({
+    summary:
+      'Add a drawing (anatomical outline or blank) to a draft note; printed on the visit summary',
+  })
+  addSketch(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: SaveSketchDto,
+  ) {
+    return this.notes.addSketch(a, id, dto);
+  }
+
+  @Put('notes/:id/sketches/:sketchId')
+  @RequirePerm(Perm.CLINICAL_WRITE)
+  replaceSketch(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Param('sketchId') sketchId: string,
+    @Body() dto: SaveSketchDto,
+  ) {
+    return this.notes.replaceSketch(a, id, sketchId, dto);
+  }
+
+  @Delete('notes/:id/sketches/:sketchId')
+  @RequirePerm(Perm.CLINICAL_WRITE)
+  removeSketch(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Param('sketchId') sketchId: string,
+  ) {
+    return this.notes.removeSketch(a, id, sketchId);
   }
 
   @Post('notes/:id/share')
@@ -956,7 +992,9 @@ export class PartnerLabController {
   @Post('orders/:id/imaging/remove')
   @HttpCode(200)
   @RequirePerm(Perm.LAB_ORDERS_MANAGE)
-  @ApiOperation({ summary: 'Remove several imaging files (e.g. a whole series)' })
+  @ApiOperation({
+    summary: 'Remove several imaging files (e.g. a whole series)',
+  })
   removeImagingMany(
     @PartnerCtx() a: PartnerActor,
     @Param('id') id: string,

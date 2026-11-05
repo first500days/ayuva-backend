@@ -28,12 +28,17 @@ import {
 import {
   CreateNoteDto,
   NotesQueryDto,
+  SaveSketchDto,
   UpdateNoteDto,
 } from './dto/clinical.dto';
 import { PartnerPatientsService } from './partner-patients.service';
 import { resolveDiagnosisCodes, searchDiagnosisCodes } from './diagnosis-codes';
 
 /** Clinical Notes & AYUVA Scribe. */
+/** Sketches per note, and x/y numbers per sketch (≈ 4000 points). */
+export const MAX_SKETCHES = 4;
+const MAX_SKETCH_NUMBERS = 8000;
+
 @Injectable()
 export class PartnerNotesService {
   constructor(
@@ -94,13 +99,16 @@ export class PartnerNotesService {
       .limit(200)
       .exec();
     // Another clinician's draft is theirs alone until signed.
-    return notes
-      .filter(
-        (n) =>
-          n.status === NoteStatus.SIGNED ||
-          n.authorUserId.toString() === actor.userId,
-      )
-      .map((n) => this.toResponse(n));
+    return (
+      notes
+        .filter(
+          (n) =>
+            n.status === NoteStatus.SIGNED ||
+            n.authorUserId.toString() === actor.userId,
+        )
+        // The list leaves out sketch strokes; opening a note loads them.
+        .map((n) => this.toResponse(n, false))
+    );
   }
 
   async get(actor: PartnerActor, id: string) {
@@ -156,6 +164,65 @@ export class PartnerNotesService {
     return {
       ambientConsentAt: new Date(),
       ambientConsentBy: actor.member.fullName,
+    };
+  }
+
+  async addSketch(actor: PartnerActor, id: string, dto: SaveSketchDto) {
+    const note = await this.loadOwnDraft(actor, id);
+    if ((note.sketches ?? []).length >= MAX_SKETCHES)
+      throw new BadRequestException(
+        `A note holds up to ${MAX_SKETCHES} sketches`,
+      );
+    note.sketches.push(this.sketchFrom(dto));
+    await note.save();
+    return this.toResponse(note);
+  }
+
+  async replaceSketch(
+    actor: PartnerActor,
+    id: string,
+    sketchId: string,
+    dto: SaveSketchDto,
+  ) {
+    const note = await this.loadOwnDraft(actor, id);
+    const sketch = (note.sketches ?? []).find(
+      (k) => k._id?.toString() === sketchId,
+    );
+    if (!sketch) throw new NotFoundException('Sketch not found');
+    Object.assign(sketch, this.sketchFrom(dto));
+    note.markModified('sketches');
+    await note.save();
+    return this.toResponse(note);
+  }
+
+  async removeSketch(actor: PartnerActor, id: string, sketchId: string) {
+    const note = await this.loadOwnDraft(actor, id);
+    const kept = (note.sketches ?? []).filter(
+      (k) => k._id?.toString() !== sketchId,
+    );
+    if (kept.length === (note.sketches ?? []).length)
+      throw new NotFoundException('Sketch not found');
+    note.set('sketches', kept);
+    await note.save();
+    return this.toResponse(note);
+  }
+
+  private sketchFrom(dto: SaveSketchDto) {
+    let numbers = 0;
+    for (const stroke of dto.strokes) {
+      if (stroke.p.length % 2)
+        throw new BadRequestException('Each stroke needs x, y pairs');
+      numbers += stroke.p.length;
+    }
+    if (numbers > MAX_SKETCH_NUMBERS)
+      throw new BadRequestException(
+        'This sketch is too detailed to save. Undo a few strokes and try again.',
+      );
+    return {
+      template: dto.template,
+      caption: dto.caption?.trim() ?? '',
+      strokes: dto.strokes.map(({ c, w, p }) => ({ c, w, p })),
+      updatedAt: new Date(),
     };
   }
 
@@ -326,7 +393,7 @@ export class PartnerNotesService {
     });
   }
 
-  toResponse(n: ConsultationNoteDocument) {
+  toResponse(n: ConsultationNoteDocument, withSketches = true) {
     const v = (n.vitals ?? {}) as Record<string, string | undefined>;
     return {
       id: n.id,
@@ -358,6 +425,20 @@ export class PartnerNotesService {
       signedAt: n.signedAt?.toISOString() ?? null,
       sharedWithPatientAt: n.sharedWithPatientAt?.toISOString() ?? null,
       prescriptionId: n.prescriptionId?.toString() ?? null,
+      sketchCount: (n.sketches ?? []).length,
+      sketches: withSketches
+        ? (n.sketches ?? []).map((k) => ({
+            id: k._id?.toString() ?? '',
+            template: k.template,
+            caption: k.caption ?? '',
+            strokes: (k.strokes ?? []).map((st) => ({
+              c: st.c,
+              w: st.w,
+              p: [...st.p],
+            })),
+            updatedAt: k.updatedAt?.toISOString() ?? null,
+          }))
+        : [],
       createdAt: (n.createdAt ?? new Date()).toISOString(),
       updatedAt: (n.updatedAt ?? new Date()).toISOString(),
     };
