@@ -128,6 +128,10 @@ const ACTION_META: Partial<
     category: 'clinical',
     label: 'Quality control',
   },
+  [AuditAction.PARTNER_LAB_ANALYSER]: {
+    category: 'clinical',
+    label: 'Analyser interface',
+  },
   [AuditAction.PARTNER_ER_UPDATE]: {
     category: 'clinical',
     label: 'Updated emergency visit',

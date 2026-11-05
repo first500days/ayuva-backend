@@ -121,6 +121,7 @@ export enum AuditAction {
   PARTNER_CASE_MESSAGE = 'partner_case_message',
   PARTNER_COLD_CHAIN = 'partner_cold_chain',
   PARTNER_LAB_QC = 'partner_lab_qc',
+  PARTNER_LAB_ANALYSER = 'partner_lab_analyser',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;
