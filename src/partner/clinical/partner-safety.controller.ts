@@ -20,6 +20,7 @@ import {
 import type { PartnerActor } from '../rbac/partner-perm.guard';
 import { Perm } from '../rbac/partner-permissions';
 import { PartnerSafetyService } from './partner-safety.service';
+import { PartnerBriefService } from './partner-brief.service';
 import { AddAllergyDto, RemoveAllergyDto, RxCheckDto } from './dto/safety.dto';
 
 /** Allergy alerts and prescription safety checks (clinicians only). */
@@ -29,7 +30,20 @@ import { AddAllergyDto, RemoveAllergyDto, RxCheckDto } from './dto/safety.dto';
 @Roles(UserRole.PARTNER)
 @Controller('partner')
 export class PartnerSafetyController {
-  constructor(private readonly safety: PartnerSafetyService) {}
+  constructor(
+    private readonly safety: PartnerSafetyService,
+    private readonly briefs: PartnerBriefService,
+  ) {}
+
+  @Get('patients/:id/brief')
+  @RequirePerm(Perm.RECORDS_VIEW)
+  @ApiOperation({
+    summary:
+      'One-paragraph patient summary built by rules from the records (conditions, admission, last visit, medicines, key results)',
+  })
+  brief(@PartnerCtx() a: PartnerActor, @Param('id') id: string) {
+    return this.briefs.brief(a, id);
+  }
 
   @Get('patients/:id/allergies')
   @RequirePerm(Perm.RECORDS_VIEW)

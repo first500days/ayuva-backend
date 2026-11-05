@@ -163,6 +163,7 @@ import {
   HealthProfileSchema,
 } from '../core/health-profile/schemas/health-profile.schema';
 import { PartnerSafetyService } from './clinical/partner-safety.service';
+import { PartnerBriefService } from './clinical/partner-brief.service';
 import { PartnerSafetyController } from './clinical/partner-safety.controller';
 
 /**
@@ -264,6 +265,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerOtService,
     PartnerLisService,
     PartnerSafetyService,
+    PartnerBriefService,
   ],
 })
 export class PartnerModule {}
