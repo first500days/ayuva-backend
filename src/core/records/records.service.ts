@@ -37,6 +37,7 @@ import {
   type DocumentDetection,
 } from './document-detect';
 import { readDocumentText } from './document-text';
+import { simplifyDocument, type PlainLanguageGuide } from './plain-language';
 
 export const ALLOWED_RECORD_MIME_TYPES = [
   'application/pdf',
@@ -270,6 +271,12 @@ export class RecordsService {
       fileName: record.originalFileName,
       mimeType: record.mimeType ?? guessMimeType(record.originalFileName),
     };
+  }
+
+  /** "Simplify": what the document's medical words mean, and where each value sits. */
+  async plainLanguage(userId: string, id: string): Promise<PlainLanguageGuide> {
+    const { buffer, mimeType } = await this.download(userId, id);
+    return simplifyDocument(await readDocumentText(buffer, mimeType));
   }
 
   async findOne(

@@ -37,6 +37,7 @@ import { AttachAppointmentDto } from './dto/attach-appointment.dto';
 import { MedicalRecordResponseDto } from './dto/medical-record-response.dto';
 import { MedicalRecordDetailResponseDto } from './dto/medical-record-detail-response.dto';
 import { MedicalRecordType } from './schemas/medical-record.schema';
+import { PlainLanguageResponseDto } from './dto/plain-language-response.dto';
 import { AuditLogInterceptor } from '../../audit-log/interceptors/audit-log.interceptor';
 import { AuditEvent } from '../../audit-log/decorators/audit-event.decorator';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
@@ -145,6 +146,21 @@ export class RecordsController {
     @Param('id') id: string,
   ): Promise<void> {
     return this.recordsService.remove(user.sub, id);
+  }
+
+  @Get(':id/plain-language')
+  @ApiOperation({
+    summary:
+      '"Simplify": everyday meanings of the medical words in the document, and each lab value against the range printed beside it. Rule-based; no medical opinion.',
+  })
+  @ApiOkResponse({ type: PlainLanguageResponseDto })
+  @AuditEvent(AuditAction.RECORD_VIEW, 'MedicalRecord')
+  @UseInterceptors(AuditLogInterceptor)
+  plainLanguage(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ): Promise<PlainLanguageResponseDto> {
+    return this.recordsService.plainLanguage(user.sub, id);
   }
 
   @Get(':id')
