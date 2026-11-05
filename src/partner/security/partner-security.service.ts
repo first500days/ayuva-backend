@@ -124,6 +124,10 @@ const ACTION_META: Partial<
     category: 'clinical',
     label: 'Cold-chain transit log',
   },
+  [AuditAction.PARTNER_LAB_QC]: {
+    category: 'clinical',
+    label: 'Quality control',
+  },
   [AuditAction.PARTNER_ER_UPDATE]: {
     category: 'clinical',
     label: 'Updated emergency visit',

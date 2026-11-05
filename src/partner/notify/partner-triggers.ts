@@ -17,6 +17,7 @@ export enum PartnerTrigger {
   ER_CRITICAL_ARRIVAL = 'er_critical_arrival',
   CLINICAL_MENTION = 'clinical_mention',
   COLD_CHAIN_EXCURSION = 'cold_chain_excursion',
+  QC_REJECTED = 'qc_rejected',
 }
 
 /**
@@ -199,6 +200,16 @@ export const TRIGGER_CATALOG: TriggerDefinition[] = [
     orgTypes: [OrgType.DIAGNOSTIC],
     critical: false,
     defaultRoles: [R.ADMIN, R.TECHNICIAN],
+    defaultChannels: channels(['inApp', 'desktop']),
+  },
+  {
+    trigger: PartnerTrigger.QC_REJECTED,
+    label: 'Quality-control run rejected',
+    description:
+      'A control run breaks a Westgard rule (1-3s, 2-2s, R-4s, 4-1s or 10x): patient results for that analyte should be held until it is corrected.',
+    orgTypes: [OrgType.DIAGNOSTIC],
+    critical: true,
+    defaultRoles: [R.ADMIN, R.DOCTOR, R.TECHNICIAN],
     defaultChannels: channels(['inApp', 'desktop']),
   },
   {

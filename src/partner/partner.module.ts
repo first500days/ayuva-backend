@@ -170,6 +170,14 @@ import {
 } from './lab/schemas/cold-chain-run.schema';
 import { PartnerColdChainService } from './lab/partner-cold-chain.service';
 import { PartnerColdChainController } from './lab/partner-cold-chain.controller';
+import {
+  QcMaterial,
+  QcMaterialSchema,
+  QcRun,
+  QcRunSchema,
+} from './lab/schemas/qc.schema';
+import { PartnerQcService } from './lab/partner-qc.service';
+import { PartnerQcController } from './lab/partner-qc.controller';
 import { PartnerDiscussionController } from './clinical/partner-discussion.controller';
 import {
   HealthProfile,
@@ -228,6 +236,8 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
       { name: PatientAllergy.name, schema: PatientAllergySchema },
       { name: CaseMessage.name, schema: CaseMessageSchema },
       { name: ColdChainRun.name, schema: ColdChainRunSchema },
+      { name: QcMaterial.name, schema: QcMaterialSchema },
+      { name: QcRun.name, schema: QcRunSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },
     ]),
   ],
@@ -249,6 +259,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerSafetyController,
     PartnerDiscussionController,
     PartnerColdChainController,
+    PartnerQcController,
   ],
   providers: [
     PartnerContextService,
@@ -272,6 +283,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerLabResultsService,
     PartnerLabCriticalService,
     PartnerColdChainService,
+    PartnerQcService,
     PartnerWardsService,
     PartnerClaimsService,
     PartnerAnalyticsService,
