@@ -21,6 +21,8 @@ import { SharingModule } from './sharing/sharing.module';
  * Kept as its own module tree — separate from the AI domain — so it can be
  * split into an independently deployed service later without a rewrite.
  */
+import { FamilyModule } from './family/family.module';
+
 @Module({
   imports: [
     UsersModule,
@@ -39,6 +41,7 @@ import { SharingModule } from './sharing/sharing.module';
     RolesModule,
     ContentModule,
     SharingModule,
+    FamilyModule,
   ],
 })
 export class CoreModule {}

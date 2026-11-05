@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 export enum UserRole {
   PATIENT = 'patient',
@@ -144,6 +144,17 @@ export class User {
   // E.164. Unique among accounts that have one.
   @Prop({ trim: true, index: { unique: true, sparse: true } })
   phone?: string;
+
+  /**
+   * Family profiles: the guardian who manages this person (a child, an
+   * elderly parent…). Such accounts have no sign-in of their own.
+   */
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User', index: true, sparse: true })
+  managedBy?: Types.ObjectId;
+
+  /** How they're related to the guardian: child, parent, spouse… */
+  @Prop()
+  relation?: string;
 
   @Prop()
   phoneVerifiedAt?: Date;

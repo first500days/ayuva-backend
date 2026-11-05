@@ -122,6 +122,7 @@ export enum AuditAction {
   PARTNER_COLD_CHAIN = 'partner_cold_chain',
   PARTNER_LAB_QC = 'partner_lab_qc',
   PARTNER_LAB_ANALYSER = 'partner_lab_analyser',
+  FAMILY_PROFILE_UPDATE = 'family_profile_update',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;

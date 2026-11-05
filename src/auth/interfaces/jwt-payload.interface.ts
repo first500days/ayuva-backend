@@ -9,4 +9,6 @@ export interface JwtPayload {
   mfa?: boolean;
   // Admin tokens only: permissions from the admin's role (see common/admin-modules.ts).
   perms?: string[];
+  // Set while a guardian acts for a family member: `sub` is the member, this is the guardian.
+  guardian?: string;
 }
