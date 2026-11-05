@@ -141,10 +141,18 @@ export class CreateNoteDto {
   @MaxLength(20000)
   rawInput?: string;
 
-  @ApiPropertyOptional({ enum: ['typed', 'dictated', 'mixed'] })
+  @ApiPropertyOptional({ enum: ['typed', 'dictated', 'mixed', 'ambient'] })
   @IsOptional()
-  @IsIn(['typed', 'dictated', 'mixed'])
+  @IsIn(['typed', 'dictated', 'mixed', 'ambient'])
   inputMode?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Ambient listening: the patient agreed to the consultation being transcribed',
+  })
+  @IsOptional()
+  @IsBoolean()
+  ambientConsent?: boolean;
 
   @ApiPropertyOptional({ type: NoteSectionsDto })
   @IsOptional()
@@ -176,8 +184,16 @@ export class UpdateNoteDto {
   rawInput?: string;
   @ApiPropertyOptional()
   @IsOptional()
-  @IsIn(['typed', 'dictated', 'mixed'])
+  @IsIn(['typed', 'dictated', 'mixed', 'ambient'])
   inputMode?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Ambient listening: the patient agreed to the consultation being transcribed',
+  })
+  @IsOptional()
+  @IsBoolean()
+  ambientConsent?: boolean;
 
   @ApiPropertyOptional({ type: NoteSectionsDto })
   @IsOptional()

@@ -130,12 +130,33 @@ export class PartnerNotesService {
         : undefined,
       rawInput: dto.rawInput ?? '',
       inputMode: dto.inputMode ?? 'typed',
+      ...this.ambientConsent(actor, dto),
       sections: dto.sections ?? {},
       vitals: dto.vitals ?? {},
       structuringSource: dto.structuringSource ?? 'manual',
       diagnoses: resolveDiagnosisCodes(dto.diagnosisCodes ?? []),
     });
     return this.toResponse(note);
+  }
+
+  /**
+   * Ambient listening transcribes the patient as well as the doctor, so the
+   * patient's agreement is confirmed and recorded once per note.
+   */
+  private ambientConsent(
+    actor: PartnerActor,
+    dto: { inputMode?: string; ambientConsent?: boolean },
+    note?: ConsultationNoteDocument,
+  ): { ambientConsentAt?: Date; ambientConsentBy?: string } {
+    if (dto.inputMode !== 'ambient' || note?.ambientConsentAt) return {};
+    if (dto.ambientConsent !== true)
+      throw new BadRequestException(
+        'Confirm that the patient agreed to the consultation being transcribed before using ambient listening',
+      );
+    return {
+      ambientConsentAt: new Date(),
+      ambientConsentBy: actor.member.fullName,
+    };
   }
 
   async update(actor: PartnerActor, id: string, dto: UpdateNoteDto) {
@@ -145,7 +166,10 @@ export class PartnerNotesService {
       note.appointmentId = new Types.ObjectId(dto.appointmentId);
     }
     if (dto.rawInput !== undefined) note.rawInput = dto.rawInput;
-    if (dto.inputMode !== undefined) note.inputMode = dto.inputMode;
+    if (dto.inputMode !== undefined) {
+      note.set(this.ambientConsent(actor, dto, note));
+      note.inputMode = dto.inputMode;
+    }
     if (dto.sections) {
       note.set('sections', { ...this.plainSections(note), ...dto.sections });
     }
@@ -313,6 +337,7 @@ export class PartnerNotesService {
       authorName: n.authorName,
       rawInput: n.rawInput,
       inputMode: n.inputMode,
+      ambientConsentAt: n.ambientConsentAt?.toISOString() ?? null,
       sections: this.plainSections(n),
       vitals: {
         bp: v.bp ?? '',

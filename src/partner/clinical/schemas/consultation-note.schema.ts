@@ -77,10 +77,14 @@ export class ConsultationNote {
 
   @Prop({
     type: String,
-    enum: ['typed', 'dictated', 'mixed'],
+    enum: ['typed', 'dictated', 'mixed', 'ambient'],
     default: 'typed',
   })
   inputMode: string;
+
+  /** Ambient listening transcribes the patient too: when, and who recorded their agreement. */
+  @Prop() ambientConsentAt?: Date;
+  @Prop() ambientConsentBy?: string;
 
   @Prop({ type: NoteSectionsSchema, default: () => ({}) })
   sections: NoteSections;
