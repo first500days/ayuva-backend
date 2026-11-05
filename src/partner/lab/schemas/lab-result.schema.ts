@@ -99,6 +99,13 @@ export class LabResult {
   @Prop({ type: [String], default: [] })
   criticalAlerted: string[];
 
+  /** When a critical value first appeared (cleared when none remain); drives the board and escalation. */
+  @Prop() criticalSince?: Date;
+  /** The ordering doctor was alerted before sign-off (Ayuva referrals only). */
+  @Prop() criticalPhysicianAlertedAt?: Date;
+  /** No call-out was recorded in time, so lab management was alerted. */
+  @Prop() criticalEscalatedAt?: Date;
+
   /** Delta and contamination checks from the last save (see result-checks.ts). */
   @Prop({ type: [ResultCheckEntrySchema], default: [] })
   checks: ResultCheckEntry[];
@@ -122,3 +129,4 @@ export class LabResult {
 }
 
 export const LabResultSchema = SchemaFactory.createForClass(LabResult);
+LabResultSchema.index({ critical: 1, criticalSince: -1 });

@@ -163,6 +163,7 @@ import {
   CaseMessageSchema,
 } from './clinical/schemas/case-message.schema';
 import { PartnerDiscussionService } from './clinical/partner-discussion.service';
+import { PartnerLabCriticalService } from './lab/partner-lab-critical.service';
 import { PartnerDiscussionController } from './clinical/partner-discussion.controller';
 import {
   HealthProfile,
@@ -261,6 +262,7 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerLabInventoryService,
     PartnerLabOrdersService,
     PartnerLabResultsService,
+    PartnerLabCriticalService,
     PartnerWardsService,
     PartnerClaimsService,
     PartnerAnalyticsService,

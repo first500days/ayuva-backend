@@ -25,6 +25,7 @@ import {
   resultRows,
 } from './result-changes';
 import { PartnerLabOrdersService } from './partner-lab-orders.service';
+import { PartnerLabCriticalService } from './partner-lab-critical.service';
 import {
   ReleaseResultDto,
   SaveResultDto,
@@ -58,7 +59,6 @@ interface ResultTestInput {
   }[];
 }
 
-/** Report Builder (structured values → PDF) and Report Uploader (file → vault). */
 /** Delta checks look back this far (the longest rule window). */
 const HISTORY_DAYS = 60;
 
@@ -75,6 +75,7 @@ const checkEntry = (c: ResultCheck) => ({
   }),
 });
 
+/** Report Builder (structured values → PDF) and Report Uploader (file → vault). */
 @Injectable()
 export class PartnerLabResultsService {
   constructor(
@@ -83,6 +84,7 @@ export class PartnerLabResultsService {
     @InjectModel(LabCatalogItem.name)
     private readonly catalogModel: Model<LabCatalogItemDocument>,
     private readonly orders: PartnerLabOrdersService,
+    private readonly critical: PartnerLabCriticalService,
     private readonly documents: PartnerDocumentsService,
     private readonly notifier: PartnerNotifierService,
     private readonly notifySettings: PartnerNotifySettingsService,
@@ -115,7 +117,7 @@ export class PartnerLabResultsService {
     this.assertOpen(order);
     const existing = await this.resultModel
       .findOne({ orderId: order._id })
-      .select('status tests criticalAlerted')
+      .select('status tests criticalAlerted criticalSince')
       .lean()
       .exec();
     if (existing?.status === 'released')
@@ -133,10 +135,24 @@ export class PartnerLabResultsService {
       );
     const fresh = freshCritical(rows, existing?.criticalAlerted ?? []);
     const checks = resultChecks(rows, await this.historyFor(order));
+    const isCritical = rows.some((r) => isCriticalFlag(r.flag));
     const result = await this.resultModel.findOneAndUpdate(
       { orderId: order._id },
       {
+        // A critical value starts the call-out clock; correcting it away stops it.
+        ...(isCritical
+          ? {}
+          : {
+              $unset: {
+                criticalSince: 1,
+                criticalEscalatedAt: 1,
+                criticalPhysicianAlertedAt: 1,
+              },
+            }),
         $set: {
+          ...(isCritical && {
+            criticalSince: existing?.criticalSince ?? new Date(),
+          }),
           providerId: actor.provider._id,
           patientId: order.patientId,
           tests,
@@ -160,8 +176,21 @@ export class PartnerLabResultsService {
     if (
       fresh.length &&
       (await this.notifySettings.criticalOnEntry(actor.provider._id))
-    )
+    ) {
       await this.alertCritical(actor, order, fresh);
+      // Straight to the ordering doctor too, before sign-off.
+      if (await this.critical.alertPhysician(actor, order, fresh)) {
+        result.criticalPhysicianAlertedAt = new Date();
+        await this.resultModel.updateOne(
+          { _id: result._id },
+          {
+            $set: {
+              criticalPhysicianAlertedAt: result.criticalPhysicianAlertedAt,
+            },
+          },
+        );
+      }
+    }
 
     // A complete draft is waiting for sign-off; a partial one is still in processing.
     const complete = tests.every((t) => t.values.every((v) => v.value.trim()));
@@ -667,6 +696,10 @@ export class PartnerLabResultsService {
               }
             : null,
       })),
+      criticalSince: r.criticalSince?.toISOString() ?? null,
+      criticalPhysicianAlertedAt:
+        r.criticalPhysicianAlertedAt?.toISOString() ?? null,
+      criticalEscalatedAt: r.criticalEscalatedAt?.toISOString() ?? null,
       checksAcknowledgedBy: r.checksAcknowledgedBy ?? null,
       checksNote: r.checksNote ?? null,
       releasedByName: r.releasedByName ?? null,

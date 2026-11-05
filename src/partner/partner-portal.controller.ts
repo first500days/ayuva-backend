@@ -81,6 +81,7 @@ import { PartnerLabCatalogService } from './lab/partner-lab-catalog.service';
 import { PartnerLabInventoryService } from './lab/partner-lab-inventory.service';
 import { PartnerLabOrdersService } from './lab/partner-lab-orders.service';
 import { PartnerLabResultsService } from './lab/partner-lab-results.service';
+import { PartnerLabCriticalService } from './lab/partner-lab-critical.service';
 import {
   AdjustStockDto,
   AdvanceLabOrderDto,
@@ -711,7 +712,18 @@ export class PartnerLabController {
     private readonly inventory: PartnerLabInventoryService,
     private readonly orders: PartnerLabOrdersService,
     private readonly results: PartnerLabResultsService,
+    private readonly critical: PartnerLabCriticalService,
   ) {}
+
+  @Get('critical')
+  @RequirePerm(Perm.LAB_REPORTS_DRAFT)
+  @ApiOperation({
+    summary:
+      'Critical-value board: open panic values with call-out and escalation state',
+  })
+  criticalBoard(@PartnerCtx() a: PartnerActor) {
+    return this.critical.board(a);
+  }
 
   // Catalogue
   @Get('catalog')
