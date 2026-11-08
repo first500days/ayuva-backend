@@ -65,6 +65,8 @@ export default () => ({
     projectId: process.env.FCM_PROJECT_ID,
     clientEmail: process.env.FCM_CLIENT_EMAIL,
     privateKey: process.env.FCM_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    // Optional: only needed if the Expo project enforces push security.
+    expoAccessToken: process.env.EXPO_ACCESS_TOKEN,
     // Set to true to allow the log-only push sender even in production (e.g. a
     // free-tier staging deploy without real FCM). Unset/absent in production
     // still fails fast at boot when credentials are missing (fcm.provider.ts).
