@@ -110,6 +110,38 @@ export class AddBedsDto {
   prefix?: string;
 }
 
+export class BedPositionDto {
+  @ApiProperty() @IsMongoId() id: string;
+  @ApiProperty({ minimum: 0, maximum: 29 })
+  @IsInt()
+  @Min(0)
+  @Max(29)
+  x: number;
+  @ApiProperty({ minimum: 0, maximum: 199 })
+  @IsInt()
+  @Min(0)
+  @Max(199)
+  y: number;
+}
+
+export class SaveWardLayoutDto {
+  @ApiProperty({ minimum: 1, maximum: 30, description: 'Floor plan width' })
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  cols: number;
+
+  @ApiProperty({
+    type: [BedPositionDto],
+    description: 'Positions per bed. Empty goes back to automatic placement.',
+  })
+  @IsArray()
+  @ArrayMaxSize(300)
+  @ValidateNested({ each: true })
+  @Type(() => BedPositionDto)
+  beds: BedPositionDto[];
+}
+
 export class SetBedStatusDto {
   @ApiProperty({
     enum: [

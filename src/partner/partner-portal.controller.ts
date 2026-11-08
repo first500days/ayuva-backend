@@ -121,6 +121,7 @@ import {
   CreateWardDto,
   DischargeDto,
   RecordBillPaymentDto,
+  SaveWardLayoutDto,
   SetBedStatusDto,
   TransferDto,
   UpdateClaimDto,
@@ -1156,6 +1157,17 @@ export class PartnerHospitalController {
     @Body() dto: UpdateWardDto,
   ) {
     return this.wards.updateWard(a, id, dto);
+  }
+
+  @Patch('wards/:id/layout')
+  @RequirePerm(Perm.ORG_SETTINGS)
+  @ApiOperation({ summary: 'Arrange the ward’s beds on its floor plan' })
+  saveWardLayout(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: SaveWardLayoutDto,
+  ) {
+    return this.wards.saveLayout(a, id, dto);
   }
 
   @Post('wards/:id/beds')

@@ -43,6 +43,9 @@ export class Bed {
   status: BedStatus;
   @Prop({ type: SchemaTypes.ObjectId, ref: 'PartnerAdmission' })
   admissionId?: Types.ObjectId;
+  // Where the bed sits on the ward's floor plan; beds without one are placed automatically.
+  @Prop() x?: number;
+  @Prop() y?: number;
 }
 export const BedSchema = SchemaFactory.createForClass(Bed);
 
@@ -78,6 +81,9 @@ export class Ward {
 
   @Prop({ type: [BedSchema], default: [] })
   beds: (Bed & { _id: Types.ObjectId })[];
+
+  // Floor plan width, set when someone arranges the beds.
+  @Prop() layoutCols?: number;
 
   createdAt?: Date;
   updatedAt?: Date;

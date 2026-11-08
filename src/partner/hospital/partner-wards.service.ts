@@ -41,6 +41,7 @@ import {
   AdmitDto,
   CreateWardDto,
   DischargeDto,
+  SaveWardLayoutDto,
   TransferDto,
   UpdateWardDto,
 } from './dto/hospital.dto';
@@ -191,6 +192,33 @@ export class PartnerWardsService {
     bed.status = status;
     await ward.save();
     this.live.publish(actor.provider._id, 'wards', 'census');
+    return this.wardResponse(ward, await this.admittedMap(actor));
+  }
+
+  /** Saves where each bed sits on the floor plan. No positions means automatic placement. */
+  async saveLayout(actor: PartnerActor, id: string, dto: SaveWardLayoutDto) {
+    const ward = await this.loadWard(actor, id);
+    const byId = new Map(ward.beds.map((b) => [b._id.toString(), b]));
+    const cells = new Set<string>();
+    for (const p of dto.beds) {
+      if (!byId.has(p.id)) throw new NotFoundException('Bed not found');
+      if (p.x >= dto.cols)
+        throw new BadRequestException('A bed is outside the floor plan');
+      const cell = `${p.x},${p.y}`;
+      if (cells.has(cell))
+        throw new BadRequestException('Two beds cannot share one position');
+      cells.add(cell);
+    }
+    const positions = new Map(dto.beds.map((p) => [p.id, p]));
+    for (const [bedId, bed] of byId) {
+      const p = positions.get(bedId);
+      bed.x = p?.x;
+      bed.y = p?.y;
+    }
+    ward.layoutCols = dto.beds.length ? dto.cols : undefined;
+    await ward.save();
+    await this.recordWard(actor, ward, { change: 'floor_plan_arranged' });
+    this.live.publish(actor.provider._id, 'wards');
     return this.wardResponse(ward, await this.admittedMap(actor));
   }
 
@@ -740,6 +768,7 @@ export class PartnerWardsService {
       type: w.type,
       floor: w.floor ?? null,
       genderPolicy: w.genderPolicy ?? WardGender.MIXED,
+      layoutCols: w.layoutCols ?? null,
       beds: w.beds.map((b) => {
         const a = b.admissionId
           ? admittedById.get(b.admissionId.toString())
@@ -748,12 +777,15 @@ export class PartnerWardsService {
           id: b._id.toString(),
           label: b.label,
           status: b.status,
+          x: b.x ?? null,
+          y: b.y ?? null,
           admission: a
             ? {
                 id: a.id,
                 admissionNo: a.admissionNo,
                 patientName: a.patientName,
                 admittedAt: a.admittedAt.toISOString(),
+                expectedDischargeAt: a.expectedDischargeAt?.toISOString() ?? null,
                 attendingName: a.attendingName ?? null,
                 department: a.department ?? null,
               }
