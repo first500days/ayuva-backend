@@ -15,6 +15,7 @@ import {
 } from '../../core/appointments/schemas/appointment.schema';
 import { MedicalRecordType } from '../../core/records/schemas/medical-record.schema';
 import { AppNotificationsService } from '../../notifications/app-notifications.service';
+import { ReminderQueueService } from '../../notifications/queue/reminder-queue.service';
 import { MailService } from '../../mail/mail.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
@@ -74,6 +75,7 @@ export class PartnerPrescriptionsService {
     @Inject(SMS_SENDER) private readonly sms: SmsSender,
     @Inject(WHATSAPP_SENDER) private readonly whatsapp: WhatsAppSender,
     private readonly config: ConfigService,
+    private readonly reminders: ReminderQueueService,
   ) {}
 
   async list(actor: PartnerActor, q: PrescriptionsQueryDto) {
@@ -286,6 +288,19 @@ export class PartnerPrescriptionsService {
       ...(await this.notifyPatient(rx, targets)),
     };
     await rx.save();
+    if (toVault && rx.followUpDate) {
+      // Not awaited: a slow or absent Redis must never hold up a signature.
+      void this.reminders
+        .scheduleCareFollowUp({
+          prescriptionId: rx.id,
+          userId: rx.patientId.toString(),
+          doctorName: rx.doctorName,
+          followUpDate: rx.followUpDate,
+        })
+        .catch((err: unknown) =>
+          this.logger.error(`Follow-up reminder failed for ${rx.id}`, err as Error),
+        );
+    }
     await this.record(actor, AuditAction.PARTNER_RX_SIGN, rx, {
       rxNumber: rx.rxNumber,
       items: rx.items.length,
@@ -319,6 +334,11 @@ export class PartnerPrescriptionsService {
     rx.cancelledAt = new Date();
     rx.cancelReason = reason;
     await rx.save();
+    void this.reminders
+      .cancelCareFollowUp(rx.id)
+      .catch((err: unknown) =>
+        this.logger.error(`Could not remove follow-up reminder for ${rx.id}`, err as Error),
+      );
     await this.documents.tagVaultRecord(rx.vaultRecordId, 'cancelled');
     await this.notifications
       .create(rx.patientId.toString(), {

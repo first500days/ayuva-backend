@@ -49,6 +49,10 @@ const JOB_ROUTING: Record<
     pref: 'appointments',
     feed: { category: 'appointments', trigger: 'follow_up_due' },
   },
+  [ReminderJobName.CARE_FOLLOW_UP]: {
+    pref: 'appointments',
+    feed: { category: 'appointments', trigger: 'follow_up_due' },
+  },
   [ReminderJobName.DOCUMENT_UPLOAD]: {
     pref: 'results',
     feed: { category: 'documents', trigger: 'upload_confirmed' },
@@ -197,6 +201,8 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
         return { actionLabel: 'Open', actionRoute: '/record/[id]', actionParams: { id: data.recordId } };
       case ReminderJobName.FOLLOW_UP:
         return { actionLabel: 'Book follow-up', actionRoute: '/appointments' };
+      case ReminderJobName.CARE_FOLLOW_UP:
+        return { actionLabel: 'See my journey', actionRoute: '/journey' };
       default:
         return { actionLabel: 'View', actionRoute: '/appointments' };
     }
@@ -233,6 +239,12 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
           title: 'Follow-up due',
           body: `How are you feeling after your visit with ${data.providerName}? Check your care journey for next steps.`,
           data: { appointmentId: data.appointmentId, type: data.type },
+        };
+      case ReminderJobName.CARE_FOLLOW_UP:
+        return {
+          title: 'Follow-up coming up',
+          body: `Your follow-up with ${data.doctorName} is on ${data.dateLabel}. Open AYUVA to book a time.`,
+          data: { prescriptionId: data.prescriptionId, type: data.type },
         };
     }
   }
