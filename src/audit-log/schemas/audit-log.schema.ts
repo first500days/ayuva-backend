@@ -123,6 +123,9 @@ export enum AuditAction {
   PARTNER_LAB_QC = 'partner_lab_qc',
   PARTNER_LAB_ANALYSER = 'partner_lab_analyser',
   FAMILY_PROFILE_UPDATE = 'family_profile_update',
+  // An approved report going to the patient, and the patient opening its secure link.
+  REPORT_DISPATCHED = 'report_dispatched',
+  REPORT_LINK_OPENED = 'report_link_opened',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;

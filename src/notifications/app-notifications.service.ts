@@ -22,6 +22,7 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPreferencesDto = {
   push: true,
   email: true,
   sms: false,
+  whatsapp: true,
   appointments: true,
   results: true,
   sharing: true,

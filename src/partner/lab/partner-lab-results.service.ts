@@ -27,6 +27,7 @@ import {
 import { PartnerLabOrdersService } from './partner-lab-orders.service';
 import { PartnerLabCriticalService } from './partner-lab-critical.service';
 import { PartnerTrendLinksService } from './partner-trend-links.service';
+import { ReportDispatchService } from '../../notifications/report-delivery/report-dispatch.service';
 import {
   ReleaseResultDto,
   SaveResultDto,
@@ -98,6 +99,7 @@ export class PartnerLabResultsService {
     private readonly notifier: PartnerNotifierService,
     private readonly notifySettings: PartnerNotifySettingsService,
     private readonly audit: AuditLogService,
+    private readonly reportDispatch: ReportDispatchService,
   ) {}
 
   /** The saved draft/released result, or a blank template built from the catalogue's parameters. */
@@ -281,7 +283,7 @@ export class PartnerLabResultsService {
     );
     result.recordId = record._id;
     await result.save();
-    await this.closeOrder(
+    const dispatch = await this.closeOrder(
       actor,
       order,
       record._id,
@@ -290,7 +292,7 @@ export class PartnerLabResultsService {
         ? { checks: checks.map((c) => c.code), checksNote: note ?? null }
         : {},
     );
-    return { ...this.toResponse(result, order), trendLink };
+    return { ...this.toResponse(result, order), trendLink, dispatch };
   }
 
   /** Uploads a finished report file (PDF/image) straight to the patient's vault. */
@@ -336,8 +338,13 @@ export class PartnerLabResultsService {
       },
       { upsert: true, returnDocument: 'after' },
     );
-    await this.closeOrder(actor, order, record._id, critical);
-    return this.toResponse(result, order);
+    const dispatch = await this.closeOrder(
+      actor,
+      order,
+      record._id,
+      critical,
+    );
+    return { ...this.toResponse(result, order), dispatch };
   }
 
   /** PDF preview of the current draft (or blank template) before release. */
@@ -639,6 +646,14 @@ export class PartnerLabResultsService {
         ...extra,
       },
       ipAddress: actor.ip,
+    });
+    // The report is approved: tell the patient over the app, WhatsApp and email.
+    return this.reportDispatch.reportApproved({
+      patientId: order.patientId,
+      recordId,
+      providerId: actor.provider._id,
+      actorUserId: actor.userId,
+      ip: actor.ip,
     });
   }
 

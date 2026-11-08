@@ -98,6 +98,24 @@ export default () => ({
   resend: {
     apiKey: process.env.RESEND_API_KEY,
   },
+  // Takes priority over Resend when set.
+  sendgrid: {
+    apiKey: process.env.SENDGRID_API_KEY,
+  },
+  // Meta's WhatsApp Cloud API. Takes priority over Twilio when set.
+  whatsappCloud: {
+    phoneNumberId: process.env.WHATSAPP_CLOUD_PHONE_NUMBER_ID,
+    accessToken: process.env.WHATSAPP_CLOUD_TOKEN,
+    apiVersion: process.env.WHATSAPP_CLOUD_API_VERSION ?? 'v23.0',
+    language: process.env.WHATSAPP_TEMPLATE_LANGUAGE ?? 'en',
+    reportTemplate: process.env.WHATSAPP_TEMPLATE_REPORT ?? 'ayuva_report_ready',
+    noticeTemplate: process.env.WHATSAPP_TEMPLATE_NOTICE ?? 'ayuva_notice',
+  },
+  // Secure links sent by WhatsApp or email (held to 15–30 minutes in code).
+  reportLinks: {
+    secret: process.env.REPORT_LINK_SECRET,
+    ttlMinutes: Number(process.env.REPORT_LINK_TTL_MINUTES ?? 30),
+  },
   // OTP and reminder SMS (sms-sender.ts). Unset = log-only sender.
   sms: {
     twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,

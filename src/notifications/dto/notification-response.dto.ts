@@ -51,6 +51,9 @@ export class NotificationPreferencesDto {
   @ApiProperty({ description: 'SMS channel — appointment reminders only' })
   @IsBoolean()
   sms: boolean;
+  @ApiProperty({ description: 'WhatsApp channel — secure report links only' })
+  @IsBoolean()
+  whatsapp: boolean;
 
   @ApiProperty()
   @IsBoolean()
@@ -86,6 +89,7 @@ export class UpdateNotificationPreferencesDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() push?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() email?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() sms?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() whatsapp?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() appointments?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() results?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() sharing?: boolean;

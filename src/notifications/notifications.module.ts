@@ -17,6 +17,16 @@ import { fcmSenderProvider } from './fcm/fcm.provider';
 import { SMS_SENDER, smsSenderProvider } from './sms/sms-sender';
 import { WHATSAPP_SENDER, whatsAppSenderProvider } from './sms/whatsapp-sender';
 import { User, UserSchema } from '../core/users/schemas/user.schema';
+import {
+  MedicalRecord,
+  MedicalRecordSchema,
+} from '../core/records/schemas/medical-record.schema';
+import { AuditLogModule } from '../audit-log/audit-log.module';
+import { UserPushService } from './user-push.service';
+import { ReportLink, ReportLinkSchema } from './report-delivery/schemas/report-link.schema';
+import { ReportLinksService } from './report-delivery/report-links.service';
+import { ReportDispatchService } from './report-delivery/report-dispatch.service';
+import { PublicReportLinksController } from './report-delivery/public-report-links.controller';
 
 /**
  * Push notification / reminder system (FR-10.3, FR-7.6, TRD §2/§7/§8).
@@ -29,13 +39,20 @@ import { User, UserSchema } from '../core/users/schemas/user.schema';
 @Module({
   imports: [
     AuthModule,
+    AuditLogModule,
     MongooseModule.forFeature([
       { name: DeviceToken.name, schema: DeviceTokenSchema },
       { name: AppNotification.name, schema: AppNotificationSchema },
       { name: User.name, schema: UserSchema },
+      { name: MedicalRecord.name, schema: MedicalRecordSchema },
+      { name: ReportLink.name, schema: ReportLinkSchema },
     ]),
   ],
-  controllers: [DevicesController, AppNotificationsController],
+  controllers: [
+    DevicesController,
+    AppNotificationsController,
+    PublicReportLinksController,
+  ],
   providers: [
     DevicesService,
     AppNotificationsService,
@@ -45,12 +62,17 @@ import { User, UserSchema } from '../core/users/schemas/user.schema';
     whatsAppSenderProvider,
     ReminderQueueService,
     ReminderProcessor,
+    UserPushService,
+    ReportLinksService,
+    ReportDispatchService,
   ],
   exports: [
     ReminderQueueService,
     AppNotificationsService,
     SMS_SENDER,
     WHATSAPP_SENDER,
+    UserPushService,
+    ReportDispatchService,
   ],
 })
 export class NotificationsModule {}

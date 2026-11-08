@@ -46,6 +46,8 @@ export class NotificationPrefs {
   @Prop({ default: true }) push: boolean;
   @Prop({ default: true }) email: boolean;
   @Prop({ default: false }) sms: boolean;
+  // Secure "your report is ready" links. The message itself carries no details.
+  @Prop({ default: true }) whatsapp: boolean;
 
   @Prop({ default: true }) appointments: boolean;
   @Prop({ default: true }) results: boolean;
