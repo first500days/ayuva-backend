@@ -19,7 +19,34 @@ import {
 } from '../symptom-nav/schemas/symptom-entry.schema';
 import { GenerateCareJourneyDto } from './dto/generate-care-journey.dto';
 import { UpdateCareStepDto } from './dto/update-care-step.dto';
-import { CareJourneyResponseDto } from './dto/care-journey-response.dto';
+import {
+  CareJourneyMapResponseDto,
+  CareJourneyResponseDto,
+} from './dto/care-journey-response.dto';
+import { buildJourneyMap, type MapAppointment, type MapStep } from './journey-map';
+import { NavIntent, NavIntentDocument } from '../nav-intent/schemas/nav-intent.schema';
+import {
+  Appointment,
+  AppointmentDocument,
+  AppointmentStatus,
+} from '../../core/appointments/schemas/appointment.schema';
+import {
+  AppointmentSlot,
+  AppointmentSlotDocument,
+} from '../../core/providers/schemas/appointment-slot.schema';
+import { Provider, ProviderDocument } from '../../core/providers/schemas/provider.schema';
+import {
+  Prescription,
+  PrescriptionDocument,
+  PrescriptionStatus,
+} from '../../partner/clinical/schemas/prescription.schema';
+import {
+  MedicalRecord,
+  MedicalRecordDocument,
+  MedicalRecordKind,
+  MedicalRecordType,
+} from '../../core/records/schemas/medical-record.schema';
+import { dateStart } from '../../partner/hospital/clock';
 import { AiInteractionLogService } from '../ai-interaction-log/ai-interaction-log.service';
 import { AiService } from '../ai-interaction-log/schemas/ai-interaction-log.schema';
 import { AiSource } from '../common/ai-source.enum';
@@ -80,6 +107,59 @@ const JOURNEY_TEMPLATES: Record<
 
 const AVG_DAYS_PER_STEP = 3;
 
+const MAP_QUERY_LIMIT = 60;
+const MAP_RECORD_TYPES = [
+  MedicalRecordType.PRESCRIPTION,
+  MedicalRecordType.LAB_REPORT,
+  MedicalRecordType.SCAN,
+  MedicalRecordType.DISCHARGE,
+];
+const CLOSED_APPOINTMENT_STATUSES = [
+  AppointmentStatus.CANCELLED_BY_PATIENT,
+  AppointmentStatus.CANCELLED_BY_PROVIDER,
+  AppointmentStatus.NO_SHOW,
+  AppointmentStatus.REFUNDED,
+];
+
+/** What the patient asked AYUVA for, as steps to get there. It makes no clinical judgement. */
+export function pathwayFromIntent(intent: {
+  suggestedFilters?: Record<string, unknown>;
+  suggestedActions?: Record<string, unknown>[];
+}): {
+  title: string;
+  steps: Array<Pick<CareStep, 'name' | 'contextNote' | 'trigger' | 'route' | 'params'>>;
+} {
+  const primary = intent.suggestedActions?.find((a) => a.primary);
+  const route = typeof primary?.route === 'string' ? primary.route : '/(tabs)/explore';
+  const params = primary?.params as Record<string, string> | undefined;
+
+  if (primary?.kind === 'tests') {
+    return {
+      title: 'Your lab test',
+      steps: [
+        { name: 'Book your test', contextNote: 'Choose a lab and a time that suits you.', trigger: 'booked', route, params },
+        { name: 'Give your sample', contextNote: 'Follow any preparation the lab gives you.', trigger: 'visited' },
+        { name: 'Get your report', contextNote: 'It arrives in your Health Passport when the lab releases it.', trigger: 'document' },
+        { name: 'Go over it with a doctor', contextNote: 'Bring the report to your next visit.', trigger: 'followup' },
+      ],
+    };
+  }
+
+  const specialty =
+    typeof intent.suggestedFilters?.specialty === 'string'
+      ? intent.suggestedFilters.specialty
+      : undefined;
+  return {
+    title: specialty ? `Seeing a ${specialty}` : 'Your care pathway',
+    steps: [
+      { name: specialty ? `Book a ${specialty}` : 'Book a visit', contextNote: 'Pick a time that suits you.', trigger: 'booked', route, params },
+      { name: 'Attend your visit', contextNote: 'Bring your current medicines and earlier reports.', trigger: 'visited' },
+      { name: 'Keep what your doctor gives you', contextNote: 'Prescriptions and reports arrive in your Health Passport.', trigger: 'document' },
+      { name: 'Follow-up', contextNote: 'Only if your doctor asks for one.', trigger: 'followup' },
+    ],
+  };
+}
+
 @Injectable()
 export class CareJourneyService {
   constructor(
@@ -89,6 +169,18 @@ export class CareJourneyService {
     private readonly triageResultModel: Model<TriageResultDocument>,
     @InjectModel(SymptomEntry.name)
     private readonly symptomEntryModel: Model<SymptomEntryDocument>,
+    @InjectModel(NavIntent.name)
+    private readonly navIntentModel: Model<NavIntentDocument>,
+    @InjectModel(Appointment.name)
+    private readonly appointmentModel: Model<AppointmentDocument>,
+    @InjectModel(AppointmentSlot.name)
+    private readonly slotModel: Model<AppointmentSlotDocument>,
+    @InjectModel(Provider.name)
+    private readonly providerModel: Model<ProviderDocument>,
+    @InjectModel(Prescription.name)
+    private readonly rxModel: Model<PrescriptionDocument>,
+    @InjectModel(MedicalRecord.name)
+    private readonly recordModel: Model<MedicalRecordDocument>,
     private readonly aiInteractionLogService: AiInteractionLogService,
   ) {}
 
@@ -96,6 +188,9 @@ export class CareJourneyService {
     userId: string,
     dto: GenerateCareJourneyDto,
   ): Promise<CareJourneyResponseDto> {
+    if (!dto.triageResultId) {
+      return this.generateFromIntent(userId, dto.intentId as string);
+    }
     const startedAt = Date.now();
 
     const triageResult = await this.getOwnedTriageResultOrThrow(
@@ -129,6 +224,169 @@ export class CareJourneyService {
     });
 
     return this.toResponse(journey);
+  }
+
+  /** A pathway from "Ask AYUVA". Steps are navigation only, and finish from real events. */
+  private async generateFromIntent(
+    userId: string,
+    intentId: string,
+  ): Promise<CareJourneyResponseDto> {
+    const startedAt = Date.now();
+    const owner = new Types.ObjectId(userId);
+    const intent = await this.navIntentModel.findOne({ _id: intentId, userId: owner });
+    if (!intent) throw new NotFoundException('Intent not found');
+
+    // A second tap on "Build my journey" returns the one already started.
+    const existing = await this.careJourneyModel.findOne({
+      userId: owner,
+      navIntentId: intent._id,
+      status: CareJourneyStatus.ACTIVE,
+    });
+    if (existing) return this.toResponse(existing);
+
+    const template = pathwayFromIntent(intent);
+    const journey = await this.careJourneyModel.create({
+      userId: owner,
+      navIntentId: intent._id,
+      title: template.title,
+      steps: template.steps.map((s, i) => ({
+        ...s,
+        status: i === 0 ? CareStepStatus.CURRENT : CareStepStatus.UPCOMING,
+      })),
+      progressPct: 0,
+      status: CareJourneyStatus.ACTIVE,
+    });
+
+    await this.aiInteractionLogService.record({
+      userId,
+      service: AiService.CARE_JOURNEY,
+      input: { intentId },
+      outcome: { journeyId: journey.id, stepCount: template.steps.length },
+      latencyMs: Date.now() - startedAt,
+      source: AiSource.MOCK,
+    });
+    return this.toResponse(journey);
+  }
+
+  /** Everything for the Journey tab in one read, with pathway steps brought up to date. */
+  async map(userId: string): Promise<CareJourneyMapResponseDto> {
+    const patientId = new Types.ObjectId(userId);
+    const [journey, appointments, prescriptions, records] = await Promise.all([
+      this.careJourneyModel
+        .findOne({ userId: patientId, status: CareJourneyStatus.ACTIVE })
+        .sort({ createdAt: -1 })
+        .exec(),
+      this.loadAppointments(patientId),
+      this.rxModel
+        .find({ patientId, status: PrescriptionStatus.SIGNED })
+        .sort({ signedAt: -1 })
+        .limit(MAP_QUERY_LIMIT)
+        .lean()
+        .exec(),
+      this.recordModel
+        .find({
+          patientId,
+          kind: MedicalRecordKind.ORIGINAL,
+          type: { $in: MAP_RECORD_TYPES },
+          tags: { $ne: 'cancelled' },
+        })
+        .sort({ recordDate: -1 })
+        .limit(MAP_QUERY_LIMIT)
+        .exec(),
+    ]);
+
+    const built = buildJourneyMap({
+      now: new Date(),
+      journey: journey
+        ? {
+            id: journey.id,
+            createdAt: (journey as unknown as { createdAt: Date }).createdAt,
+            steps: journey.steps,
+          }
+        : null,
+      appointments,
+      prescriptions: prescriptions.map((p) => ({
+        id: p._id.toString(),
+        doctorName: p.doctorName,
+        signedAt: p.signedAt ?? new Date(0),
+        followUpDate: p.followUpDate ?? undefined,
+      })),
+      records: records.map((r) => {
+        const uploadedAt = r.uploadedAt ?? new Date(0);
+        return {
+          id: r.id,
+          type: r.type,
+          providerName: r.providerName,
+          fromProvider: !r.patientUploaded && !!r.providerName,
+          date: r.recordDate ?? uploadedAt,
+          uploadedAt,
+        };
+      }),
+    });
+
+    if (journey) await this.saveProgress(journey, built.steps, built.progressPct);
+    return {
+      milestones: built.milestones,
+      journey: journey ? this.toResponse(journey) : null,
+    };
+  }
+
+  /** Only when something changed, so opening the tab doesn't write every time. */
+  private async saveProgress(
+    journey: CareJourneyDocument,
+    steps: MapStep[],
+    progressPct: number,
+  ): Promise<void> {
+    const changed = steps.some((s, i) => s.status !== journey.steps[i].status);
+    if (!changed) return;
+    steps.forEach((s, i) => {
+      journey.steps[i].status = s.status;
+    });
+    journey.progressPct = progressPct;
+    if (steps.every((s) => s.status === CareStepStatus.DONE)) {
+      journey.status = CareJourneyStatus.RESOLVED;
+    }
+    journey.markModified('steps');
+    await journey.save();
+  }
+
+  private async loadAppointments(patientId: Types.ObjectId): Promise<MapAppointment[]> {
+    const rows = await this.appointmentModel
+      .find({ patientId, status: { $nin: CLOSED_APPOINTMENT_STATUSES } })
+      .sort({ createdAt: -1 })
+      .limit(MAP_QUERY_LIMIT)
+      .lean()
+      .exec();
+    const [slots, providers] = await Promise.all([
+      this.slotModel.find({ _id: { $in: rows.map((a) => a.slotId) } }).lean().exec(),
+      this.providerModel
+        .find({ _id: { $in: rows.map((a) => a.providerId) } })
+        .select('name')
+        .lean()
+        .exec(),
+    ]);
+    const slotById = new Map(slots.map((s) => [s._id.toString(), s]));
+    const nameById = new Map(providers.map((p) => [p._id.toString(), p.name]));
+
+    return rows.flatMap((a) => {
+      const slot = slotById.get(a.slotId.toString());
+      if (!slot) return [];
+      const [hour, minute] = slot.time.split(':').map(Number);
+      const at = new Date(
+        dateStart(slot.date.toISOString().slice(0, 10)).getTime() +
+          (hour * 60 + minute) * 60_000,
+      );
+      return [
+        {
+          id: a._id.toString(),
+          providerName: a.assignedName || nameById.get(a.providerId.toString()) || 'your provider',
+          at,
+          createdAt: a.createdAt ?? at,
+          completed: a.status === AppointmentStatus.COMPLETED,
+          isFollowUp: !!a.followUpOfId,
+        },
+      ];
+    });
   }
 
   async findOne(userId: string, id: string): Promise<CareJourneyResponseDto> {
@@ -231,7 +489,8 @@ export class CareJourneyService {
       })),
       progressPct: journey.progressPct,
       status: journey.status,
-      timelineEstimateDays: journey.steps.length * AVG_DAYS_PER_STEP,
+      // Nothing supports a duration for a patient-started pathway; the app hides a 0.
+      timelineEstimateDays: journey.navIntentId ? 0 : journey.steps.length * AVG_DAYS_PER_STEP,
       source: AiSource.MOCK,
       disclaimer: AI_DISCLAIMER,
     };

@@ -13,7 +13,10 @@ import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { CareJourneyService } from './care-journey.service';
 import { GenerateCareJourneyDto } from './dto/generate-care-journey.dto';
 import { UpdateCareStepDto } from './dto/update-care-step.dto';
-import { CareJourneyResponseDto } from './dto/care-journey-response.dto';
+import {
+  CareJourneyMapResponseDto,
+  CareJourneyResponseDto,
+} from './dto/care-journey-response.dto';
 
 // MOCK pathway generation (TRD §6, docs/AI_INTEGRATION_CONTRACT.md); step
 // progress updates below are real persisted state, not AI output.
@@ -41,6 +44,15 @@ export class CareJourneyController {
   @ApiOkResponse({ type: CareJourneyResponseDto })
   findActive(@CurrentUser() user: JwtPayload): Promise<CareJourneyResponseDto> {
     return this.careJourneyService.findActive(user.sub);
+  }
+
+  @Get('map')
+  @ApiOperation({
+    summary: "The patient's journey map: appointments, follow-ups, documents and pathway steps (H8)",
+  })
+  @ApiOkResponse({ type: CareJourneyMapResponseDto })
+  map(@CurrentUser() user: JwtPayload): Promise<CareJourneyMapResponseDto> {
+    return this.careJourneyService.map(user.sub);
   }
 
   @Get(':id')

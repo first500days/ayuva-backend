@@ -15,6 +15,9 @@ export enum CareJourneyStatus {
   CANCELLED = 'cancelled',
 }
 
+/** The real event that completes a step, so nobody has to tick it off. */
+export type StepTrigger = 'booked' | 'visited' | 'document' | 'followup';
+
 @Schema({ _id: false })
 export class CareStep {
   @Prop({ required: true })
@@ -29,6 +32,16 @@ export class CareStep {
 
   @Prop()
   contextNote?: string;
+
+  @Prop({ type: String })
+  trigger?: StepTrigger;
+
+  // Where tapping an open step takes the patient.
+  @Prop()
+  route?: string;
+
+  @Prop({ type: Object })
+  params?: Record<string, string>;
 }
 export const CareStepSchema = SchemaFactory.createForClass(CareStep);
 
@@ -41,6 +54,10 @@ export class CareJourney {
 
   @Prop({ type: Types.ObjectId, ref: TriageResult.name })
   triageResultId?: Types.ObjectId;
+
+  // Set when the pathway began from "Ask AYUVA" rather than a triage result.
+  @Prop({ type: Types.ObjectId, index: true, sparse: true })
+  navIntentId?: Types.ObjectId;
 
   @Prop({ required: true })
   title: string;
