@@ -44,6 +44,13 @@ const MAX_OVERRIDE_ROWS = 100;
 
 const IMAGING_CATEGORIES = ['radiology', 'imaging', 'cardiology'];
 
+/** The vault's name for an order: its first tests, then how many more. */
+export function nameTests(names: string[]): string | undefined {
+  if (!names.length) return undefined;
+  const shown = names.slice(0, 2).join(', ');
+  return names.length > 2 ? `${shown} +${names.length - 2} more` : shown;
+}
+
 /** A test section as posted by the Report Builder or read back from a saved result. */
 interface ResultTestInput {
   testId?: string | Types.ObjectId | null;
@@ -545,6 +552,8 @@ export class PartnerLabResultsService {
       mimeType,
       type: imaging ? MedicalRecordType.SCAN : MedicalRecordType.LAB_REPORT,
       providerName: actor.provider.name,
+      procedureType: nameTests(order.items.map((i) => i.name)),
+      attendingPhysician: order.referringDoctorName,
       recordDate:
         order.sampleCollection?.collectedAt ?? order.createdAt ?? new Date(),
       tags: [

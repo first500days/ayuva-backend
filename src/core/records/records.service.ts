@@ -11,6 +11,7 @@ import {
   MedicalRecordKind,
   MedicalRecordType,
   consentTokenFor,
+  recordTitle,
 } from './schemas/medical-record.schema';
 import {
   Appointment,
@@ -138,6 +139,10 @@ export class RecordsService {
         detection.recordDate && { recordDate: detection.recordDate }),
       ...(!options.providerName &&
         detection.providerName && { providerName: detection.providerName }),
+      ...(detection.procedureType && { procedureType: detection.procedureType }),
+      ...(detection.attendingPhysician && {
+        attendingPhysician: detection.attendingPhysician,
+      }),
     };
 
     // A saved explanation lives in its source's folder, next to it.
@@ -183,6 +188,10 @@ export class RecordsService {
         attachedAppointmentId: new Types.ObjectId(options.appointmentId),
       }),
       ...(providerName && { providerName }),
+      ...(detected?.procedureType && { procedureType: detected.procedureType.value }),
+      ...(detected?.attendingPhysician && {
+        attendingPhysician: detected.attendingPhysician.value,
+      }),
       ...(recordDate && { recordDate }),
       patientUploaded: true,
     });
@@ -226,7 +235,13 @@ export class RecordsService {
     if (filters.q) {
       const re = buildSafeRegex(filters.q);
       and.push({
-        $or: [{ originalFileName: re }, { tags: re }, { providerName: re }],
+        $or: [
+          { originalFileName: re },
+          { tags: re },
+          { providerName: re },
+          { procedureType: re },
+          { attendingPhysician: re },
+        ],
       });
     }
     if (filters.from || filters.to) {
@@ -258,7 +273,14 @@ export class RecordsService {
     dto: UpdateRecordDto,
   ): Promise<MedicalRecordResponseDto> {
     const record = await this.getOwnedRecordOrThrow(userId, id);
-    if (dto.title !== undefined) record.originalFileName = dto.title.trim();
+    // A patient's own name for the document is its title; the upload's file name stays as it was.
+    if (dto.title !== undefined) record.procedureType = dto.title.trim();
+    if (dto.procedureType !== undefined) {
+      record.procedureType = dto.procedureType.trim() || undefined;
+    }
+    if (dto.attendingPhysician !== undefined) {
+      record.attendingPhysician = dto.attendingPhysician.trim() || undefined;
+    }
     if (dto.type !== undefined) record.type = dto.type;
     if (dto.tags !== undefined) record.tags = dto.tags;
     if (dto.providerName !== undefined) {
@@ -333,7 +355,7 @@ export class RecordsService {
       return {
         basis: 'dates',
         answer: r
-          ? `Your ${intent.kind === 'latest' ? 'most recent' : 'first'} ${one} is "${r.originalFileName}", dated ${dateText(when(r))}${from(r)}.`
+          ? `Your ${intent.kind === 'latest' ? 'most recent' : 'first'} ${one} is "${recordTitle(r)}", dated ${dateText(when(r))}${from(r)}.`
           : `I couldn't find any ${many} in your records.`,
         records: r ? [this.toResponse(r)] : [],
       };
@@ -401,6 +423,8 @@ export class RecordsService {
             const re = buildSafeRegex(w);
             return (
               re.test(r.originalFileName) ||
+              re.test(r.procedureType ?? '') ||
+              re.test(r.attendingPhysician ?? '') ||
               re.test(r.providerName ?? '') ||
               (r.tags ?? []).some((t) => re.test(t))
             );
@@ -533,7 +557,9 @@ export class RecordsService {
     const uploadedAt = (record.uploadedAt ?? new Date()).toISOString();
     return {
       id: record.id,
-      title: record.originalFileName,
+      title: recordTitle(record),
+      procedureType: record.procedureType,
+      attendingPhysician: record.attendingPhysician,
       type: record.type,
       kind: record.kind ?? MedicalRecordKind.ORIGINAL,
       uploadedAt,

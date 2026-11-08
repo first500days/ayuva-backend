@@ -258,6 +258,8 @@ export class PartnerPrescriptionsService {
         fileName,
         type: MedicalRecordType.PRESCRIPTION,
         providerName: actor.provider.name,
+        procedureType: 'Prescription',
+        attendingPhysician: rx.doctorName,
         recordDate: signedAt,
         tags: ['e-prescription'],
         appointmentId: rx.appointmentId,

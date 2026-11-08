@@ -21,6 +21,10 @@ export interface DocumentDetection {
   /** YYYY-MM-DD */
   recordDate?: DetectedField<string>;
   providerName?: DetectedField<string>;
+  /** "MRI Brain", "Lipid Profile": only when the document names it. */
+  procedureType?: DetectedField<string>;
+  /** Only a doctor the document labels as responsible, never a signing pathologist. */
+  attendingPhysician?: DetectedField<string>;
 }
 
 type Rule = [RegExp, number];
@@ -353,6 +357,121 @@ function detectProviderFromText(text: string): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
+// Procedure
+// ---------------------------------------------------------------------------
+
+const SCAN_MODALITIES: Array<[RegExp, string]> = [
+  [/\bpet[- ]?ct\b/i, 'PET-CT'],
+  [/\bhrct\b/i, 'HRCT'],
+  [/\bmri\b|magnetic resonance/i, 'MRI'],
+  [/\bct\b(?: scan)?|computed tomography/i, 'CT'],
+  [/\bx-?ray\b|radiograph/i, 'X-ray'],
+  [/\bmammogra(m|phy)\b/i, 'Mammogram'],
+  [/\b(2d )?echo(cardiogra(m|phy))?\b/i, 'Echocardiogram'],
+  [/\bdoppler\b/i, 'Doppler'],
+  [/\bultrasound\b|\busg\b|sonography/i, 'Ultrasound'],
+];
+
+const BODY_PARTS =
+  /\b(brain|head|neck|chest|thorax|lungs?|abdomen|pelvis|kub|cervical spine|dorsal spine|lumbar spine|lumbosacral spine|spine|knee|shoulder|hip|ankle|wrist|elbow|breast|thyroid)\b/i;
+
+const LETTERHEAD_WORDS =
+  /\b(centre|center|clinic|hospitals?|diagnostics?|imaging|labs?|institute|radiologist|nabl|pvt|ltd)\b/i;
+
+const LAB_PANELS: Array<[RegExp, string]> = [
+  [/\bcomplete blood count\b|\bcbc\b|\bhaemogram\b|\bhemogram\b/i, 'CBC'],
+  [/\blipid profile\b/i, 'Lipid Profile'],
+  [/\bhba1c\b|glycosylated h(a)?emoglobin/i, 'HbA1c'],
+  [/\bthyroid (profile|function)\b|\bthyroid panel\b/i, 'Thyroid Profile'],
+  [/\bliver function\b|\blft\b/i, 'Liver Function'],
+  [/\b(kidney|renal) function\b|\bkft\b|\brft\b/i, 'Kidney Function'],
+  [/\burine (routine|analysis)\b|\burinalysis\b/i, 'Urine Routine'],
+  [/\bvitamin d\b/i, 'Vitamin D'],
+  [/\bvitamin b-?12\b/i, 'Vitamin B12'],
+  [/\b(fasting|random|post ?prandial) (blood )?(sugar|glucose)\b/i, 'Blood Sugar'],
+];
+
+const titleCaseIfShouting = (s: string) =>
+  s === s.toUpperCase()
+    ? s.toLowerCase().replace(/\b\p{L}/gu, (c) => c.toUpperCase())
+    : s;
+
+function detectProcedure(
+  text: string,
+  type: MedicalRecordType | undefined,
+): string | undefined {
+  if (type === MedicalRecordType.SCAN) {
+    let bare: string | undefined;
+    for (const line of text.split(/\r?\n/).slice(0, 40)) {
+      // "City MRI & CT Centre" on a letterhead names the business, not this study.
+      if (LETTERHEAD_WORDS.test(line)) continue;
+      const modality = SCAN_MODALITIES.find(([p]) => p.test(line));
+      if (!modality) continue;
+      const part = BODY_PARTS.exec(line)?.[0];
+      if (part) return `${modality[1]} ${titleCaseIfShouting(part.toUpperCase())}`;
+      bare ??= modality[1];
+    }
+    return bare;
+  }
+  if (type === MedicalRecordType.LAB_REPORT) {
+    const found = LAB_PANELS.map(([p, name]) => ({ name, at: text.search(p) }))
+      .filter((f) => f.at >= 0)
+      .sort((a, b) => a.at - b.at)
+      .map((f) => f.name);
+    if (!found.length) return undefined;
+    const shown = found.slice(0, 2).join(', ');
+    return found.length > 2 ? `${shown} +${found.length - 2} more` : shown;
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Doctor
+// ---------------------------------------------------------------------------
+
+const DOCTOR_LABELS =
+  '(?:attending|treating|consultant|referring|primary)(?:\\s+(?:physician|doctor|surgeon))?|under\\s+the\\s+care\\s+of|ref(?:erred)?\\.?\\s*by|prescribed\\s+by';
+// A pathologist's or radiologist's sign-off isn't the patient's doctor, so a bare "Dr X" doesn't count.
+const LABELLED_DOCTOR = new RegExp(
+  `(?:${DOCTOR_LABELS})\\W{0,6}(dr\\b\\.?\\s*[a-z][^\\n]{1,70})`,
+  'i',
+);
+const NOT_A_NAME =
+  /^(mbbs|md|ms|dnb|dm|frcs|mrcp|bds|dch|dgo|age|sex|gender|date|sample|patient|reg|regn|registration|mobile|phone|collected|received|reported|report|lab|id|no|uhid|visit|ward|bed)\b/i;
+
+function cleanDoctor(raw: string): string | undefined {
+  const words = raw
+    .replace(/^dr\b\.?\s*/i, '')
+    .split(/\s{2,}|[|,(\t:;]/)[0]
+    .trim()
+    .split(/\s+/);
+  const name: string[] = [];
+  for (const word of words) {
+    if (NOT_A_NAME.test(word) || name.length === 4) break;
+    if (!/^[\p{L}.'-]+$/u.test(word)) break;
+    name.push(word);
+  }
+  if (!name.some((w) => w.replace(/\./g, '').length >= 2)) return undefined;
+  return `Dr ${titleCaseIfShouting(name.join(' '))}`;
+}
+
+function detectDoctor(
+  text: string,
+  type: MedicalRecordType | undefined,
+): string | undefined {
+  const labelled = LABELLED_DOCTOR.exec(text)?.[1];
+  if (labelled) return cleanDoctor(labelled);
+  // On a prescription slip, the letterhead doctor is the one prescribing.
+  if (type !== MedicalRecordType.PRESCRIPTION) return undefined;
+  const line = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .slice(0, 10)
+    .find((l) => /^dr\b\.?\s*[a-z]/i.test(l));
+  return line ? cleanDoctor(line) : undefined;
+}
+
+// ---------------------------------------------------------------------------
 
 export function detectDocument(input: {
   text?: string;
@@ -380,6 +499,13 @@ export function detectDocument(input: {
 
   const provider = textRead ? detectProviderFromText(text) : undefined;
   if (provider) result.providerName = { value: provider, from: 'text' };
+
+  if (textRead) {
+    const procedure = detectProcedure(text, result.type?.value);
+    if (procedure) result.procedureType = { value: procedure, from: 'text' };
+    const doctor = detectDoctor(text, result.type?.value);
+    if (doctor) result.attendingPhysician = { value: doctor, from: 'text' };
+  }
 
   return result;
 }

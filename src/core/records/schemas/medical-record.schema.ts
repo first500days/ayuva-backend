@@ -176,6 +176,30 @@ export function consentTokenFor(
 
 export type MedicalRecordDocument = HydratedDocument<MedicalRecord>;
 
+const FOLDER_TITLE: Record<MedicalRecordType, string> = {
+  [MedicalRecordType.PRESCRIPTION]: 'Prescription',
+  [MedicalRecordType.LAB_REPORT]: 'Lab report',
+  [MedicalRecordType.SCAN]: 'Scan',
+  [MedicalRecordType.DISCHARGE]: 'Discharge summary',
+  [MedicalRecordType.INSURANCE]: 'Insurance document',
+  [MedicalRecordType.VACCINATION]: 'Vaccination record',
+  [MedicalRecordType.CERTIFICATE]: 'Medical certificate',
+};
+
+/**
+ * What a record is called in the patient's vault. Device file names
+ * ("IMG-20260830-WA0008.jpg") mean nothing to a patient and are never shown.
+ */
+export function recordTitle(
+  record: Pick<MedicalRecord, 'procedureType' | 'type' | 'kind'>,
+): string {
+  if (record.procedureType) return record.procedureType;
+  if (record.kind === MedicalRecordKind.VISIT_SUMMARY) return 'Visit summary';
+  if (record.kind === MedicalRecordKind.SIMPLIFICATION)
+    return 'Plain-language version';
+  return FOLDER_TITLE[record.type] ?? 'Document';
+}
+
 /** System name for a record: stored on new uploads, derived for older ones. */
 export function recordSystemFileName(
   record: Pick<MedicalRecord, 'systemFileName' | 'mimeType' | 'originalFileName'> & { id?: string },
@@ -240,6 +264,15 @@ export class MedicalRecord {
 
   @Prop({ trim: true })
   providerName?: string;
+
+  // What the document is ("MRI Brain", "Lipid Profile"), from the sending system
+  // or read from the document's text. The vault's title: never the file name.
+  @Prop({ trim: true })
+  procedureType?: string;
+
+  // The doctor named as responsible for this care. Only a name the source gave.
+  @Prop({ trim: true })
+  attendingPhysician?: string;
 
   // The patient filed it themselves (POST /records), as opposed to a lab or
   // clinic delivering it. A patient upload can carry a providerName too — the

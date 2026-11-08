@@ -35,6 +35,9 @@ export interface VaultDelivery {
   mimeType?: string;
   type: MedicalRecordType;
   providerName: string;
+  /** What this is, in the patient's words ("MRI Brain"): the vault shows this, not the file name. */
+  procedureType?: string;
+  attendingPhysician?: string;
   recordDate?: Date;
   tags?: string[];
   appointmentId?: Types.ObjectId | string;
@@ -98,6 +101,8 @@ export class PartnerDocumentsService {
       type: d.type,
       kind: MedicalRecordKind.ORIGINAL,
       providerName: d.providerName,
+      ...(d.procedureType && { procedureType: d.procedureType }),
+      ...(d.attendingPhysician && { attendingPhysician: d.attendingPhysician }),
       recordDate: d.recordDate ?? new Date(),
       tags: d.tags ?? [],
       ...(d.appointmentId && {

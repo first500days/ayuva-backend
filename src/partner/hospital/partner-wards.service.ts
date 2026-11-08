@@ -402,6 +402,8 @@ export class PartnerWardsService {
         fileName: `Discharge summary ${admission.admissionNo} - ${actor.provider.name}.pdf`,
         type: MedicalRecordType.DISCHARGE,
         providerName: actor.provider.name,
+        procedureType: 'Discharge summary',
+        attendingPhysician: admission.attendingName,
         recordDate: admission.dischargedAt,
         tags: ['discharge-summary'],
         notification: {

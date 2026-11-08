@@ -9,8 +9,17 @@ export class MedicalRecordResponseDto {
   @ApiProperty({ example: '64f0c8e2b1a2c3d4e5f6a7b8' })
   id: string;
 
-  @ApiProperty({ example: 'Lipid panel — full.pdf' })
+  @ApiProperty({
+    example: 'Lipid Profile',
+    description: 'What the document is. Never the uploaded file name.',
+  })
   title: string;
+
+  @ApiPropertyOptional({ example: 'MRI Brain' })
+  procedureType?: string;
+
+  @ApiPropertyOptional({ example: 'Dr Rakesh Sharma' })
+  attendingPhysician?: string;
 
   @ApiProperty({ enum: MedicalRecordType })
   type: MedicalRecordType;

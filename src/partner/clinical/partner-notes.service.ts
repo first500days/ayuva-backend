@@ -292,6 +292,8 @@ export class PartnerNotesService {
       fileName: `Visit summary - ${actor.provider.name} - ${note.signedAt!.toISOString().slice(0, 10)}.pdf`,
       type: MedicalRecordType.PRESCRIPTION,
       providerName: actor.provider.name,
+      procedureType: 'Visit summary',
+      attendingPhysician: note.authorName,
       recordDate: note.signedAt,
       tags: ['visit-summary'],
       appointmentId: note.appointmentId,
