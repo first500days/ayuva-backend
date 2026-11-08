@@ -11,12 +11,20 @@ import {
   AuditLog,
   AuditLogDocument,
 } from '../../audit-log/schemas/audit-log.schema';
+import { patientAge } from '../../common/utils/age.util';
 import {
   HealthProfile,
   HealthProfileDocument,
 } from '../../core/health-profile/schemas/health-profile.schema';
+import {
+  Medication,
+  MedicationDocument,
+} from '../../core/medications/schemas/medication.schema';
 import { PartnerActor } from '../rbac/partner-perm.guard';
+import { buildPanel, describe, type LabKey, type Reading } from './lab-panel';
+import { PartnerLabValuesService } from './partner-lab-values.service';
 import { PartnerPatientsService } from './partner-patients.service';
+import { current } from './rx-organ-rules';
 import { durationDays } from './partner-timeline.service';
 import {
   Prescription,
@@ -34,13 +42,13 @@ const VIEW_WINDOW_MS = 30 * 60 * 1000;
 const DAY = 86_400_000;
 
 export const SAFETY_NOTE =
-  "Rule-based checks against the recorded allergies, this organisation's active prescriptions and a curated list of serious interactions. Not exhaustive — use your clinical judgement.";
+  "Rule-based checks against the recorded allergies, the patient's home medicines, this organisation's active prescriptions, recent lab values and a curated list of serious interactions and organ-function limits. Not exhaustive — use your clinical judgement.";
 
 /**
  * Allergy alerts and prescription safety checks for a patient: what the
  * patient reported in their health profile, what the clinicians recorded,
- * and rule-based allergy / interaction / duplicate warnings on a
- * prescription being written. Only clinicians (records.view /
+ * and rule-based allergy / interaction / duplicate / organ-function warnings
+ * on a prescription being written. Only clinicians (records.view /
  * clinical.write) see any of it.
  */
 @Injectable()
@@ -54,7 +62,10 @@ export class PartnerSafetyService {
     private readonly rxModel: Model<PrescriptionDocument>,
     @InjectModel(AuditLog.name)
     private readonly auditModel: Model<AuditLogDocument>,
+    @InjectModel(Medication.name)
+    private readonly medicationModel: Model<MedicationDocument>,
     private readonly patients: PartnerPatientsService,
+    private readonly labValues: PartnerLabValuesService,
     private readonly audit: AuditLogService,
   ) {}
 
@@ -62,27 +73,35 @@ export class PartnerSafetyService {
     const patient = await this.patients.assertLinked(actor, patientId);
     const out = await this.alertsFor(actor, patient._id);
     // Reading the patient's own health-profile allergies is a record access; log it (once per half hour).
+    await this.logAccess(actor, patient._id, 'Allergies & alerts');
+    return out;
+  }
+
+  private async logAccess(
+    actor: PartnerActor,
+    patientId: Types.ObjectId,
+    label: string,
+  ) {
     const recent = await this.auditModel.exists({
       actorId: new Types.ObjectId(actor.userId),
       action: AuditAction.PARTNER_PATIENT_VIEW,
-      targetId: patient._id,
-      'metadata.label': 'Allergies & alerts',
+      targetId: patientId,
+      'metadata.label': label,
       createdAt: { $gte: new Date(Date.now() - VIEW_WINDOW_MS) },
     });
-    if (!recent)
-      await this.audit.record({
-        actorId: actor.userId,
-        action: AuditAction.PARTNER_PATIENT_VIEW,
-        targetType: 'User',
-        targetId: patient.id,
-        metadata: {
-          providerId: actor.provider.id,
-          patientId: patient.id,
-          label: 'Allergies & alerts',
-        },
-        ipAddress: actor.ip,
-      });
-    return out;
+    if (recent) return;
+    await this.audit.record({
+      actorId: actor.userId,
+      action: AuditAction.PARTNER_PATIENT_VIEW,
+      targetType: 'User',
+      targetId: patientId.toString(),
+      metadata: {
+        providerId: actor.provider.id,
+        patientId: patientId.toString(),
+        label,
+      },
+      ipAddress: actor.ip,
+    });
   }
 
   async addAllergy(actor: PartnerActor, patientId: string, dto: AddAllergyDto) {
@@ -187,6 +206,8 @@ export class PartnerSafetyService {
   /** Live check while a prescription is written. */
   async check(actor: PartnerActor, dto: RxCheckDto) {
     const patient = await this.patients.assertLinked(actor, dto.patientId);
+    // This reads the patient's labs and home medicines: a record access.
+    await this.logAccess(actor, patient._id, 'Prescription safety check');
     return this.review(actor, patient._id, dto.items);
   }
 
@@ -197,30 +218,59 @@ export class PartnerSafetyService {
     items: { medicine: string; strength?: string | null }[],
     excludeRxId?: Types.ObjectId,
   ) {
-    const [alerts, active] = await Promise.all([
+    const [alerts, active, home, points, profile] = await Promise.all([
       this.alertsFor(actor, patientId),
       this.activeMedicines(actor, patientId, excludeRxId),
+      this.homeMedicines(patientId),
+      this.labValues.forPatient(actor, patientId),
+      this.profileModel
+        .findOne({ userId: patientId })
+        .select('age dateOfBirth gender')
+        .lean()
+        .exec(),
     ]);
     const allergies = [
       ...alerts.patientReported,
       ...alerts.recorded.map((r) => r.substance),
     ];
+    const labs = buildPanel(points, {
+      age: patientAge(profile).age,
+      gender: profile?.gender,
+    });
+    const taking = [...active, ...home];
     const result = checkPrescription({
       items: items.map((i) => ({
         medicine: i.medicine ?? '',
         strength: i.strength,
       })),
       allergies,
-      activeMedicines: active,
+      activeMedicines: taking,
+      labs,
     });
     return {
       ...result,
       checkedAgainst: {
         allergies,
-        activeMedicines: active.map((m) => `${m.medicine} (${m.source})`),
+        activeMedicines: taking.map((m) => `${m.medicine} (${m.source})`),
+        labs: (Object.entries(current(labs)) as [LabKey, Reading][]).map(
+          ([key, r]) => describe(key, r),
+        ),
       },
       note: SAFETY_NOTE,
     };
+  }
+
+  /** What the patient logs taking in the app, from any prescriber. */
+  private async homeMedicines(patientId: Types.ObjectId) {
+    const meds = await this.medicationModel
+      .find({ userId: patientId, active: true })
+      .select('name dosage')
+      .lean()
+      .exec();
+    return meds.map((m) => ({
+      medicine: [m.name, m.dosage].filter(Boolean).join(' '),
+      source: "patient's home medicines",
+    }));
   }
 
   private async alertsFor(actor: PartnerActor, patientId: Types.ObjectId) {

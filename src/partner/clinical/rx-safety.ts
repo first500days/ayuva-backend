@@ -4,14 +4,18 @@
  * classes; the prescription is checked against the patient's allergies,
  * against itself and against active medicines for a curated list of
  * well-established, clinically serious interactions and duplicate
- * therapy. It is not exhaustive, says so, and never suggests a medicine.
+ * therapy, and against recent labs for organ-function limits. It is not
+ * exhaustive, says so, and never suggests a medicine.
  */
+
+import type { LabPanel } from './lab-panel';
+import { organWarnings } from './rx-organ-rules';
 
 export type Severity = 'contraindicated' | 'major' | 'moderate';
 
 export interface SafetyWarning {
   severity: Severity;
-  kind: 'allergy' | 'interaction' | 'duplicate';
+  kind: 'allergy' | 'interaction' | 'duplicate' | 'organ';
   /** Prescription lines involved (0-based). */
   lines: number[];
   /** What it clashes with: an allergy, another line or an active medicine. */
@@ -714,6 +718,8 @@ export interface SafetyInput {
   items: { medicine: string; strength?: string | null }[];
   allergies: string[];
   activeMedicines: { medicine: string; source: string }[];
+  /** Latest lab values, for organ-function checks. */
+  labs?: LabPanel;
 }
 
 export interface SafetyResult {
@@ -848,7 +854,7 @@ export function checkPrescription(input: SafetyInput): SafetyResult {
         with: p.label,
         message:
           p.b === null
-            ? `${x.name} repeats ${what} from an active prescription: ${p.label}${tail}.`
+            ? `${x.name} repeats ${what} already being taken: ${p.label}${tail}.`
             : `${what} ${shared.length === 1 ? 'is' : 'are'} on two lines — ${x.name} and ${y.name}${tail}.`,
       });
       continue;
@@ -882,6 +888,8 @@ export function checkPrescription(input: SafetyInput): SafetyResult {
         });
     }
   }
+
+  if (input.labs) warnings.push(...organWarnings(lines, input.labs));
 
   warnings.sort(
     (a, b) =>

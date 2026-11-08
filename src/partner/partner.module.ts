@@ -199,6 +199,11 @@ import {
   HealthProfile,
   HealthProfileSchema,
 } from '../core/health-profile/schemas/health-profile.schema';
+import {
+  Medication,
+  MedicationSchema,
+} from '../core/medications/schemas/medication.schema';
+import { PartnerLabValuesService } from './clinical/partner-lab-values.service';
 import { PartnerSafetyService } from './clinical/partner-safety.service';
 import { PartnerBriefService } from './clinical/partner-brief.service';
 import { PartnerSafetyController } from './clinical/partner-safety.controller';
@@ -260,6 +265,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
       { name: AnalyserMessage.name, schema: AnalyserMessageSchema },
       { name: TrendLink.name, schema: TrendLinkSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },
+      { name: Medication.name, schema: MedicationSchema },
     ]),
   ],
   controllers: [
@@ -323,6 +329,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerErService,
     PartnerOtService,
     PartnerLisService,
+    PartnerLabValuesService,
     PartnerSafetyService,
     PartnerBriefService,
     PartnerDiscussionService,
