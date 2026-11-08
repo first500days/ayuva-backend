@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
+import { makeAppendOnly } from '../../../audit-log/append-only';
 
 export type AccessLogDocument = HydratedDocument<AccessLog>;
 
@@ -31,3 +32,4 @@ export class AccessLog {
 }
 
 export const AccessLogSchema = SchemaFactory.createForClass(AccessLog);
+makeAppendOnly(AccessLogSchema);

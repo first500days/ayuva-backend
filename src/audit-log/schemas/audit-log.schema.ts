@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import { User } from '../../core/users/schemas/user.schema';
+import { makeAppendOnly } from '../append-only';
 
 export enum AuditAction {
   LOGIN = 'login',
@@ -160,3 +161,4 @@ export class AuditLog {
 }
 
 export const AuditLogSchema = SchemaFactory.createForClass(AuditLog);
+makeAppendOnly(AuditLogSchema);

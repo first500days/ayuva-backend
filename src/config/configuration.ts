@@ -116,6 +116,9 @@ export default () => ({
     secret: process.env.REPORT_LINK_SECRET,
     ttlMinutes: Number(process.env.REPORT_LINK_TTL_MINUTES ?? 30),
   },
+  audit: {
+    sealSecret: process.env.AUDIT_SEAL_SECRET,
+  },
   // OTP and reminder SMS (sms-sender.ts). Unset = log-only sender.
   sms: {
     twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
