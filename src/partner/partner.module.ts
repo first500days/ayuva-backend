@@ -202,6 +202,8 @@ import {
 import { PartnerSafetyService } from './clinical/partner-safety.service';
 import { PartnerBriefService } from './clinical/partner-brief.service';
 import { PartnerSafetyController } from './clinical/partner-safety.controller';
+import { WsUpgradeRouter } from './live/ws-upgrade-router.service';
+import { PartnerLiveGateway } from './live/partner-live.gateway';
 
 /**
  * Partner Portal API (Product Journey §2, wireframes P01–P06) plus the
@@ -324,6 +326,8 @@ import { PartnerSafetyController } from './clinical/partner-safety.controller';
     PartnerSafetyService,
     PartnerBriefService,
     PartnerDiscussionService,
+    WsUpgradeRouter,
+    PartnerLiveGateway,
   ],
 })
 export class PartnerModule {}

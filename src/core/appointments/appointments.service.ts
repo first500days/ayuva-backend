@@ -34,6 +34,7 @@ import { ReminderQueueService } from '../../notifications/queue/reminder-queue.s
 import { SharingService } from '../sharing/sharing.service';
 import { PartnerNotifierService } from '../../partner/notify/partner-notifier.service';
 import { PartnerTrigger } from '../../partner/notify/partner-triggers';
+import { LiveBus } from '../../common/live/live-bus.service';
 
 export type AppointmentsScope = 'upcoming' | 'past';
 
@@ -57,6 +58,9 @@ export class AppointmentsService {
     // tests that build the service by hand don't need to supply it.
     @Optional()
     private readonly partnerNotifier?: PartnerNotifierService,
+    // Keeps partner dashboards live; optional for the same reason.
+    @Optional()
+    private readonly live?: LiveBus,
   ) {}
 
   async create(
@@ -434,6 +438,7 @@ export class AppointmentsService {
     title: string,
     message: string,
   ): Promise<void> {
+    this.live?.publish(appointment.providerId, 'appointments');
     await this.partnerNotifier?.emit(appointment.providerId, {
       trigger,
       title,

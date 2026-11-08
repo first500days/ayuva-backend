@@ -16,6 +16,7 @@ import {
 } from '../../core/providers/schemas/provider.schema';
 import { AppNotificationsService } from '../../notifications/app-notifications.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { LiveBus } from '../../common/live/live-bus.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { buildSafeRegex } from '../../common/utils/regex.util';
 import { PartnerActor } from '../rbac/partner-perm.guard';
@@ -64,6 +65,7 @@ export class PartnerReferralsService {
     private readonly catalog: PartnerLabCatalogService,
     private readonly labOrders: PartnerLabOrdersService,
     private readonly audit: AuditLogService,
+    private readonly live: LiveBus,
   ) {}
 
   /** Verified Ayuva organisations a patient can be referred to. */
@@ -429,6 +431,9 @@ export class PartnerReferralsService {
     r: ReferralDocument,
     extra: Record<string, unknown>,
   ) {
+    // Every referral change is audited, so this reaches both sides' screens.
+    this.live.publish(r.fromProviderId, 'referrals');
+    this.live.publish(r.toProviderId, 'referrals');
     return this.audit.record({
       actorId: actor.userId,
       action,

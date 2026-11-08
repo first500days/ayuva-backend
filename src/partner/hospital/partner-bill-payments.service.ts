@@ -7,6 +7,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomBytes } from 'node:crypto';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { LiveBus } from '../../common/live/live-bus.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import { PartnerPatientsService } from '../clinical/partner-patients.service';
@@ -51,6 +52,7 @@ export class PartnerBillPaymentsService {
     private readonly claimModel: Model<InsuranceClaimDocument>,
     private readonly patients: PartnerPatientsService,
     private readonly audit: AuditLogService,
+    private readonly live: LiveBus,
   ) {}
 
   async create(actor: PartnerActor, dto: RecordBillPaymentDto) {
@@ -103,6 +105,7 @@ export class PartnerBillPaymentsService {
       total: payment.total,
       methods: parts.map((p) => p.method).join(' + '),
     });
+    this.live.publish(actor.provider._id, 'billing');
     return this.row(payment.toObject());
   }
 
@@ -125,6 +128,7 @@ export class PartnerBillPaymentsService {
       total: payment.total,
       reason: payment.voidReason,
     });
+    this.live.publish(actor.provider._id, 'billing');
     return this.row(payment.toObject());
   }
 

@@ -11,6 +11,7 @@ import { MedicalRecordType } from '../../core/records/schemas/medical-record.sch
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { buildSafeRegex } from '../../common/utils/regex.util';
+import { LiveBus } from '../../common/live/live-bus.service';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import { PartnerNotifierService } from '../notify/partner-notifier.service';
 import { PartnerTrigger } from '../notify/partner-triggers';
@@ -59,7 +60,14 @@ export class PartnerWardsService {
     private readonly audit: AuditLogService,
     private readonly capacity: PartnerCapacityService,
     private readonly claims: PartnerClaimsService,
+    private readonly live: LiveBus,
   ) {}
+
+  /** After anything that moves a bed's numbers: capacity alerts, then live screens. */
+  private async afterBedChange(actor: PartnerActor) {
+    await this.capacity.check(actor);
+    this.live.publish(actor.provider._id, 'wards', 'census');
+  }
 
   // ── Wards & beds ──────────────────────────────────────────────────────────
 
@@ -116,7 +124,7 @@ export class PartnerWardsService {
       type: ward.type,
       genderPolicy: ward.genderPolicy,
     });
-    await this.capacity.check(actor);
+    await this.afterBedChange(actor);
     return this.wardResponse(ward, new Map());
   }
 
@@ -155,6 +163,7 @@ export class PartnerWardsService {
       });
       await this.capacity.check(actor);
     }
+    this.live.publish(actor.provider._id, 'wards', 'census');
     return this.wardResponse(ward, await this.admittedMap(actor));
   }
 
@@ -162,7 +171,7 @@ export class PartnerWardsService {
     const ward = await this.loadWard(actor, id);
     this.appendBeds(ward, dto.count, dto.prefix);
     await ward.save();
-    await this.capacity.check(actor);
+    await this.afterBedChange(actor);
     return this.wardResponse(ward, await this.admittedMap(actor));
   }
 
@@ -181,6 +190,7 @@ export class PartnerWardsService {
       );
     bed.status = status;
     await ward.save();
+    this.live.publish(actor.provider._id, 'wards', 'census');
     return this.wardResponse(ward, await this.admittedMap(actor));
   }
 
@@ -193,7 +203,7 @@ export class PartnerWardsService {
     }
     await ward.deleteOne();
     await this.recordWard(actor, ward, { change: 'ward_removed' });
-    await this.capacity.check(actor);
+    await this.afterBedChange(actor);
     return { id, removed: true };
   }
 
@@ -293,7 +303,7 @@ export class PartnerWardsService {
       ward: admission.wardName,
       bed: admission.bedLabel,
     });
-    await this.capacity.check(actor);
+    await this.afterBedChange(actor);
     return this.admissionResponse(admission);
   }
 
@@ -361,7 +371,7 @@ export class PartnerWardsService {
       ward: admission.wardName,
       bed: admission.bedLabel,
     });
-    await this.capacity.check(actor);
+    await this.afterBedChange(actor);
     return this.admissionResponse(admission);
   }
 
@@ -415,7 +425,7 @@ export class PartnerWardsService {
       dischargeType: dto.type,
       summarySent: !!admission.vaultRecordId,
     });
-    await this.capacity.check(actor);
+    await this.afterBedChange(actor);
     return this.admissionResponse(admission);
   }
 

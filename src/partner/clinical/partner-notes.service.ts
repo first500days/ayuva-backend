@@ -12,6 +12,7 @@ import {
 } from '../../core/appointments/schemas/appointment.schema';
 import { MedicalRecordType } from '../../core/records/schemas/medical-record.schema';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { LiveBus } from '../../common/live/live-bus.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { AiInteractionLogService } from '../../ai/ai-interaction-log/ai-interaction-log.service';
 import { AiService } from '../../ai/ai-interaction-log/schemas/ai-interaction-log.schema';
@@ -50,6 +51,7 @@ export class PartnerNotesService {
     private readonly documents: PartnerDocumentsService,
     private readonly aiLog: AiInteractionLogService,
     private readonly audit: AuditLogService,
+    private readonly live: LiveBus,
   ) {}
 
   /**
@@ -144,6 +146,7 @@ export class PartnerNotesService {
       structuringSource: dto.structuringSource ?? 'manual',
       diagnoses: resolveDiagnosisCodes(dto.diagnosisCodes ?? []),
     });
+    this.live.publish(actor.provider._id, 'notes');
     return this.toResponse(note);
   }
 
@@ -251,6 +254,7 @@ export class PartnerNotesService {
     if (dto.diagnosisCodes !== undefined)
       note.set('diagnoses', resolveDiagnosisCodes(dto.diagnosisCodes));
     await note.save();
+    this.live.publish(actor.provider._id, 'notes');
     return this.toResponse(note);
   }
 
@@ -264,6 +268,7 @@ export class PartnerNotesService {
     note.signedAt = new Date();
     await note.save();
     await this.record(actor, AuditAction.PARTNER_NOTE_SIGN, note);
+    this.live.publish(actor.provider._id, 'notes');
     return this.toResponse(note);
   }
 
@@ -307,6 +312,7 @@ export class PartnerNotesService {
   async remove(actor: PartnerActor, id: string) {
     const note = await this.loadOwnDraft(actor, id);
     await note.deleteOne();
+    this.live.publish(actor.provider._id, 'notes');
     return { id, removed: true };
   }
 

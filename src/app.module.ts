@@ -10,11 +10,13 @@ import { AiModule } from './ai/ai.module';
 import { AdminModule } from './admin/admin.module';
 import { PartnerModule } from './partner/partner.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { LiveModule } from './common/live/live.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
     ScheduleModule.forRoot(),
+    LiveModule,
     DatabaseModule,
     AuthModule,
     HealthModule,

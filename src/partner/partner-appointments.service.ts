@@ -20,6 +20,7 @@ import { PartnerContextService } from './partner-context.service';
 import { PartnerRecordsService } from './partner-records.service';
 import { PartnerAppointmentsQueryDto } from './dto/partner.dto';
 import { SharingService } from '../core/sharing/sharing.service';
+import { LiveBus } from '../common/live/live-bus.service';
 import {
   MemberStatus,
   PartnerMember,
@@ -39,6 +40,7 @@ export class PartnerAppointmentsService {
     private readonly notifications: AppNotificationsService,
     private readonly audit: AuditLogService,
     private readonly sharing: SharingService,
+    private readonly live: LiveBus,
   ) {}
 
   async list(userId: string, query: PartnerAppointmentsQueryDto) {
@@ -266,6 +268,7 @@ export class PartnerAppointmentsService {
     const appointment = await this.appointmentModel.findById(id);
     if (!appointment) throw new NotFoundException('Appointment not found');
     const slot = await this.slotModel.findById(appointment.slotId);
+    this.live.publish(provider._id, 'appointments');
     await this.audit.record({
       actorId: userId,
       action,
