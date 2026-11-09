@@ -207,6 +207,8 @@ import { PartnerLabValuesService } from './clinical/partner-lab-values.service';
 import { PartnerSafetyService } from './clinical/partner-safety.service';
 import { PartnerBriefService } from './clinical/partner-brief.service';
 import { PartnerSafetyController } from './clinical/partner-safety.controller';
+import { PartnerDicomwebService } from './lab/dicomweb/partner-dicomweb.service';
+import { PartnerDicomwebController } from './lab/dicomweb/partner-dicomweb.controller';
 import { WsUpgradeRouter } from './live/ws-upgrade-router.service';
 import { PartnerLiveGateway } from './live/partner-live.gateway';
 
@@ -291,6 +293,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerAnalysersController,
     LisIngestController,
     PublicTrendsController,
+    PartnerDicomwebController,
   ],
   providers: [
     PartnerContextService,
@@ -335,6 +338,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerDiscussionService,
     WsUpgradeRouter,
     PartnerLiveGateway,
+    PartnerDicomwebService,
   ],
 })
 export class PartnerModule {}

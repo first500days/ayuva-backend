@@ -1070,36 +1070,45 @@ export class PartnerLabOrdersService {
     const file = order.imaging.find((f) => f._id.toString() === fileId);
     if (!file) throw new NotFoundException('Imaging file not found');
     const buffer = await this.storage.read(file.fileRef);
-    // Opening a study reads every slice; log the view once per person per
-    // study per half hour rather than once per slice.
+    await this.recordImagingView(actor, order, file.fileName);
+    return {
+      buffer,
+      fileName: file.fileName,
+      mime: file.mime ?? 'application/dicom',
+    };
+  }
+
+  /**
+   * Opening a study reads every slice, so the view is logged once per person
+   * per study per half hour rather than once per slice.
+   */
+  async recordImagingView(
+    actor: PartnerActor,
+    order: LabOrderDocument,
+    fileName: string,
+  ): Promise<void> {
     const recent = await this.auditModel.exists({
       actorId: new Types.ObjectId(actor.userId),
       action: AuditAction.PARTNER_IMAGING_VIEW,
       targetId: order._id,
       createdAt: { $gte: new Date(Date.now() - IMAGING_VIEW_WINDOW_MS) },
     });
-    if (!recent) {
-      await this.audit.record({
-        actorId: actor.userId,
-        action: AuditAction.PARTNER_IMAGING_VIEW,
-        targetType: 'PartnerLabOrder',
-        targetId: order.id,
-        metadata: {
-          providerId: actor.provider.id,
-          patientId: order.patientId.toString(),
-          label:
-            order.imaging.length > 1
-              ? `${order.orderNo} imaging (${order.imaging.length} files)`
-              : file.fileName,
-        },
-        ipAddress: actor.ip,
-      });
-    }
-    return {
-      buffer,
-      fileName: file.fileName,
-      mime: file.mime ?? 'application/dicom',
-    };
+    if (recent) return;
+    await this.audit.record({
+      actorId: actor.userId,
+      action: AuditAction.PARTNER_IMAGING_VIEW,
+      targetType: 'PartnerLabOrder',
+      targetId: order.id,
+      metadata: {
+        providerId: actor.provider.id,
+        patientId: order.patientId.toString(),
+        label:
+          order.imaging.length > 1
+            ? `${order.orderNo} imaging (${order.imaging.length} files)`
+            : fileName,
+      },
+      ipAddress: actor.ip,
+    });
   }
 
   /** Studies a referring organisation can open for its patients. */
