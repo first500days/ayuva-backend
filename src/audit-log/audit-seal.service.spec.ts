@@ -175,13 +175,11 @@ describe('AuditSealService', () => {
 
   it('catches a row slipped into a sealed batch', async () => {
     const { service, audit } = build();
-    const first = audit.add();
-    audit.add();
+    const id = (n: number) => new Types.ObjectId(n.toString(16).padStart(24, '0'));
+    audit.add({ _id: id(1) });
+    audit.add({ _id: id(3) });
     await service.sealNew();
-    audit.rows.push({
-      ...first,
-      _id: new Types.ObjectId(first._id.toString().replace(/.$/, 'a')),
-    });
+    audit.add({ _id: id(2) });
     await expect(service.verify()).resolves.toMatchObject({ ok: false });
   });
 
