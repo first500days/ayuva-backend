@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -145,6 +146,8 @@ export class PartnerAnalysersService {
   /** A message pasted in the portal goes through exactly what the bridge would trigger. */
   async testMessage(actor: PartnerActor, id: string, raw: string) {
     const a = await this.load(actor, id);
+    if (a.protocol === 'dicomweb')
+      throw new BadRequestException('A DICOM gateway sends images, not text messages');
     return this.process(a, actor.provider, raw, true, actor.ip);
   }
 
@@ -155,6 +158,10 @@ export class PartnerAnalysersService {
       .findOne({ keyHash: hashKey(key), active: true })
       .exec();
     if (!a) throw new UnauthorizedException('Unknown or switched-off analyser');
+    if (a.protocol === 'dicomweb')
+      throw new UnauthorizedException(
+        'This key is for a DICOM gateway: send images to /api/v1/dicomweb-ingest/studies',
+      );
     const provider = await this.providerModel.findById(a.providerId).exec();
     if (!provider) throw new UnauthorizedException('Unknown organisation');
     return this.process(a, provider, raw, false, ip);
@@ -374,7 +381,7 @@ export class PartnerAnalysersService {
     return {
       id: a.id,
       name: a.name,
-      protocol: a.protocol as 'hl7' | 'astm',
+      protocol: a.protocol as 'hl7' | 'astm' | 'dicomweb',
       keyHint: a.keyHint,
       codes: a.codes.map((c) => ({ code: c.code, parameter: c.parameter })),
       active: a.active,

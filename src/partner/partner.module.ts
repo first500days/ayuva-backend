@@ -193,6 +193,8 @@ import {
 } from './lab/fhir/fhir-connection.schema';
 import { PartnerFhirService } from './lab/fhir/partner-fhir.service';
 import { PartnerFhirController } from './lab/fhir/partner-fhir.controller';
+import { PartnerStowService } from './lab/stow/partner-stow.service';
+import { StowController } from './lab/stow/stow.controller';
 import { TrendLink, TrendLinkSchema } from './lab/schemas/trend-link.schema';
 import { PartnerTrendLinksService } from './lab/partner-trend-links.service';
 import { PublicTrendsController } from './lab/public-trends.controller';
@@ -311,6 +313,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerAnalysersController,
     PartnerFhirController,
     LisIngestController,
+    StowController,
     PublicTrendsController,
     PartnerDicomwebController,
     PartnerTelemetryController,
@@ -341,6 +344,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerLabRoutesService,
     PartnerAnalysersService,
     PartnerFhirService,
+    PartnerStowService,
     PartnerTrendLinksService,
     PartnerWardsService,
     PartnerClaimsService,

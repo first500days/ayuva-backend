@@ -33,8 +33,8 @@ export class CreateAnalyserDto {
   @MaxLength(60)
   name: string;
 
-  @ApiProperty({ enum: ['hl7', 'astm'] })
-  @IsIn(['hl7', 'astm'])
+  @ApiProperty({ enum: ['hl7', 'astm', 'dicomweb'] })
+  @IsIn(['hl7', 'astm', 'dicomweb'])
   protocol: string;
 
   @ApiPropertyOptional({ type: [AnalyserCodeDto] })

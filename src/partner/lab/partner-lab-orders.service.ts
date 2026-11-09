@@ -1008,6 +1008,21 @@ export class PartnerLabOrdersService {
     return null;
   }
 
+  /**
+   * Images pushed by a scanner's gateway onto an order already matched to the
+   * patient. Stored exactly like an upload; one reason per file, null if kept.
+   */
+  async attachPushed(
+    actor: PartnerActor,
+    order: LabOrderDocument,
+    files: Express.Multer.File[],
+  ): Promise<(string | null)[]> {
+    const results: (string | null)[] = [];
+    for (const file of files) results.push(await this.storeImaging(actor, order, file));
+    if (results.some((r) => r === null)) await order.save();
+    return results;
+  }
+
   async addImaging(
     actor: PartnerActor,
     id: string,
