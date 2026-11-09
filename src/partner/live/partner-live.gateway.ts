@@ -23,6 +23,7 @@ import {
 } from '../../core/users/schemas/user.schema';
 import { PartnerContextService } from '../partner-context.service';
 import { WsUpgradeRouter } from './ws-upgrade-router.service';
+import { validRoomId, WarRooms } from './war-room';
 
 export const LIVE_PATH = '/api/v1/partner/live';
 
@@ -56,6 +57,9 @@ interface Conn {
   /** Clinical staff only: may receive bedside telemetry. */
   canWatch?: boolean;
   watching?: Set<string> | 'all';
+  /** May join a war room on a scan. */
+  canViewImaging?: boolean;
+  person?: { id: string; name: string };
 }
 
 function rawText(data: RawData): string {
@@ -84,6 +88,7 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
   private readonly byProvider = new Map<string, Set<Conn>>();
   private readonly byUser = new Map<string, Set<Conn>>();
   private readonly conns = new Set<Conn>();
+  private readonly warRooms = new WarRooms<Conn>((c, msg) => this.send(c, msg));
   private heartbeat?: NodeJS.Timeout;
   private unsubscribe: (() => void)[] = [];
 
@@ -137,7 +142,13 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
   }
 
   private async onMessage(conn: Conn, data: RawData): Promise<void> {
-    let msg: { t?: unknown; token?: unknown; admissions?: unknown };
+    let msg: {
+      t?: unknown;
+      token?: unknown;
+      admissions?: unknown;
+      room?: unknown;
+      sync?: unknown;
+    };
     try {
       msg = JSON.parse(rawText(data)) as typeof msg;
     } catch {
@@ -154,6 +165,16 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
                 .filter((a): a is string => typeof a === 'string')
                 .slice(0, MAX_WATCHED),
             );
+    else if (msg.t === 'room.join') this.joinRoom(conn, msg.room);
+    else if (msg.t === 'room.leave') this.warRooms.leave(conn);
+    else if (msg.t === 'room.sync') this.warRooms.relay(conn, msg.sync);
+  }
+
+  private joinRoom(conn: Conn, room: unknown): void {
+    if (!conn.canViewImaging || !conn.providerId || !conn.person) return;
+    if (!validRoomId(room)) return;
+    if (!this.warRooms.join(conn, conn.providerId, room, conn.person))
+      this.send(conn, { t: 'room.full' });
   }
 
   private forwardFrame({ providerId, ...frame }: VitalsFrame): void {
@@ -189,6 +210,8 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
       conn.userId = payload.sub;
       conn.providerId = ctx.provider.id;
       conn.canWatch = ctx.permissions.includes(Perm.TELEMETRY_VIEW);
+      conn.canViewImaging = ctx.permissions.includes(Perm.IMAGING_VIEW);
+      conn.person = { id: ctx.member.id, name: ctx.member.fullName };
       this.index(this.byProvider, conn.providerId, conn);
       this.index(this.byUser, conn.userId, conn);
       // The token's lifetime is the connection's: the portal refreshes and reconnects.
@@ -250,6 +273,7 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
       (t) => t && clearTimeout(t),
     );
     this.conns.delete(conn);
+    this.warRooms.leave(conn);
     if (conn.providerId) this.unindex(this.byProvider, conn.providerId, conn);
     if (conn.userId) this.unindex(this.byUser, conn.userId, conn);
   }
