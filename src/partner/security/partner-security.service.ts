@@ -27,6 +27,7 @@ import {
   PartnerMemberDocument,
 } from '../staff/schemas/partner-member.schema';
 import { roleLabel } from '../rbac/partner-permissions';
+import { findFlags } from './security-flags';
 
 export type ActivityCategory =
   'record_access' | 'clinical' | 'lab' | 'operations' | 'admin' | 'login';
@@ -68,6 +69,7 @@ const ACTION_META: Partial<
   Record<AuditAction, { category: ActivityCategory; label: string }>
 > = {
   [AuditAction.LOGIN]: { category: 'login', label: 'Signed in' },
+  [AuditAction.LOGIN_FAILED]: { category: 'login', label: 'Failed sign-in' },
   [AuditAction.PARTNER_REGISTER]: {
     category: 'admin',
     label: 'Registered the organisation',
@@ -420,12 +422,13 @@ export class PartnerSecurityService {
         .length,
       patientsAccessed: new Set(access.map((r) => r.patientId).filter(Boolean))
         .size,
-      logins: rows.filter((r) => r.category === 'login').length,
+      logins: rows.filter((r) => r.action === String(AuditAction.LOGIN)).length,
       clinicalActions: rows.filter((r) => r.category === 'clinical').length,
       adminChanges: rows.filter((r) => r.category === 'admin').length,
       topAccessors: [...byActor.values()]
         .sort((a, b) => b.count - a.count)
         .slice(0, 5),
+      flags: findFlags(rows),
     };
   }
 
