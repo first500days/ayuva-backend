@@ -8,6 +8,7 @@ import {
   IsEmail,
   IsEnum,
   IsIn,
+  IsMongoId,
   IsNumber,
   IsObject,
   IsOptional,
@@ -149,6 +150,11 @@ export class UpdateStaffDto {
 /** On-duty check-in / check-out. */
 export class DutyStatusDto {
   @ApiProperty() @IsBoolean() onDuty: boolean;
+}
+
+/** Who takes over when someone goes off duty. Left out: shared among those on duty. */
+export class HandoffDto {
+  @ApiPropertyOptional() @IsOptional() @IsMongoId() toMemberId?: string;
 }
 
 /** Portal features that keep per-member preferences. */

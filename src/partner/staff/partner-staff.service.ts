@@ -39,12 +39,21 @@ import { AuthTokensResponseDto } from '../../auth/dto/auth-tokens-response.dto';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import {
   OrgType,
+  Perm,
   StaffRole,
   assignableRoles,
+  hasPerm,
   orgTypeOf,
   permissionsFor,
   roleLabel,
 } from '../rbac/partner-permissions';
+import {
+  LabOrderDocument,
+  LabOrderStatus,
+  PartnerLabOrder,
+} from '../lab/schemas/lab-order.schema';
+import { dayKey } from '../hospital/clock';
+import { HandoffTarget, spreadEvenly } from './handoff';
 import { PartnerNotifierService } from '../notify/partner-notifier.service';
 import { PartnerTrigger } from '../notify/partner-triggers';
 import { AppNotificationsService } from '../../notifications/app-notifications.service';
@@ -58,6 +67,7 @@ import {
 import {
   AcceptInviteDto,
   DutyBlockDto,
+  HandoffDto,
   InviteStaffDto,
   SavePreferenceDto,
   UpdateOwnStaffProfileDto,
@@ -68,6 +78,20 @@ import { registrationStateOf } from './registration-status';
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const PREFERENCE_MAX_BYTES = 16 * 1024;
+
+/** Lab reports not yet released, and visits still to happen, can pass to a colleague. */
+const OPEN_LAB_STATUSES = [
+  LabOrderStatus.ORDERED,
+  LabOrderStatus.SAMPLE_COLLECTED,
+  LabOrderStatus.PROCESSING,
+  LabOrderStatus.REPORT_READY,
+];
+const OPEN_VISIT_STATUSES = [
+  AppointmentStatus.REQUESTED,
+  AppointmentStatus.PENDING,
+  AppointmentStatus.CONFIRMED,
+  AppointmentStatus.RESCHEDULED,
+];
 
 /** Each block ends after it starts, and one person's shifts on a day never overlap (split shifts are fine). */
 function assertValidRoster(blocks: DutyBlockDto[]) {
@@ -143,6 +167,8 @@ export class PartnerStaffService {
     private readonly config: ConfigService,
     private readonly notifications: AppNotificationsService,
     private readonly live: LiveBus,
+    @InjectModel(PartnerLabOrder.name)
+    private readonly labOrderModel: Model<LabOrderDocument>,
   ) {}
 
   async list(actor: PartnerActor) {
@@ -407,6 +433,256 @@ export class PartnerStaffService {
       });
     }
     return this.toResponse(member, actor);
+  }
+
+  /** What would be left behind if this person went off duty, and who could take it. */
+  async handoffPreview(actor: PartnerActor, id: string) {
+    const member = await this.getMember(actor, id);
+    const [work, onDuty] = await Promise.all([
+      this.openWork(actor, member),
+      this.onDutyColleagues(actor, member),
+    ]);
+    const lab = await this.labTargets(actor, onDuty);
+    const visits = await this.visitTargets(actor, onDuty);
+    const ids = new Set([...lab, ...visits].map((t) => t.id));
+    return {
+      labOrders: work.orders.length,
+      visits: work.visits.length,
+      candidates: onDuty
+        .filter((m) => ids.has(m.id))
+        .map((m) => ({
+          id: m.id,
+          fullName: m.fullName,
+          roleLabel: roleLabel(actor.orgType, m.role),
+          department: m.department ?? null,
+          canTakeLab: lab.some((t) => t.id === m.id),
+          canTakeVisits: visits.some((t) => t.id === m.id),
+        })),
+    };
+  }
+
+  /**
+   * Passes someone's unreleased lab reports and today's remaining visits to
+   * colleagues on duty: one named person, or shared to keep everyone level.
+   */
+  async handoff(actor: PartnerActor, id: string, dto: HandoffDto) {
+    const member = await this.getMember(actor, id);
+    if (dto.toMemberId === member.id)
+      throw new BadRequestException('Choose someone else to take this work');
+    const [work, onDuty] = await Promise.all([
+      this.openWork(actor, member),
+      this.onDutyColleagues(actor, member),
+    ]);
+    if (dto.toMemberId && !onDuty.some((m) => m.id === dto.toMemberId))
+      throw new BadRequestException('That person is not on duty right now');
+    const pick = (targets: HandoffTarget[]) =>
+      dto.toMemberId
+        ? targets.filter((t) => t.id === dto.toMemberId)
+        : targets;
+    const labShares = spreadEvenly(
+      work.orders,
+      pick(await this.labTargets(actor, onDuty)),
+    );
+    const visitShares = spreadEvenly(
+      work.visits,
+      pick(await this.visitTargets(actor, onDuty)),
+    );
+
+    const now = new Date();
+    for (const { target, items } of labShares) {
+      await this.labOrderModel.bulkWrite(
+        items.map((o) => ({
+          updateOne: {
+            filter: { _id: o._id },
+            update: {
+              $set: {
+                technicianMemberId: new Types.ObjectId(target.id),
+                technicianName: target.name,
+              },
+              $push: {
+                statusHistory: {
+                  at: now,
+                  status: o.status,
+                  byName: actor.member.fullName,
+                  note: `Handed over from ${member.fullName} to ${target.name}`,
+                },
+              },
+            },
+          },
+        })),
+      );
+    }
+    for (const { target, items } of visitShares) {
+      await this.appointmentModel.updateMany(
+        { _id: { $in: items.map((v) => v._id) } },
+        {
+          $set: {
+            assignedMemberId: new Types.ObjectId(target.id),
+            assignedName: target.name,
+          },
+        },
+      );
+    }
+
+    const movedLab = labShares.reduce((n, s) => n + s.items.length, 0);
+    const movedVisits = visitShares.reduce((n, s) => n + s.items.length, 0);
+    await this.tellRecipients(onDuty, member, labShares, visitShares);
+    if (movedLab || movedVisits) {
+      const names = [
+        ...new Set([...labShares, ...visitShares].map((s) => s.target.name)),
+      ];
+      await this.record(actor, AuditAction.PARTNER_STAFF_DUTY, member, {
+        handoff: { labOrders: movedLab, visits: movedVisits, to: names },
+        change: `Handed over ${movedLab} lab report(s) and ${movedVisits} visit(s) to ${names.join(', ')}`,
+      });
+    }
+    return {
+      moved: { labOrders: movedLab, visits: movedVisits },
+      left: {
+        labOrders: work.orders.length - movedLab,
+        visits: work.visits.length - movedVisits,
+      },
+    };
+  }
+
+  private async openWork(actor: PartnerActor, member: PartnerMemberDocument) {
+    const providerId = actor.provider._id;
+    const orders =
+      actor.orgType === OrgType.DIAGNOSTIC
+        ? await this.labOrderModel
+            .find({
+              providerId,
+              technicianMemberId: member._id,
+              status: { $in: OPEN_LAB_STATUSES },
+            })
+            .select('_id status')
+            .lean()
+            .exec()
+        : [];
+    // Slot dates are stored as the local day at UTC midnight.
+    const today = new Date(`${dayKey(new Date())}T00:00:00.000Z`);
+    const slots = await this.slotModel
+      .find({
+        providerId,
+        date: { $gte: today, $lt: new Date(today.getTime() + 86_400_000) },
+      })
+      .select('_id')
+      .lean()
+      .exec();
+    const visits = await this.appointmentModel
+      .find({
+        providerId,
+        assignedMemberId: member._id,
+        slotId: { $in: slots.map((s) => s._id) },
+        status: { $in: OPEN_VISIT_STATUSES },
+      })
+      .select('_id')
+      .lean()
+      .exec();
+    return { orders, visits };
+  }
+
+  private onDutyColleagues(actor: PartnerActor, member: PartnerMemberDocument) {
+    return this.memberModel
+      .find({
+        providerId: actor.provider._id,
+        status: MemberStatus.ACTIVE,
+        onDuty: true,
+        _id: { $ne: member._id },
+      })
+      .exec();
+  }
+
+  private async labTargets(
+    actor: PartnerActor,
+    onDuty: PartnerMemberDocument[],
+  ): Promise<HandoffTarget[]> {
+    if (actor.orgType !== OrgType.DIAGNOSTIC) return [];
+    const able = onDuty.filter((m) =>
+      hasPerm(actor.orgType, m.role, Perm.LAB_REPORTS_DRAFT),
+    );
+    const counts = await this.labOrderModel.aggregate<{
+      _id: Types.ObjectId;
+      n: number;
+    }>([
+      {
+        $match: {
+          providerId: actor.provider._id,
+          technicianMemberId: { $in: able.map((m) => m._id) },
+          status: { $in: OPEN_LAB_STATUSES },
+        },
+      },
+      { $group: { _id: '$technicianMemberId', n: { $sum: 1 } } },
+    ]);
+    return this.asTargets(able, counts);
+  }
+
+  private async visitTargets(
+    actor: PartnerActor,
+    onDuty: PartnerMemberDocument[],
+  ): Promise<HandoffTarget[]> {
+    const able = onDuty.filter((m) => m.role === StaffRole.DOCTOR);
+    const counts = await this.appointmentModel.aggregate<{
+      _id: Types.ObjectId;
+      n: number;
+    }>([
+      {
+        $match: {
+          providerId: actor.provider._id,
+          assignedMemberId: { $in: able.map((m) => m._id) },
+          status: { $in: OPEN_VISIT_STATUSES },
+        },
+      },
+      { $group: { _id: '$assignedMemberId', n: { $sum: 1 } } },
+    ]);
+    return this.asTargets(able, counts);
+  }
+
+  private asTargets(
+    able: PartnerMemberDocument[],
+    counts: { _id: Types.ObjectId; n: number }[],
+  ): HandoffTarget[] {
+    const load = new Map(counts.map((c) => [c._id.toString(), c.n]));
+    return able.map((m) => ({
+      id: m.id,
+      name: m.fullName,
+      load: load.get(m.id) ?? 0,
+    }));
+  }
+
+  private async tellRecipients(
+    onDuty: PartnerMemberDocument[],
+    from: PartnerMemberDocument,
+    lab: { target: HandoffTarget; items: unknown[] }[],
+    visits: { target: HandoffTarget; items: unknown[] }[],
+  ) {
+    const given = new Map<string, { lab: number; visits: number }>();
+    const add = (id: string, key: 'lab' | 'visits', n: number) => {
+      const entry = given.get(id) ?? { lab: 0, visits: 0 };
+      entry[key] += n;
+      given.set(id, entry);
+    };
+    lab.forEach((s) => add(s.target.id, 'lab', s.items.length));
+    visits.forEach((s) => add(s.target.id, 'visits', s.items.length));
+    for (const [id, n] of given) {
+      const member = onDuty.find((m) => m.id === id);
+      if (!member) continue;
+      const parts = [
+        n.lab ? `${n.lab} lab report${n.lab === 1 ? '' : 's'}` : '',
+        n.visits ? `${n.visits} visit${n.visits === 1 ? '' : 's'} today` : '',
+      ].filter(Boolean);
+      await this.notifications
+        .create(member.userId.toString(), {
+          trigger: 'partner_handoff',
+          category: 'general',
+          title: 'Work handed over to you',
+          message: `${from.fullName} went off duty. ${parts.join(' and ')} are now with you.`,
+          lockScreenText: 'Work handed over to you',
+          actionLabel: 'Open',
+          actionRoute: n.lab ? '/partner/lab/queue' : '/partner/appointments',
+        })
+        .catch(() => undefined);
+    }
   }
 
   async reactivate(actor: PartnerActor, id: string) {

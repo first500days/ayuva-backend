@@ -39,6 +39,7 @@ import { OrgType, Perm } from './rbac/partner-permissions';
 import { PartnerStaffService } from './staff/partner-staff.service';
 import {
   DutyStatusDto,
+  HandoffDto,
   InviteStaffDto,
   SavePreferenceDto,
   UpdateOwnStaffProfileDto,
@@ -245,6 +246,30 @@ export class PartnerStaffController {
     @Body() dto: DutyStatusDto,
   ) {
     return this.staff.setDuty(a, id, dto.onDuty);
+  }
+
+  @Get(':id/handoff')
+  @RequirePerm(Perm.STAFF_MANAGE)
+  @ApiOperation({
+    summary: "What's still open for this person, and who on duty could take it",
+  })
+  handoffPreview(@PartnerCtx() a: PartnerActor, @Param('id') id: string) {
+    return this.staff.handoffPreview(a, id);
+  }
+
+  @Post(':id/handoff')
+  @HttpCode(200)
+  @RequirePerm(Perm.STAFF_MANAGE)
+  @ApiOperation({
+    summary:
+      'Pass unreleased lab reports and today’s visits to colleagues on duty',
+  })
+  handoff(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: HandoffDto,
+  ) {
+    return this.staff.handoff(a, id, dto);
   }
 
   @Post(':id/resend-invite')
