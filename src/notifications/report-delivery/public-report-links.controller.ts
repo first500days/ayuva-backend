@@ -13,6 +13,7 @@ import {
 import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { IsString, Matches } from 'class-validator';
 import type { Request, Response } from 'express';
+import { PublicLinkLimit } from '../../auth/auth-throttle';
 import { ReportDispatchService } from './report-dispatch.service';
 import { ReportLinksService } from './report-links.service';
 
@@ -25,6 +26,7 @@ class VerifyReportCodeDto {
 
 /** The page a WhatsApp or email link opens. No sign-in: the signed link plus a one-time code. */
 @ApiTags('Public - secure report links')
+@PublicLinkLimit()
 @Controller('public/report-links')
 export class PublicReportLinksController {
   constructor(

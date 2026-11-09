@@ -8,6 +8,10 @@ import { AdminMeController } from './admin-me.controller';
 import { AdminAdminUsersService } from './admin-admin-users.service';
 import { AuthModule } from '../../auth/auth.module';
 import { AuditLogModule } from '../../audit-log/audit-log.module';
+import {
+  SystemSettings,
+  SystemSettingsSchema,
+} from '../settings/schemas/system-settings.schema';
 
 @Module({
   imports: [
@@ -18,6 +22,7 @@ import { AuditLogModule } from '../../audit-log/audit-log.module';
       // Each directory entry is linked to the admin login it signs in with.
       { name: User.name, schema: UserSchema },
       { name: Role.name, schema: RoleSchema },
+      { name: SystemSettings.name, schema: SystemSettingsSchema },
     ]),
   ],
   controllers: [AdminAdminUsersController, AdminMeController],

@@ -135,6 +135,16 @@ export class User {
   @Prop()
   resetPasswordCodeExpiresAt?: Date;
 
+  @Prop({ default: 0 })
+  resetPasswordAttempts?: number;
+
+  // Wrong passwords in a row, and when sign-in reopens after too many.
+  @Prop({ default: 0 })
+  loginFailures?: number;
+
+  @Prop()
+  loginLockedUntil?: Date;
+
   // Captured once at registration; required before an account can be created (PRD FR-1.5).
   @Prop({ type: UserConsentSchema, required: true })
   consent: UserConsent;

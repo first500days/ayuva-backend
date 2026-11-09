@@ -9,6 +9,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { User, UserDocument, UserRole } from '../../core/users/schemas/user.schema';
 import { AdminAccessService } from '../../auth/services/admin-access.service';
+import {
+  SystemSettings,
+  SystemSettingsDocument,
+} from '../settings/schemas/system-settings.schema';
 
 /**
  * Who the signed-in admin is and which Admin Panel modules their role opens.
@@ -22,6 +26,8 @@ import { AdminAccessService } from '../../auth/services/admin-access.service';
 export class AdminMeController {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    @InjectModel(SystemSettings.name)
+    private readonly settingsModel: Model<SystemSettingsDocument>,
     private readonly adminAccess: AdminAccessService,
   ) {}
 
@@ -31,8 +37,15 @@ export class AdminMeController {
     const user = await this.userModel.findById(payload.sub).select('fullName email mfa').exec();
     if (!user) throw new NotFoundException('Admin account not found');
     const access = await this.adminAccess.resolve(user);
+    const settings = await this.settingsModel
+      .findOne()
+      .select('sessionTimeoutMinutes')
+      .lean()
+      .exec();
     return {
       id: user.id,
+      // Settings → Security: the panel signs an idle admin out after this long.
+      sessionTimeoutMinutes: settings?.sessionTimeoutMinutes ?? 30,
       fullName: user.fullName,
       email: user.email,
       roleName: access.roleName,

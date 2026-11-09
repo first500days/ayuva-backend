@@ -5,6 +5,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
   UnauthorizedException,
@@ -45,7 +46,7 @@ import { TotpService, verifyTotp } from './services/totp.service';
 import { AdminAccessService } from './services/admin-access.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/schemas/audit-log.schema';
-import { MailService } from '../mail/mail.service';
+import { MailService, maskEmail } from '../mail/mail.service';
 import {
   MedicalRecord,
   MedicalRecordDocument,
@@ -60,6 +61,11 @@ const MAX_MFA_ATTEMPTS = 5;
 const MFA_LOCK_MS = 15 * 60 * 1000;
 /** Wrong passwords on the idle lock screen before the session is ended outright. */
 const MAX_UNLOCK_ATTEMPTS = 5;
+/** Wrong passwords in a row before sign-in to that account pauses. */
+const MAX_LOGIN_FAILURES = 10;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+/** Wrong codes before a password-reset code stops working. */
+const MAX_RESET_ATTEMPTS = 5;
 
 /** The short-lived token between admin sign-in steps 1 and 2. */
 interface AdminMfaTokenPayload {
@@ -90,6 +96,7 @@ export class AuthService {
   ) {}
 
   private readonly unlockFailures = new Map<string, number>();
+  private readonly logger = new Logger(AuthService.name);
 
   async register(dto: RegisterDto): Promise<AuthTokensResponseDto> {
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
@@ -134,17 +141,24 @@ export class AuthService {
     dto: LoginDto,
     ip?: string,
   ): Promise<AuthTokensResponseDto | AdminMfaChallengeDto> {
-    const user = await this.userModel.findOne({
-      email: dto.email.toLowerCase(),
-    });
+    const email = dto.email.toLowerCase();
+    const user = await this.userModel.findOne({ email });
+    this.assertLoginNotLocked(user);
     if (
       !user?.passwordHash ||
       !(await bcrypt.compare(dto.password, user.passwordHash))
     ) {
+      await this.recordFailedLogin(user, email, ip);
       throw new UnauthorizedException('Invalid email or password');
     }
     if (user.status === UserStatus.INACTIVE) {
       throw new UnauthorizedException('This account has been deactivated');
+    }
+    if (user.loginFailures) {
+      await this.userModel.updateOne(
+        { _id: user._id },
+        { $set: { loginFailures: 0 }, $unset: { loginLockedUntil: 1 } },
+      );
     }
     // Admins can see patient medical files: no tokens before the second factor.
     if (user.role === UserRole.ADMIN) {
@@ -160,6 +174,57 @@ export class AuthService {
     });
 
     return this.issueTokens(user, await this.hasHealthProfile(user.id));
+  }
+
+  private assertLoginNotLocked(user: UserDocument | null): void {
+    const until = user?.loginLockedUntil;
+    if (until && until.getTime() > Date.now()) {
+      const minutes = Math.ceil((until.getTime() - Date.now()) / 60_000);
+      throw new HttpException(
+        `Too many failed sign-ins. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  private async recordFailedLogin(
+    user: UserDocument | null,
+    email: string,
+    ip?: string,
+  ): Promise<void> {
+    if (!user) {
+      // The audit log needs an account to attach to.
+      this.logger.warn(
+        `Failed sign-in for unknown account ${maskEmail(email)} from ${ip ?? 'unknown address'}`,
+      );
+      return;
+    }
+    const updated = await this.userModel.findByIdAndUpdate(
+      user._id,
+      { $inc: { loginFailures: 1 } },
+      { returnDocument: 'after' },
+    );
+    const attempt = updated?.loginFailures ?? 1;
+    const locked = attempt >= MAX_LOGIN_FAILURES;
+    if (locked) {
+      await this.userModel.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            loginFailures: 0,
+            loginLockedUntil: new Date(Date.now() + LOGIN_LOCK_MS),
+          },
+        },
+      );
+    }
+    await this.auditLogService.record({
+      actorId: user.id,
+      action: AuditAction.LOGIN_FAILED,
+      targetType: 'User',
+      targetId: user.id,
+      metadata: { attempt, locked },
+      ipAddress: ip,
+    });
   }
 
   async oauthGoogle(
@@ -585,6 +650,7 @@ export class AuthService {
     await this.userModel.findByIdAndUpdate(user.id, {
       resetPasswordCode: code,
       resetPasswordCodeExpiresAt: expiresAt,
+      resetPasswordAttempts: 0,
     });
 
     await this.mailService.sendPasswordResetEmail(user.email, code);
@@ -604,11 +670,11 @@ export class AuthService {
   }): Promise<void> {
     const user = await this.userModel.findOne({
       email: dto.email.toLowerCase(),
-      resetPasswordCode: dto.code,
       resetPasswordCodeExpiresAt: { $gt: new Date() },
     });
 
-    if (!user) {
+    if (!user || user.resetPasswordCode !== dto.code) {
+      if (user) await this.recordFailedReset(user);
       throw new UnauthorizedException('Invalid or expired reset code');
     }
 
@@ -618,6 +684,7 @@ export class AuthService {
       passwordHash,
       resetPasswordCode: null,
       resetPasswordCodeExpiresAt: null,
+      resetPasswordAttempts: 0,
     });
 
     await this.auditLogService.record({
@@ -626,6 +693,24 @@ export class AuthService {
       targetType: 'User',
       targetId: user.id,
     });
+  }
+
+  /** A 6-digit code can't be guessed in five tries, so the code dies after five. */
+  private async recordFailedReset(user: UserDocument): Promise<void> {
+    const attempts = (user.resetPasswordAttempts ?? 0) + 1;
+    await this.userModel.updateOne(
+      { _id: user._id },
+      {
+        $set:
+          attempts >= MAX_RESET_ATTEMPTS
+            ? {
+                resetPasswordCode: null,
+                resetPasswordCodeExpiresAt: null,
+                resetPasswordAttempts: 0,
+              }
+            : { resetPasswordAttempts: attempts },
+      },
+    );
   }
 
   /**

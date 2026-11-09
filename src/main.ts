@@ -1,9 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import type { NextFunction, Request, Response } from 'express';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { apiReference } from '@scalar/nestjs-api-reference';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppLogger } from './common/logger/app-logger.service';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -20,6 +22,16 @@ async function bootstrap() {
   // Hosted behind a proxy: without this every request.ip (audit log, security
   // flags) is the proxy's. TRUST_PROXY_HOPS is the number of proxies in front.
   app.set('trust proxy', Number(config.get<string>('TRUST_PROXY_HOPS') ?? 1));
+
+  // Security headers. The portal on another origin reads files from this API,
+  // and the /docs page runs its own scripts.
+  const apiHeaders = helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  });
+  const docsHeaders = helmet({ contentSecurityPolicy: false });
+  app.use((req: Request, res: Response, next: NextFunction) =>
+    (req.path.startsWith('/docs') ? docsHeaders : apiHeaders)(req, res, next),
+  );
 
   // /health and /docs stay unprefixed/unversioned; all feature routes live under /api/v1 (TRD §4).
   app.setGlobalPrefix(API_PREFIX, {

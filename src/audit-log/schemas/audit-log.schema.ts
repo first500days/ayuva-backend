@@ -5,6 +5,7 @@ import { makeAppendOnly } from '../append-only';
 
 export enum AuditAction {
   LOGIN = 'login',
+  LOGIN_FAILED = 'login_failed',
   REGISTER = 'register',
   RECORD_UPLOAD = 'record_upload',
   RECORD_VIEW = 'record_view',

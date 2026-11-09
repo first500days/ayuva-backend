@@ -334,6 +334,105 @@ describe('AuthService', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
+    describe('failed sign-ins', () => {
+      const wrong = { email: 'a@example.com', password: 'WrongPassword1' };
+
+      it('logs each failure with the address it came from', async () => {
+        const { service, userModel, auditLogService } = buildService();
+        const passwordHash = await bcrypt.hash('CorrectPassword1', 10);
+        userModel.findOne.mockResolvedValue({
+          _id: 'id-1',
+          id: 'user-1',
+          passwordHash,
+          status: UserStatus.ACTIVE,
+        });
+        userModel.findByIdAndUpdate.mockResolvedValue({ loginFailures: 3 });
+
+        await expect(service.login(wrong, '203.0.113.9')).rejects.toBeInstanceOf(
+          UnauthorizedException,
+        );
+        expect(auditLogService.record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: 'login_failed',
+            actorId: 'user-1',
+            ipAddress: '203.0.113.9',
+            metadata: { attempt: 3, locked: false },
+          }),
+        );
+        expect(userModel.updateOne).not.toHaveBeenCalled();
+      });
+
+      it('pauses the account on the tenth wrong password', async () => {
+        const { service, userModel, auditLogService } = buildService();
+        const passwordHash = await bcrypt.hash('CorrectPassword1', 10);
+        userModel.findOne.mockResolvedValue({
+          _id: 'id-1',
+          id: 'user-1',
+          passwordHash,
+          status: UserStatus.ACTIVE,
+        });
+        userModel.findByIdAndUpdate.mockResolvedValue({ loginFailures: 10 });
+
+        await expect(service.login(wrong)).rejects.toBeInstanceOf(
+          UnauthorizedException,
+        );
+        const update = userModel.updateOne.mock.calls[0][1].$set;
+        expect(update.loginFailures).toBe(0);
+        expect(update.loginLockedUntil.getTime()).toBeGreaterThan(Date.now());
+        expect(auditLogService.record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: { attempt: 10, locked: true },
+          }),
+        );
+      });
+
+      it('refuses even the right password while paused', async () => {
+        const { service, userModel } = buildService();
+        const passwordHash = await bcrypt.hash('CorrectPassword1', 10);
+        userModel.findOne.mockResolvedValue({
+          passwordHash,
+          status: UserStatus.ACTIVE,
+          loginLockedUntil: new Date(Date.now() + 5 * 60_000),
+        });
+
+        await expect(
+          service.login({ email: 'a@example.com', password: 'CorrectPassword1' }),
+        ).rejects.toMatchObject({ status: 429 });
+      });
+
+      it('clears the count after a successful sign-in', async () => {
+        const { service, userModel } = buildService();
+        const passwordHash = await bcrypt.hash('CorrectPassword1', 10);
+        userModel.findOne.mockResolvedValue({
+          _id: 'id-1',
+          id: new Types.ObjectId().toString(),
+          email: 'a@example.com',
+          role: UserRole.PATIENT,
+          passwordHash,
+          status: UserStatus.ACTIVE,
+          loginFailures: 4,
+        });
+
+        await service.login({
+          email: 'a@example.com',
+          password: 'CorrectPassword1',
+        });
+        expect(userModel.updateOne.mock.calls[0][1]).toEqual({
+          $set: { loginFailures: 0 },
+          $unset: { loginLockedUntil: 1 },
+        });
+      });
+
+      it('writes no audit row for an account that does not exist', async () => {
+        const { service, userModel, auditLogService } = buildService();
+        userModel.findOne.mockResolvedValue(null);
+        await expect(service.login(wrong)).rejects.toBeInstanceOf(
+          UnauthorizedException,
+        );
+        expect(auditLogService.record).not.toHaveBeenCalled();
+      });
+    });
+
     it('throws UnauthorizedException for a deactivated account, even with the correct password', async () => {
       const { service, userModel } = buildService();
       const passwordHash = await bcrypt.hash('CorrectPassword1', 10);
@@ -572,6 +671,7 @@ describe('AuthService', () => {
       userModel.findOne.mockResolvedValue({
         id: 'user-1',
         email: 'person@example.com',
+        resetPasswordCode: '482913',
       });
 
       await service.resetPassword({
@@ -591,6 +691,37 @@ describe('AuthService', () => {
           actorId: 'user-1',
         }),
       );
+    });
+
+    it('kills a reset code after five wrong tries', async () => {
+      const { service, userModel } = buildService();
+      const user = {
+        _id: 'id-1',
+        id: 'user-1',
+        resetPasswordCode: '482913',
+        resetPasswordAttempts: 0,
+      };
+      userModel.findOne.mockResolvedValue(user);
+      const attempt = () =>
+        service.resetPassword({
+          email: 'person@example.com',
+          code: '000000',
+          newPassword: 'NewPassword123',
+        });
+
+      await expect(attempt()).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(userModel.updateOne.mock.calls[0][1].$set).toEqual({
+        resetPasswordAttempts: 1,
+      });
+
+      user.resetPasswordAttempts = 4;
+      await expect(attempt()).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(userModel.updateOne.mock.calls[1][1].$set).toEqual({
+        resetPasswordCode: null,
+        resetPasswordCodeExpiresAt: null,
+        resetPasswordAttempts: 0,
+      });
+      expect(userModel.findByIdAndUpdate).not.toHaveBeenCalled();
     });
 
     it('rejects invalid or expired reset codes', async () => {

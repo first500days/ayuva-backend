@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { IsString, Matches } from 'class-validator';
+import { PublicLinkLimit } from '../../auth/auth-throttle';
 import { PartnerTrendLinksService } from './partner-trend-links.service';
 
 class OpenTrendsDto {
@@ -15,6 +16,7 @@ class OpenTrendsDto {
 
 /** The patient's trend page (no sign-in: the link plus a check on who they are). */
 @ApiTags('Public - lab trends')
+@PublicLinkLimit()
 @Controller('public/trends')
 export class PublicTrendsController {
   constructor(private readonly links: PartnerTrendLinksService) {}

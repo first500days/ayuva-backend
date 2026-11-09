@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { ConsentGuard } from './guards/consent.guard';
@@ -31,6 +32,8 @@ import { MailModule } from '../mail/mail.module';
 @Module({
   imports: [
     PassportModule,
+    // Per-address limits for sign-in and public links; each route sets its own.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     AuditLogModule,
     MailModule,
     MongooseModule.forFeature([

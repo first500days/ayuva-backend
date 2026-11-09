@@ -33,6 +33,7 @@ import { AuditLogInterceptor } from '../audit-log/interceptors/audit-log.interce
 import { AuditEvent } from '../audit-log/decorators/audit-event.decorator';
 import { AuditAction } from '../audit-log/schemas/audit-log.schema';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SignInLimit } from '../auth/auth-throttle';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -79,6 +80,7 @@ export class PartnerAuthController {
   ) {}
 
   @Post('register')
+  @SignInLimit()
   @ApiOperation({
     summary:
       'Register a partner; account stays pending until an admin verifies it (P01)',

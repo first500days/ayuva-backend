@@ -32,6 +32,7 @@ import { AdminMfaChallengeDto, VerifyMfaDto } from './dto/admin-mfa.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from './interfaces/jwt-payload.interface';
+import { CodeLimit, RefreshLimit, SignInLimit } from './auth-throttle';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -39,6 +40,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @SignInLimit()
   @ApiOperation({ summary: 'Email/password sign-up (FR-1.2, FR-1.5)' })
   @ApiCreatedResponse({ type: AuthTokensResponseDto })
   register(@Body() dto: RegisterDto): Promise<AuthTokensResponseDto> {
@@ -46,6 +48,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @SignInLimit()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -81,6 +84,7 @@ export class AuthController {
   }
 
   @Post('mfa/verify')
+  @CodeLimit()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -92,6 +96,7 @@ export class AuthController {
   }
 
   @Post('oauth/google')
+  @SignInLimit()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Google OAuth sign-up/sign-in (FR-1.3)' })
   @ApiOkResponse({ type: AuthTokensResponseDto })
@@ -102,6 +107,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @RefreshLimit()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Exchange a refresh token for a new token pair' })
   @ApiOkResponse({ type: RefreshTokenResponseDto })
@@ -110,6 +116,7 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @CodeLimit()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request a password reset email' })
   async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<void> {
@@ -117,6 +124,7 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  @CodeLimit()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password using a reset token' })
   async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
