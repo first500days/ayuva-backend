@@ -128,6 +128,7 @@ export enum AuditAction {
   // An approved report going to the patient, and the patient opening its secure link.
   REPORT_DISPATCHED = 'report_dispatched',
   REPORT_LINK_OPENED = 'report_link_opened',
+  PARTNER_IMAGING_MEASUREMENT = 'partner_imaging_measurement',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;

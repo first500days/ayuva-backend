@@ -93,6 +93,7 @@ import {
   CreateInventoryItemDto,
   CreateLabOrderDto,
   CriticalCalloutDto,
+  ImagingMeasurementDto,
   LabOrdersQueryDto,
   PrintLabelsDto,
   ReleaseResultDto,
@@ -1112,6 +1113,20 @@ export class PartnerLabController {
     @Body() dto: RemoveImagingDto,
   ) {
     return this.orders.removeImagingMany(a, id, dto.fileIds);
+  }
+
+  @Post('orders/:id/imaging/measurement')
+  @HttpCode(200)
+  @RequirePerm(Perm.IMAGING_VIEW)
+  @ApiOperation({
+    summary: 'Audit a measurement drawn, changed or removed on a study',
+  })
+  recordMeasurement(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: ImagingMeasurementDto,
+  ) {
+    return this.orders.recordMeasurement(a, id, dto);
   }
 
   @Get('orders/:id/imaging/:fileId')

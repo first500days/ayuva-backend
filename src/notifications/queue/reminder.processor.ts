@@ -148,7 +148,7 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
       prefs.push ? this.sendPush(data.userId, payload, prefs) : undefined,
       prefs.email && user?.email && this.isEmailWorthy(data.type)
         ? this.mail
-            .sendMail(user.email, payload.title, `<p>${escapeHtml(payload.body)}</p>`)
+            .sendMail(user.email, payload.title, `<p>${escapeHtml(this.outsideText(data, payload))}</p>`)
             .catch((err: unknown) =>
               this.logger.error(`Reminder email failed for user ${data.userId}`, err as Error),
             )
@@ -158,9 +158,23 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
       data.type === ReminderJobName.APPOINTMENT &&
       user?.phone &&
       user.phoneVerifiedAt
-        ? this.smsSender.send(user.phone, `Ayuva: ${payload.body}`)
+        ? this.smsSender.send(user.phone, `Ayuva: ${this.outsideText(data, payload)}`)
         : undefined,
     ]);
+  }
+
+  /** Email and SMS pass through outside services, so they never name a doctor or clinic. */
+  private outsideText(data: ReminderJobData, payload: FcmPayload): string {
+    switch (data.type) {
+      case ReminderJobName.APPOINTMENT:
+        return 'You have an upcoming appointment. Open Ayuva to see the details.';
+      case ReminderJobName.FOLLOW_UP:
+        return 'It’s time to check in on your recent visit. Open Ayuva to see your next steps.';
+      case ReminderJobName.CARE_FOLLOW_UP:
+        return 'You have a follow-up coming up. Open Ayuva to book a time.';
+      default:
+        return payload.body;
+    }
   }
 
   private async sendPush(

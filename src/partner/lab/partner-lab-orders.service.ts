@@ -1078,6 +1078,34 @@ export class PartnerLabOrdersService {
     };
   }
 
+  /** Who drew, changed or removed a measurement on a study (same access as viewing it). */
+  async recordMeasurement(
+    actor: PartnerActor,
+    id: string,
+    dto: { action: 'added' | 'modified' | 'removed'; tool: string; value?: string },
+  ) {
+    if (!Types.ObjectId.isValid(id))
+      throw new NotFoundException('Order not found');
+    const order = await this.orderModel.findById(id);
+    const own = order?.providerId.equals(actor.provider._id);
+    const referrer = order?.referringProviderId?.equals(actor.provider._id);
+    if (!order || (!own && !referrer))
+      throw new NotFoundException('Order not found');
+    await this.audit.record({
+      actorId: actor.userId,
+      action: AuditAction.PARTNER_IMAGING_MEASUREMENT,
+      targetType: 'PartnerLabOrder',
+      targetId: order.id,
+      metadata: {
+        providerId: actor.provider.id,
+        patientId: order.patientId.toString(),
+        label: `${order.orderNo}: ${dto.tool} ${dto.action}${dto.value ? ` (${dto.value})` : ''}`,
+      },
+      ipAddress: actor.ip,
+    });
+    return { recorded: true };
+  }
+
   /**
    * Opening a study reads every slice, so the view is logged once per person
    * per study per half hour rather than once per slice.

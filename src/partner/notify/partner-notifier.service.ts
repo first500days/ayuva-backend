@@ -235,7 +235,7 @@ export class PartnerNotifierService {
           this.mail.sendMail(
             m.email,
             `[Ayuva] ${safeTitle}`,
-            this.emailHtml(provider.name, safeTitle, safe),
+            this.emailHtml(safeTitle, safe),
           ),
         );
       }
@@ -349,7 +349,8 @@ export class PartnerNotifierService {
     return `${this.config.get<string>('frontend.url') ?? ''}/partner/dashboard`;
   }
 
-  private emailHtml(orgName: string, title: string, text: string): string {
+  /** No organisation name: for a solo practice that would be the doctor's name. */
+  private emailHtml(title: string, text: string): string {
     const portal = this.portalUrl();
     const esc = (s: string) =>
       s
@@ -359,7 +360,7 @@ export class PartnerNotifierService {
         .replace(/"/g, '&quot;');
     return `
       <div style="font-family:Arial,sans-serif;max-width:520px">
-        <p style="color:#0E7C7B;font-weight:bold;margin:0 0 4px">Ayuva Partner Portal · ${esc(orgName)}</p>
+        <p style="color:#0E7C7B;font-weight:bold;margin:0 0 4px">Ayuva Partner Portal</p>
         <h2 style="margin:0 0 12px;color:#16302E">${esc(title)}</h2>
         <p style="color:#334;line-height:1.5">${esc(text)}</p>
         <p><a href="${esc(portal)}" style="background:#0E7C7B;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Open the portal</a></p>

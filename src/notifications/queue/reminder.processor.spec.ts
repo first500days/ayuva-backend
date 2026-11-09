@@ -265,8 +265,9 @@ describe('ReminderProcessor (BullMQ consumer)', () => {
       expect(mail.sendMail).toHaveBeenCalledWith(
         'pat@example.com',
         'Upcoming appointment reminder',
-        expect.stringContaining('Dr. Menon'),
+        expect.stringContaining('upcoming appointment'),
       );
+      expect(JSON.stringify(mail.sendMail.mock.calls)).not.toContain('Menon');
     });
 
     it('texts appointment reminders only to a verified number with SMS on', async () => {
@@ -279,8 +280,9 @@ describe('ReminderProcessor (BullMQ consumer)', () => {
       await capturedProcessor!(APPOINTMENT_JOB);
       expect(verified.smsSender.send).toHaveBeenCalledWith(
         '+919800000000',
-        expect.stringContaining('Dr. Menon'),
+        expect.stringContaining('upcoming appointment'),
       );
+      expect(JSON.stringify(verified.smsSender.send.mock.calls)).not.toContain('Menon');
 
       const unverified = buildProcessor({
         phone: '+919800000000',

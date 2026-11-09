@@ -82,6 +82,14 @@ const ACTION_META: Partial<
     category: 'record_access',
     label: 'Viewed imaging study',
   },
+  [AuditAction.PARTNER_IMAGING_MEASUREMENT]: {
+    category: 'clinical',
+    label: 'Changed imaging measurement',
+  },
+  [AuditAction.REPORT_DISPATCHED]: {
+    category: 'clinical',
+    label: 'Sent report to patient',
+  },
   [AuditAction.PARTNER_NOTE_SIGN]: {
     category: 'clinical',
     label: 'Signed consultation note',

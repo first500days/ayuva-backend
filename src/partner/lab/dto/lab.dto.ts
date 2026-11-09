@@ -434,6 +434,24 @@ export class SaveResultDto {
   overrideReason?: string;
 }
 
+/** A measurement drawn, changed or removed in the viewer, for the audit trail. */
+export class ImagingMeasurementDto {
+  @ApiProperty({ enum: ['added', 'modified', 'removed'] })
+  @IsIn(['added', 'modified', 'removed'])
+  action: 'added' | 'modified' | 'removed';
+
+  @ApiProperty({ example: 'Length' })
+  @IsString()
+  @MaxLength(60)
+  tool: string;
+
+  @ApiPropertyOptional({ example: '12.3 mm' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  value?: string;
+}
+
 /** Imaging files to take off an order together (e.g. a whole series). */
 export class RemoveImagingDto {
   @ApiProperty({ type: [String], description: 'Imaging file ids to remove' })
