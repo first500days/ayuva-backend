@@ -61,6 +61,55 @@ describe('analyser messages', () => {
     expect(m.specimens[0].barcode).toBe('261105A1B2-7');
   });
 
+  describe('hospital EHR / RIS reports', () => {
+    const RIS = [
+      'MSH|^~\\&|RIS|HOSP|AYUVA|LAB|20261108||ORU^R01|R77|P|2.5.1',
+      'PID|1||MRN55^^^HOSP||KHAN^FARAH',
+      'ORC|RE|ORD-991|LAB-261108-AB12',
+      'OBR|1|ORD-991|ACC-5521|71020^CT Chest',
+      'OBX|1|TX|IMP^Impression||No focal lesion.||||||F',
+      'OBX|2|TX|IMP^Impression||Lungs clear.~Heart size normal.||||||F',
+      'OBX|3|FT|IMP^Impression||Report by Dr A\\.br\\Ratio 3\\S\\4||||||F',
+      'OBX|4|NM|EF^Ejection fraction||60|%|||||F',
+    ].join('\r');
+
+    it('collects every order number the message carries', () => {
+      expect(parseHl7(RIS).specimens[0].orderNumbers).toEqual([
+        'ORD-991',
+        'LAB-261108-AB12',
+        'ACC-5521',
+      ]);
+    });
+
+    it('joins text lines into one report, decoding HL7 escapes and repeats', () => {
+      expect(parseHl7(RIS).specimens[0].reportText).toBe(
+        'No focal lesion.\nLungs clear.\nHeart size normal.\nReport by Dr A\nRatio 3^4',
+      );
+    });
+
+    it('keeps numbers as results alongside the text', () => {
+      expect(parseHl7(RIS).specimens[0].results).toEqual([
+        expect.objectContaining({ code: 'EF', value: '60', unit: '%' }),
+      ]);
+    });
+
+    it('keeps a message that has only a written report', () => {
+      const m = parseHl7(
+        'MSH|^~\\&|R|H|A|L|2026||ORU^R01|1|P|2.5.1\rOBR|1|P1|F1\rOBX|1|TX|N^Note||Normal study',
+      );
+      expect(m.specimens).toHaveLength(1);
+      expect(m.specimens[0].reportText).toBe('Normal study');
+      expect(m.specimens[0].results).toEqual([]);
+    });
+
+    it('leaves an unknown escape as it was', () => {
+      const m = parseHl7(
+        'MSH|^~\\&|R|H|A|L|2026||ORU^R01|1|P|2.5.1\rOBR|1|P1|F1\rOBX|1|TX|N^Note||a\\Z\\b',
+      );
+      expect(m.specimens[0].reportText).toBe('a\\Z\\b');
+    });
+  });
+
   it('reads ASTM results, ignoring frame numbers and empty values', () => {
     const m = parseAstm(ASTM);
     expect(m.protocol).toBe('astm');

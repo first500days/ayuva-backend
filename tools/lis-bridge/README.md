@@ -52,6 +52,22 @@ Run one bridge per analyser, each with its own key and port. To keep it
 running, install it as a service: NSSM on Windows, or a systemd unit on
 Linux.
 
+## Hospital EHR and RIS systems
+
+An EHR or RIS sends HL7 v2 ORU^R01 over MLLP, so it uses this same bridge.
+Add it under **Laboratory → Analysers** with protocol HL7, then point its
+outbound interface at the bridge.
+
+- With no vial barcode to go on, Ayuva matches on the order number. The
+  placer or filler number (ORC-2/3, OBR-2/3) must be the Ayuva order number,
+  for example `LAB-261108-AB12`.
+- OBX lines of type TX or FT form the written report. It goes into the
+  report's comment, unless someone has already written one.
+- Numeric OBX lines are handled like analyser results.
+- A message whose order can't be found is still acknowledged and appears
+  under **Messages** as unmatched, so nothing is lost.
+- The report is still reviewed and signed off in the Report Builder.
+
 ## Notes
 
 - **Serial-only analysers** (RS-232): use a serial-to-Ethernet converter in

@@ -17,7 +17,11 @@ export interface InstrumentResult {
 export interface InstrumentSpecimen {
   /** Sample ID as the analyser read it from the tube: our vial barcode. */
   barcode: string;
+  /** Placer and filler numbers (ORC / OBR): how a hospital EHR or RIS names the order. */
+  orderNumbers: string[];
   results: InstrumentResult[];
+  /** A written report (OBX type TX or FT), line by line, as a RIS sends it. */
+  reportText?: string;
 }
 
 export interface ParsedMessage {
@@ -47,24 +51,43 @@ export function parseHl7(raw: string): ParsedMessage {
   // MSH-1 is the separator itself, so MSH-n sits at index n-1.
   const mshField = (n: number) => msf[n - 1] ?? '';
   const comp = (v: string | undefined, i = 0) => (v ?? '').split(cs)[i] ?? '';
+  const readable = hl7TextReader(msh[5] ?? '~', msh[6] ?? '\\', fs, cs, msh[7] ?? '&');
 
   const specimens: InstrumentSpecimen[] = [];
   let current: InstrumentSpecimen | null = null;
+  let orderControl: string[] = [];
   for (const line of lines) {
     const f = line.split(fs);
     const seg = f[0];
-    if (seg === 'OBR' || seg === 'SPM') {
+    if (seg === 'ORC') {
+      orderControl = [comp(f[2]), comp(f[3])];
+    } else if (seg === 'OBR' || seg === 'SPM') {
       const id = seg === 'SPM' ? comp(f[2]) : comp(f[3]) || comp(f[2]);
       if (!id) continue;
       if (seg === 'SPM' && current && !current.results.length) {
         current.barcode = id;
         continue;
       }
-      current = { barcode: id, results: [] };
+      current = {
+        barcode: id,
+        orderNumbers: [
+          ...new Set(
+            [...orderControl, comp(f[2]), comp(f[3])].filter(Boolean),
+          ),
+        ],
+        results: [],
+      };
       specimens.push(current);
     } else if (seg === 'OBX' && current) {
       const value = (f[5] ?? '').trim();
       if (!value) continue;
+      if (['TX', 'FT'].includes((f[2] ?? '').toUpperCase())) {
+        const text = readable(value);
+        current.reportText = current.reportText
+          ? `${current.reportText}\n${text}`
+          : text;
+        continue;
+      }
       current.results.push({
         code: comp(f[3]),
         name: comp(f[3], 1) || null,
@@ -79,7 +102,46 @@ export function parseHl7(raw: string): ParsedMessage {
     protocol: 'hl7',
     controlId: mshField(10) || null,
     messageType: mshField(9) || null,
-    specimens: specimens.filter((s) => s.results.length),
+    specimens: specimens.filter((s) => s.results.length || s.reportText),
+  };
+}
+
+/** HL7 text: repeats become lines, and the \.br\ and \F\ style escapes become what they stand for. */
+function hl7TextReader(
+  repeat: string,
+  escape: string,
+  field: string,
+  component: string,
+  sub: string,
+) {
+  const codes: Record<string, string> = {
+    '.br': '\n',
+    F: field,
+    S: component,
+    T: sub,
+    R: repeat,
+    E: escape,
+  };
+  return (value: string) => {
+    let out = '';
+    for (let i = 0; i < value.length; i++) {
+      const ch = value[i];
+      if (ch === repeat) {
+        out += '\n';
+      } else if (ch === escape) {
+        const end = value.indexOf(escape, i + 1);
+        const replacement = end > i ? codes[value.slice(i + 1, end)] : undefined;
+        if (replacement === undefined) {
+          out += ch;
+        } else {
+          out += replacement;
+          i = end;
+        }
+      } else {
+        out += ch;
+      }
+    }
+    return out;
   };
 }
 
@@ -101,7 +163,7 @@ export function parseAstm(raw: string): ParsedMessage {
     if (f[0] === 'O') {
       const id = comp(f[2], 0) || comp(f[3], 0);
       if (!id) continue;
-      current = { barcode: id, results: [] };
+      current = { barcode: id, orderNumbers: [], results: [] };
       specimens.push(current);
     } else if (f[0] === 'R' && current) {
       const value = (f[3] ?? '').trim();

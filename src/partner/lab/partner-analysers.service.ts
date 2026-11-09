@@ -35,6 +35,7 @@ import { CreateAnalyserDto, UpdateAnalyserDto } from './dto/analyser.dto';
 
 const hashKey = (key: string) => createHash('sha256').update(key).digest('hex');
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+const MAX_REPORT_TEXT = 8000;
 
 /**
  * Analyser interfacing (LIS): instruments send HL7 or ASTM results through
@@ -43,6 +44,10 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
  * through the same save path as typed results — so flags, delta and
  * contamination checks and critical-value alerts all apply. Values a person
  * already entered are never overwritten.
+ *
+ * Hospital EHR and RIS systems connect the same way. They name orders by
+ * number rather than by vial, and a written report goes into the report's
+ * comment for the pathologist to review.
  */
 @Injectable()
 export class PartnerAnalysersService {
@@ -251,11 +256,9 @@ export class PartnerAnalysersService {
       unchanged: 0,
       skipped: [] as string[],
     };
-    const order = await this.orderModel
-      .findOne({ providerId: actor.provider._id, 'samples.barcode': barcode })
-      .exec();
+    const order = await this.findOrder(actor, barcode, sp.orderNumbers);
     if (!order) {
-      item.skipped.push('no order has this vial');
+      item.skipped.push('no order has this vial or order number');
       return item;
     }
     item.orderNo = order.orderNo;
@@ -292,10 +295,22 @@ export class PartnerAnalysersService {
       slot.value = r.value;
       filled.push(`${slot.name} ${r.value}${r.unit ? ` ${r.unit}` : ''}`);
     }
+    // Like a value, a written report never replaces what someone already wrote.
+    const text = sp.reportText?.trim().slice(0, MAX_REPORT_TEXT);
+    const written = (current.comments ?? '').trim();
+    let comments = current.comments;
+    if (text) {
+      if (written === text) item.unchanged += 1;
+      else if (written) item.skipped.push('report text: already written');
+      else {
+        comments = text;
+        filled.push('written report');
+      }
+    }
     if (filled.length) {
       await this.results.save(actor, order.id, {
         tests: current.tests as never,
-        comments: current.comments,
+        comments,
       });
       item.applied = filled.length;
       await this.audit.record({
@@ -313,6 +328,25 @@ export class PartnerAnalysersService {
       });
     }
     return item;
+  }
+
+  /** By the vial an analyser read, else by the order number a hospital system quotes. */
+  private async findOrder(
+    actor: PartnerActor,
+    barcode: string,
+    orderNumbers: string[],
+  ) {
+    const providerId = actor.provider._id;
+    const byVial = await this.orderModel
+      .findOne({ providerId, 'samples.barcode': barcode })
+      .exec();
+    if (byVial || !orderNumbers.length) return byVial;
+    return this.orderModel
+      .findOne({
+        providerId,
+        orderNo: { $in: orderNumbers.map((n) => n.trim().toUpperCase()) },
+      })
+      .exec();
   }
 
   private async load(actor: PartnerActor, id: string) {
