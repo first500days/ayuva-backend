@@ -1299,6 +1299,15 @@ export class PartnerHospitalController {
     return this.analytics.analytics(a, q.days ?? 30);
   }
 
+  @Get('analytics/staffing-forecast')
+  @RequirePerm(Perm.ANALYTICS)
+  @ApiOperation({
+    summary: 'Suggested extra shifts, from past bookings and the roster',
+  })
+  staffingForecast(@PartnerCtx() a: PartnerActor) {
+    return this.analytics.staffingForecast(a);
+  }
+
   @Get('billing')
   @RequirePerm(Perm.BILLING_VIEW)
   @ApiOperation({

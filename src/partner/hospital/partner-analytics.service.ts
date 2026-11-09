@@ -19,7 +19,7 @@ import {
 } from '../../core/payments/schemas/transaction.schema';
 import { User, UserDocument } from '../../core/users/schemas/user.schema';
 import { PartnerActor } from '../rbac/partner-perm.guard';
-import { OrgType, roleLabel } from '../rbac/partner-permissions';
+import { OrgType, StaffRole, roleLabel } from '../rbac/partner-permissions';
 import {
   MemberStatus,
   PartnerMember,
@@ -53,9 +53,22 @@ import {
   PartnerBillPaymentsService,
 } from './partner-bill-payments.service';
 import { CREDIT_METHODS } from './schemas/bill-payment.schema';
+import {
+  FORECAST_WEEKS,
+  VISITS_PER_CLINICIAN_HOUR,
+  expectedDemand,
+  rosteredCount,
+  suggestShifts,
+} from './staffing-forecast';
 
 const DAY = 86_400_000;
 const round2 = (v: number) => Math.round(v * 100) / 100;
+/** Who sees the patients: a clinic's admin is its practising doctor. */
+const CLINICIANS: Record<OrgType, StaffRole[]> = {
+  [OrgType.CLINIC]: [StaffRole.DOCTOR, StaffRole.ADMIN],
+  [OrgType.HOSPITAL]: [StaffRole.DOCTOR],
+  [OrgType.DIAGNOSTIC]: [StaffRole.DOCTOR, StaffRole.TECHNICIAN],
+};
 const UPCOMING_DAYS = 7;
 const BOOKED = [
   AppointmentStatus.CONFIRMED,
@@ -92,6 +105,58 @@ export class PartnerAnalyticsService {
     private readonly billPayments: PartnerBillPaymentsService,
     private readonly config: ConfigService,
   ) {}
+
+  /** Suggested extra shifts, from the last eight weeks of bookings and the roster. */
+  async staffingForecast(actor: PartnerActor) {
+    const providerId = actor.provider._id;
+    const now = startOfDay(new Date());
+    const since = new Date(now.getTime() - FORECAST_WEEKS * 7 * DAY);
+    const slots = await this.slotModel
+      .find({ providerId, date: { $gte: since, $lt: now } })
+      .exec();
+    const slotById = new Map(slots.map((s) => [s.id, s]));
+    const [appointments, members] = await Promise.all([
+      this.appointmentModel
+        .find({
+          providerId,
+          slotId: { $in: slots.map((s) => s._id) },
+          status: { $in: BOOKED },
+        })
+        .select('slotId')
+        .lean()
+        .exec(),
+      this.memberModel
+        .find({
+          providerId,
+          status: MemberStatus.ACTIVE,
+          role: { $in: CLINICIANS[actor.orgType] },
+        })
+        .select('dutySchedule')
+        .lean()
+        .exec(),
+    ]);
+    const visits = appointments.flatMap((a) => {
+      const s = slotById.get(a.slotId.toString());
+      const hour = Number.parseInt(s?.time?.slice(0, 2) ?? '', 10);
+      if (!s || !Number.isFinite(hour) || hour < 0 || hour > 23) return [];
+      return [
+        {
+          weekday: (s.date.getUTCDay() + 6) % 7,
+          hour,
+          weeksAgo: Math.floor((now.getTime() - s.date.getTime()) / (7 * DAY)),
+        },
+      ];
+    });
+    return {
+      weeks: FORECAST_WEEKS,
+      visitsPerClinicianHour: VISITS_PER_CLINICIAN_HOUR,
+      visitsConsidered: visits.length,
+      suggestions: suggestShifts(
+        expectedDemand(visits),
+        rosteredCount(members),
+      ),
+    };
+  }
 
   async analytics(actor: PartnerActor, days = 30) {
     const providerId = actor.provider._id;
