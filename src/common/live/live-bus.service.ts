@@ -25,6 +25,19 @@ export interface SessionEnd {
   reason: 'session_replaced' | 'frozen' | 'signed_out';
 }
 
+/** A slice of bedside telemetry. Carries numbers and waveform only, never a name. */
+export interface VitalsFrame {
+  providerId: string;
+  admissionId: string;
+  at: number;
+  hr?: number;
+  spo2?: number;
+  rr?: number;
+  /** ECG samples since the last frame, and their sample rate. */
+  ecg?: number[];
+  fs?: number;
+}
+
 /**
  * In-process bus between whatever changed the data and the sockets watching
  * it. MongoDB change streams would need a replica set, which the local and
@@ -60,6 +73,19 @@ export class LiveBus {
     } catch {
       // As above.
     }
+  }
+
+  frame(frame: VitalsFrame): void {
+    try {
+      this.emitter.emit('frame', frame);
+    } catch {
+      // As above.
+    }
+  }
+
+  onFrame(listener: (f: VitalsFrame) => void): () => void {
+    this.emitter.on('frame', listener);
+    return () => this.emitter.off('frame', listener);
   }
 
   onChange(listener: (e: LiveEvent) => void): () => void {

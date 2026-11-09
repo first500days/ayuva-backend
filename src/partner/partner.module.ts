@@ -209,6 +209,15 @@ import { PartnerBriefService } from './clinical/partner-brief.service';
 import { PartnerSafetyController } from './clinical/partner-safety.controller';
 import { PartnerDicomwebService } from './lab/dicomweb/partner-dicomweb.service';
 import { PartnerDicomwebController } from './lab/dicomweb/partner-dicomweb.controller';
+import {
+  PartnerMonitor,
+  PartnerMonitorSchema,
+  PartnerVital,
+  PartnerVitalSchema,
+} from './hospital/schemas/telemetry.schema';
+import { PartnerTelemetryService } from './hospital/partner-telemetry.service';
+import { PartnerTelemetryController } from './hospital/partner-telemetry.controller';
+import { TelemetryIngestGateway } from './hospital/telemetry-ingest.gateway';
 import { WsUpgradeRouter } from './live/ws-upgrade-router.service';
 import { PartnerLiveGateway } from './live/partner-live.gateway';
 
@@ -268,6 +277,8 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
       { name: TrendLink.name, schema: TrendLinkSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },
       { name: Medication.name, schema: MedicationSchema },
+      { name: PartnerMonitor.name, schema: PartnerMonitorSchema },
+      { name: PartnerVital.name, schema: PartnerVitalSchema },
     ]),
   ],
   controllers: [
@@ -294,6 +305,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     LisIngestController,
     PublicTrendsController,
     PartnerDicomwebController,
+    PartnerTelemetryController,
   ],
   providers: [
     PartnerContextService,
@@ -339,6 +351,8 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     WsUpgradeRouter,
     PartnerLiveGateway,
     PartnerDicomwebService,
+    PartnerTelemetryService,
+    TelemetryIngestGateway,
   ],
 })
 export class PartnerModule {}

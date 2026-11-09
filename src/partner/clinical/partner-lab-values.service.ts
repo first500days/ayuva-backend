@@ -69,26 +69,66 @@ export class PartnerLabValuesService {
         .exec(),
     ]);
     return [
-      ...results.flatMap((r) =>
-        r.tests.flatMap((t) =>
-          t.values.flatMap((v) => {
-            const value = Number.parseFloat(v.value);
-            return Number.isFinite(value) && r.releasedAt
-              ? [
-                  {
-                    parameter: v.name,
-                    value,
-                    unit: v.unit ?? null,
-                    refHigh: v.refHigh ?? null,
-                    at: r.releasedAt.toISOString(),
-                  },
-                ]
-              : [];
-          }),
-        ),
-      ),
+      ...results.flatMap(pointsFromResult),
       ...samples.flatMap((s) => pointsFromEntries(s.entries)),
     ];
+  }
+
+  /**
+   * Values for inpatients, including walk-ins known only by their admission:
+   * this hospital's lab and its own released reports. Runs without a
+   * signed-in person, so it never reads what a patient shared with a person.
+   */
+  async forAdmissions(
+    providerId: Types.ObjectId,
+    admissions: { _id: Types.ObjectId; patientId?: Types.ObjectId }[],
+  ): Promise<Map<string, LabPoint[]>> {
+    const since = new Date(Date.now() - LOOKBACK_MS);
+    const patientIds = admissions.flatMap((a) =>
+      a.patientId ? [a.patientId] : [],
+    );
+    const [samples, results] = await Promise.all([
+      this.lisModel
+        .find({
+          providerId,
+          status: { $in: REPORTED },
+          updatedAt: { $gte: since },
+          $or: [
+            { admissionId: { $in: admissions.map((a) => a._id) } },
+            { patientId: { $in: patientIds } },
+          ],
+        })
+        .select('entries admissionId patientId')
+        .lean()
+        .exec(),
+      this.resultModel
+        .find({
+          providerId,
+          status: 'released',
+          releasedAt: { $gte: since },
+          patientId: { $in: patientIds },
+        })
+        .select('tests releasedAt patientId')
+        .lean()
+        .exec(),
+    ]);
+    const out = new Map<string, LabPoint[]>();
+    for (const a of admissions) {
+      const pid = a.patientId?.toString();
+      out.set(a._id.toString(), [
+        ...samples
+          .filter(
+            (s) =>
+              s.admissionId?.equals(a._id) ||
+              (!!pid && s.patientId?.toString() === pid),
+          )
+          .flatMap((s) => pointsFromEntries(s.entries)),
+        ...results
+          .filter((r) => !!pid && r.patientId?.toString() === pid)
+          .flatMap(pointsFromResult),
+      ]);
+    }
+    return out;
   }
 
   private async sharedRecordIds(
@@ -112,6 +152,37 @@ export class PartnerLabValuesService {
     }
     return ids;
   }
+}
+
+function pointsFromResult(r: {
+  releasedAt?: Date;
+  tests: {
+    values: {
+      name: string;
+      value: string;
+      unit?: string;
+      refHigh?: number;
+    }[];
+  }[];
+}): LabPoint[] {
+  const at = r.releasedAt?.toISOString();
+  if (!at) return [];
+  return r.tests.flatMap((t) =>
+    t.values.flatMap((v) => {
+      const value = Number.parseFloat(v.value);
+      return Number.isFinite(value)
+        ? [
+            {
+              parameter: v.name,
+              value,
+              unit: v.unit ?? null,
+              refHigh: v.refHigh ?? null,
+              at,
+            },
+          ]
+        : [];
+    }),
+  );
 }
 
 /** Numbers written in a hospital lab's free-text results (notes are skipped). */

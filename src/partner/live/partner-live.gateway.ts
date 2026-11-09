@@ -10,7 +10,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
-import { LiveBus, type LiveTopic } from '../../common/live/live-bus.service';
+import {
+  LiveBus,
+  type LiveTopic,
+  type VitalsFrame,
+} from '../../common/live/live-bus.service';
+import { Perm } from '../rbac/partner-permissions';
 import {
   User,
   UserDocument,
@@ -36,6 +41,8 @@ const HEARTBEAT_MS = 30_000;
 /** A burst of writes (a bulk import, say) reaches each browser as one refresh. */
 const COALESCE_MS = 120;
 const MAX_PAYLOAD_BYTES = 16 * 1024;
+const MAX_WATCHED = 500;
+const MAX_BUFFERED_BYTES = 256 * 1024;
 
 interface Conn {
   ws: WebSocket;
@@ -46,6 +53,9 @@ interface Conn {
   pending: Set<LiveTopic>;
   userId?: string;
   providerId?: string;
+  /** Clinical staff only: may receive bedside telemetry. */
+  canWatch?: boolean;
+  watching?: Set<string> | 'all';
 }
 
 function rawText(data: RawData): string {
@@ -56,9 +66,10 @@ function rawText(data: RawData): string {
 }
 
 /**
- * Staff browsers' live connection: "this area changed, re-read it". The
- * socket never carries patient data; browsers fetch it from the normal
- * endpoints, where permissions and access logging already apply.
+ * Staff browsers' live connection: "this area changed, re-read it". Browsers
+ * fetch the data itself from the normal endpoints, where permissions and
+ * access logging already apply. The one exception is bedside telemetry, sent
+ * to clinical staff who ask for it: numbers keyed by admission id, no names.
  *
  * Browsers can't set headers on a WebSocket, and a token in the URL would end
  * up in proxy logs, so the first message carries the access token.
@@ -90,6 +101,7 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
     this.server.on('connection', (ws: WebSocket) => this.accept(ws));
     this.unsubscribe = [
       this.bus.onChange((e) => this.notifyProvider(e.providerId, e.topics)),
+      this.bus.onFrame((f) => this.forwardFrame(f)),
       this.bus.onSessionEnd((e) =>
         this.closeUser(
           e.userId,
@@ -125,7 +137,7 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
   }
 
   private async onMessage(conn: Conn, data: RawData): Promise<void> {
-    let msg: { t?: unknown; token?: unknown };
+    let msg: { t?: unknown; token?: unknown; admissions?: unknown };
     try {
       msg = JSON.parse(rawText(data)) as typeof msg;
     } catch {
@@ -133,6 +145,25 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
     }
     if (msg.t === 'auth' && !conn.userId && typeof msg.token === 'string')
       await this.authenticate(conn, msg.token);
+    else if (msg.t === 'watch' && conn.canWatch)
+      conn.watching =
+        msg.admissions === 'all'
+          ? 'all'
+          : new Set(
+              (Array.isArray(msg.admissions) ? msg.admissions : [])
+                .filter((a): a is string => typeof a === 'string')
+                .slice(0, MAX_WATCHED),
+            );
+  }
+
+  private forwardFrame({ providerId, ...frame }: VitalsFrame): void {
+    for (const conn of this.byProvider.get(providerId) ?? []) {
+      const wanted =
+        conn.watching === 'all' || conn.watching?.has(frame.admissionId);
+      // A browser that can't keep up skips frames rather than queueing them.
+      if (wanted && conn.ws.bufferedAmount < MAX_BUFFERED_BYTES)
+        this.send(conn, { t: 'vitals', ...frame });
+    }
   }
 
   private async authenticate(conn: Conn, token: string): Promise<void> {
@@ -157,6 +188,7 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
       if (conn.authTimer) clearTimeout(conn.authTimer);
       conn.userId = payload.sub;
       conn.providerId = ctx.provider.id;
+      conn.canWatch = ctx.permissions.includes(Perm.TELEMETRY_VIEW);
       this.index(this.byProvider, conn.providerId, conn);
       this.index(this.byUser, conn.userId, conn);
       // The token's lifetime is the connection's: the portal refreshes and reconnects.

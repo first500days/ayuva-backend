@@ -18,6 +18,7 @@ export enum PartnerTrigger {
   CLINICAL_MENTION = 'clinical_mention',
   COLD_CHAIN_EXCURSION = 'cold_chain_excursion',
   QC_REJECTED = 'qc_rejected',
+  EARLY_WARNING = 'early_warning',
 }
 
 /**
@@ -221,6 +222,16 @@ export const TRIGGER_CATALOG: TriggerDefinition[] = [
     orgTypes: [OrgType.DIAGNOSTIC],
     critical: true,
     defaultRoles: [R.ADMIN, R.DOCTOR, R.TECHNICIAN],
+    defaultChannels: channels(['inApp', 'desktop']),
+  },
+  {
+    trigger: PartnerTrigger.EARLY_WARNING,
+    label: 'Inpatient early warning',
+    description:
+      'An inpatient reaches a high NEWS2 score, or meets the sepsis screen (deranged vitals together with raised inflammation markers). A rule-based prompt for clinical review; alerts carry the admission number only.',
+    orgTypes: [OrgType.HOSPITAL],
+    critical: true,
+    defaultRoles: [R.DOCTOR, R.NURSE],
     defaultChannels: channels(['inApp', 'desktop']),
   },
   {

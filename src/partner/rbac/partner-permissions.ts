@@ -89,6 +89,12 @@ export enum Perm {
   LIS_MANAGE = 'lis.manage',
   // Pathologist sign-off of a report.
   LIS_VERIFY = 'lis.verify',
+  // Inpatient vitals and the early-warning screen (clinical staff).
+  TELEMETRY_VIEW = 'telemetry.view',
+  // Charting observations by hand.
+  TELEMETRY_RECORD = 'telemetry.record',
+  // Registering monitors and their keys; shows no patient data.
+  TELEMETRY_MANAGE = 'telemetry.manage',
 }
 
 const ALL = Object.values(Perm);
@@ -116,6 +122,9 @@ const ORG_SCOPED: Partial<Record<Perm, OrgType[]>> = {
   [Perm.LIS_VIEW]: [OrgType.HOSPITAL],
   [Perm.LIS_MANAGE]: [OrgType.HOSPITAL],
   [Perm.LIS_VERIFY]: [OrgType.HOSPITAL],
+  [Perm.TELEMETRY_VIEW]: [OrgType.HOSPITAL],
+  [Perm.TELEMETRY_RECORD]: [OrgType.HOSPITAL],
+  [Perm.TELEMETRY_MANAGE]: [OrgType.HOSPITAL],
   // Clinicians write notes and prescriptions; a lab issues reports instead.
   [Perm.CLINICAL_WRITE]: [OrgType.CLINIC, OrgType.HOSPITAL],
 };
@@ -173,7 +182,9 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
         p !== P.ER_TRIAGE &&
         p !== P.LIS_VIEW &&
         p !== P.LIS_MANAGE &&
-        p !== P.LIS_VERIFY,
+        p !== P.LIS_VERIFY &&
+        p !== P.TELEMETRY_VIEW &&
+        p !== P.TELEMETRY_RECORD,
     ),
     [StaffRole.DOCTOR]: [
       P.DASHBOARD,
@@ -196,6 +207,8 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.LIS_VIEW,
       P.LIS_MANAGE,
       P.LIS_VERIFY,
+      P.TELEMETRY_VIEW,
+      P.TELEMETRY_RECORD,
     ],
     [StaffRole.NURSE]: [
       P.DASHBOARD,
@@ -214,6 +227,8 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.OT_MANAGE,
       P.LIS_VIEW,
       P.LIS_MANAGE,
+      P.TELEMETRY_VIEW,
+      P.TELEMETRY_RECORD,
     ],
     [StaffRole.RECEPTIONIST]: [
       P.DASHBOARD,
@@ -247,6 +262,7 @@ const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
       P.OT_VIEW,
       P.LIS_VIEW,
       P.LIS_MANAGE,
+      P.TELEMETRY_MANAGE,
     ],
     [StaffRole.PHARMACIST]: [
       P.DASHBOARD,
