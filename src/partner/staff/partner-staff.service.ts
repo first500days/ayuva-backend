@@ -9,7 +9,8 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { LiveBus } from '../../common/live/live-bus.service';
 import {
   CURRENT_CONSENT_VERSION,
   User,
@@ -141,6 +142,7 @@ export class PartnerStaffService {
     private readonly notifier: PartnerNotifierService,
     private readonly config: ConfigService,
     private readonly notifications: AppNotificationsService,
+    private readonly live: LiveBus,
   ) {}
 
   async list(actor: PartnerActor) {
@@ -559,10 +561,14 @@ export class PartnerStaffService {
     };
     await member.save();
     // Staff logins belong to exactly one organisation, so suspending the member blocks the login too.
+    // A new session id invalidates the tokens they hold right now.
     await this.userModel.updateOne(
       { _id: member.userId },
-      { $set: { status: UserStatus.INACTIVE } },
+      {
+        $set: { status: UserStatus.INACTIVE, partnerSessionId: randomUUID() },
+      },
     );
+    this.live.endSessions(member.userId.toString(), 'frozen');
   }
 
   /**

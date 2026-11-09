@@ -9,7 +9,10 @@ import { PassportStrategy } from '@nestjs/passport';
 import type { Request } from 'express';
 import { Model, Types } from 'mongoose';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { JwtPayload } from '../interfaces/jwt-payload.interface';
+import {
+  JwtPayload,
+  SESSION_REPLACED,
+} from '../interfaces/jwt-payload.interface';
 import {
   User,
   UserDocument,
@@ -50,7 +53,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         'Multi-factor authentication is required — please sign in again',
       );
     }
+    if (payload.role === UserRole.PARTNER)
+      await this.assertCurrentSession(payload);
     return this.actingAs(req, payload);
+  }
+
+  /** One sign-in per Partner Portal login: a newer one ends this token at once. */
+  private async assertCurrentSession(payload: JwtPayload): Promise<void> {
+    const user = await this.userModel
+      .findById(payload.sub)
+      .select('partnerSessionId')
+      .lean()
+      .exec();
+    if (user?.partnerSessionId && user.partnerSessionId !== payload.sid)
+      throw new UnauthorizedException(
+        `${SESSION_REPLACED}: this account signed in somewhere else`,
+      );
   }
 
   /**

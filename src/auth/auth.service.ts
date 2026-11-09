@@ -1,9 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -23,7 +26,11 @@ import {
   HealthProfile,
   HealthProfileDocument,
 } from '../core/health-profile/schemas/health-profile.schema';
-import { JwtPayload } from './interfaces/jwt-payload.interface';
+import {
+  JwtPayload,
+  SESSION_REPLACED,
+} from './interfaces/jwt-payload.interface';
+import { LiveBus } from '../common/live/live-bus.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GoogleOAuthDto } from './dto/google-oauth.dto';
@@ -51,6 +58,8 @@ const MONGO_DUPLICATE_KEY_ERROR = 11000;
 const ADMIN_MFA_PURPOSE = 'admin_mfa';
 const MAX_MFA_ATTEMPTS = 5;
 const MFA_LOCK_MS = 15 * 60 * 1000;
+/** Wrong passwords on the idle lock screen before the session is ended outright. */
+const MAX_UNLOCK_ATTEMPTS = 5;
 
 /** The short-lived token between admin sign-in steps 1 and 2. */
 interface AdminMfaTokenPayload {
@@ -75,7 +84,12 @@ export class AuthService {
     private readonly adminAccess: AdminAccessService,
     @InjectModel(MedicalRecord.name)
     private readonly recordModel: Model<MedicalRecordDocument>,
+    // Closes a replaced session's live connections. Optional for hand-built test modules.
+    @Optional()
+    private readonly live?: LiveBus,
   ) {}
+
+  private readonly unlockFailures = new Map<string, number>();
 
   async register(dto: RegisterDto): Promise<AuthTokensResponseDto> {
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
@@ -118,6 +132,7 @@ export class AuthService {
 
   async login(
     dto: LoginDto,
+    ip?: string,
   ): Promise<AuthTokensResponseDto | AdminMfaChallengeDto> {
     const user = await this.userModel.findOne({
       email: dto.email.toLowerCase(),
@@ -141,6 +156,7 @@ export class AuthService {
       action: AuditAction.LOGIN,
       targetType: 'User',
       targetId: user.id,
+      ipAddress: ip,
     });
 
     return this.issueTokens(user, await this.hasHealthProfile(user.id));
@@ -218,7 +234,9 @@ export class AuthService {
   async loginForTokens(dto: LoginDto): Promise<AuthTokensResponseDto> {
     const result = await this.login(dto);
     if ('mfaRequired' in result) {
-      throw new UnauthorizedException('Admin accounts sign in through the admin panel');
+      throw new UnauthorizedException(
+        'Admin accounts sign in through the admin panel',
+      );
     }
     return result;
   }
@@ -311,7 +329,9 @@ export class AuthService {
   }
 
   /** Step 1 answer for an admin: a challenge (plus a new secret if not yet enrolled). */
-  private async startAdminMfa(user: UserDocument): Promise<AdminMfaChallengeDto> {
+  private async startAdminMfa(
+    user: UserDocument,
+  ): Promise<AdminMfaChallengeDto> {
     const access = await this.adminAccess.resolve(user);
     if (!access.active) {
       throw new UnauthorizedException('Your admin access has been deactivated');
@@ -326,7 +346,11 @@ export class AuthService {
     return {
       mfaRequired: true,
       mfaToken: await this.signMfaToken(user.id, this.totp.encrypt(secret)),
-      enrollment: { secret, otpauthUrl, qrSvg: await this.totp.qrSvg(otpauthUrl) },
+      enrollment: {
+        secret,
+        otpauthUrl,
+        qrSvg: await this.totp.qrSvg(otpauthUrl),
+      },
     };
   }
 
@@ -366,7 +390,9 @@ export class AuthService {
       {
         $set: {
           'mfa.failedAttempts': lock ? 0 : failedAttempts,
-          ...(lock && { 'mfa.lockedUntil': new Date(Date.now() + MFA_LOCK_MS) }),
+          ...(lock && {
+            'mfa.lockedUntil': new Date(Date.now() + MFA_LOCK_MS),
+          }),
         },
       },
     );
@@ -415,10 +441,17 @@ export class AuthService {
           patientId: user._id,
           'consentToken.healthDataProcessingAccepted': { $ne: true },
         },
-        { $set: { consentToken: consentTokenFor(user.id, user.consent, 'reconsent') } },
+        {
+          $set: {
+            consentToken: consentTokenFor(user.id, user.consent, 'reconsent'),
+          },
+        },
       );
     }
-    return { version: CURRENT_CONSENT_VERSION, acceptedAt: acceptedAt.toISOString() };
+    return {
+      version: CURRENT_CONSENT_VERSION,
+      acceptedAt: acceptedAt.toISOString(),
+    };
   }
 
   async refresh(dto: RefreshTokenDto): Promise<RefreshTokenResponseDto> {
@@ -449,14 +482,87 @@ export class AuthService {
       }
       const access = await this.adminAccess.resolve(user);
       if (!access.active) {
-        throw new UnauthorizedException('Your admin access has been deactivated');
+        throw new UnauthorizedException(
+          'Your admin access has been deactivated',
+        );
       }
       return this.signTokenPair(user, { mfa: true, perms: access.permissions });
+    }
+
+    if (user.role === UserRole.PARTNER) {
+      this.assertCurrentPartnerSession(user, payload.sid);
+      return this.signTokenPair(
+        user,
+        payload.sid ? { sid: payload.sid } : undefined,
+      );
     }
 
     // No `user` in the response here — the client already has it cached and
     // only calls this endpoint transparently on a 401 to mint a new pair.
     return this.signTokenPair(user);
+  }
+
+  /** Accounts with no recorded session signed in before this existed, and are left alone. */
+  private assertCurrentPartnerSession(user: UserDocument, sid?: string): void {
+    if (user.partnerSessionId && user.partnerSessionId !== sid) {
+      throw new UnauthorizedException(
+        `${SESSION_REPLACED}: this account signed in somewhere else`,
+      );
+    }
+  }
+
+  /** One sign-in at a time: this one replaces any other, which ends straight away. */
+  private async startPartnerSession(user: UserDocument): Promise<string> {
+    const sid = crypto.randomUUID();
+    await this.userModel.updateOne(
+      { _id: user._id },
+      { $set: { partnerSessionId: sid } },
+    );
+    this.live?.endSessions(user.id, 'session_replaced');
+    return sid;
+  }
+
+  /**
+   * Signing out ends the session on the server. The id is replaced rather
+   * than cleared, because no id at all would make old tokens acceptable.
+   */
+  async logout(payload: JwtPayload): Promise<void> {
+    if (payload.role !== UserRole.PARTNER || !payload.sid) return;
+    await this.userModel.updateOne(
+      { _id: payload.sub, partnerSessionId: payload.sid },
+      { $set: { partnerSessionId: crypto.randomUUID() } },
+    );
+    this.unlockFailures.delete(payload.sub);
+  }
+
+  /**
+   * The idle lock screen's password check. Repeated failures end the session,
+   * so someone at an unattended computer can't keep guessing.
+   */
+  async unlock(payload: JwtPayload, password: string): Promise<void> {
+    if (payload.role !== UserRole.PARTNER) throw new ForbiddenException();
+    const user = await this.userModel.findById(payload.sub);
+    if (!user?.passwordHash) throw new UnauthorizedException();
+    if (await bcrypt.compare(password, user.passwordHash)) {
+      this.unlockFailures.delete(user.id);
+      return;
+    }
+    const failures = (this.unlockFailures.get(user.id) ?? 0) + 1;
+    if (failures >= MAX_UNLOCK_ATTEMPTS) {
+      this.unlockFailures.delete(user.id);
+      await this.userModel.updateOne(
+        { _id: user._id },
+        { $set: { partnerSessionId: crypto.randomUUID() } },
+      );
+      throw new UnauthorizedException(
+        'Too many incorrect passwords — sign in again',
+      );
+    }
+    this.unlockFailures.set(user.id, failures);
+    const left = MAX_UNLOCK_ATTEMPTS - failures;
+    throw new BadRequestException(
+      `Incorrect password. ${left} attempt${left === 1 ? '' : 's'} left before you're signed out.`,
+    );
   }
 
   async forgotPassword(dto: { email: string }): Promise<void> {
@@ -557,7 +663,6 @@ export class AuthService {
     });
   }
 
-
   /** FR-2.6: onboarding is skippable — presence of a HealthProfile is informational only, never gates auth. */
   private async hasHealthProfile(userId: string): Promise<boolean> {
     const count = await this.healthProfileModel
@@ -568,13 +673,13 @@ export class AuthService {
 
   private async signTokenPair(
     user: UserDocument,
-    adminClaims?: Pick<JwtPayload, 'mfa' | 'perms'>,
+    claims?: Pick<JwtPayload, 'mfa' | 'perms' | 'sid'>,
   ): Promise<RefreshTokenResponseDto> {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       role: user.role,
-      ...adminClaims,
+      ...claims,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -593,10 +698,14 @@ export class AuthService {
     onboardingComplete: boolean,
     adminClaims?: Pick<JwtPayload, 'mfa' | 'perms'>,
   ): Promise<AuthTokensResponseDto> {
-    const { accessToken, refreshToken } = await this.signTokenPair(
-      user,
-      adminClaims,
-    );
+    const sid =
+      user.role === UserRole.PARTNER
+        ? await this.startPartnerSession(user)
+        : undefined;
+    const { accessToken, refreshToken } = await this.signTokenPair(user, {
+      ...adminClaims,
+      ...(sid && { sid }),
+    });
 
     return {
       accessToken,

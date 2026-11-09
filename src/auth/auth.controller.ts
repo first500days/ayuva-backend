@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, HttpCode, HttpStatus, Post, Put, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  HttpCode,
+  HttpStatus,
+  Ip,
+  Post,
+  Put,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -9,6 +19,7 @@ import {
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { UnlockDto } from './dto/unlock.dto';
 import { GoogleOAuthDto } from './dto/google-oauth.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ConsentDto } from './dto/consent.dto';
@@ -43,8 +54,30 @@ export class AuthController {
   @ApiOkResponse({ type: AuthTokensResponseDto })
   login(
     @Body() dto: LoginDto,
+    @Ip() ip: string,
   ): Promise<AuthTokensResponseDto | AdminMfaChallengeDto> {
-    return this.authService.login(dto);
+    return this.authService.login(dto, ip);
+  }
+
+  @Post('logout')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'End this Partner Portal session on the server' })
+  logout(@CurrentUser() user: JwtPayload): Promise<void> {
+    return this.authService.logout(user);
+  }
+
+  @Post('unlock')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Password check for the Partner Portal idle lock' })
+  unlock(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UnlockDto,
+  ): Promise<void> {
+    return this.authService.unlock(user, dto.password);
   }
 
   @Post('mfa/verify')
@@ -111,7 +144,7 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:
-      'Permanently delete the authenticated user\'s account and anonymise all PII (DPDP / GDPR right to erasure). Required by Google Play Store data deletion policy.',
+      "Permanently delete the authenticated user's account and anonymise all PII (DPDP / GDPR right to erasure). Required by Google Play Store data deletion policy.",
   })
   async deleteAccount(@CurrentUser() user: JwtPayload): Promise<void> {
     return this.authService.deleteAccount(user.sub);

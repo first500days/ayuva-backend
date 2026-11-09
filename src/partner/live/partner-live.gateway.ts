@@ -6,10 +6,16 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { LiveBus, type LiveTopic } from '../../common/live/live-bus.service';
-import { UserRole } from '../../core/users/schemas/user.schema';
+import {
+  User,
+  UserDocument,
+  UserRole,
+} from '../../core/users/schemas/user.schema';
 import { PartnerContextService } from '../partner-context.service';
 import { WsUpgradeRouter } from './ws-upgrade-router.service';
 
@@ -76,6 +82,7 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly context: PartnerContextService,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
   ) {}
 
   onModuleInit(): void {
@@ -135,6 +142,15 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
         { secret: this.config.get<string>('jwt.accessSecret') },
       );
       if (payload.role !== UserRole.PARTNER) throw new Error('not a partner');
+      const user = await this.userModel
+        .findById(payload.sub)
+        .select('partnerSessionId')
+        .lean()
+        .exec();
+      if (user?.partnerSessionId && user.partnerSessionId !== payload.sid) {
+        conn.ws.close(LIVE_CLOSE.REPLACED, 'session_replaced');
+        return;
+      }
       const ctx = await this.context.requireLiveContext(payload.sub);
       if (conn.ws.readyState !== WebSocket.OPEN) return;
 

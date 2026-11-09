@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -11,8 +12,14 @@ import { scalarCustomCss } from './docs/scalar-theme';
 const API_PREFIX = 'api/v1';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { logger: new AppLogger() });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    logger: new AppLogger(),
+  });
   const config = app.get(ConfigService);
+
+  // Hosted behind a proxy: without this every request.ip (audit log, security
+  // flags) is the proxy's. TRUST_PROXY_HOPS is the number of proxies in front.
+  app.set('trust proxy', Number(config.get<string>('TRUST_PROXY_HOPS') ?? 1));
 
   // /health and /docs stay unprefixed/unversioned; all feature routes live under /api/v1 (TRD §4).
   app.setGlobalPrefix(API_PREFIX, {

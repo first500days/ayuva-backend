@@ -187,6 +187,10 @@ export class User {
   @Prop({ type: UserMfaSchema })
   mfa?: UserMfa;
 
+  // Partner Portal: the sign-in allowed right now. Tokens from any other are refused.
+  @Prop()
+  partnerSessionId?: string;
+
   // Populated by the timestamps:true schema option — declared for typed access (Admin User Management, FR-12.1).
   createdAt?: Date;
 }

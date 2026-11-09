@@ -11,4 +11,9 @@ export interface JwtPayload {
   perms?: string[];
   // Set while a guardian acts for a family member: `sub` is the member, this is the guardian.
   guardian?: string;
+  // Partner Portal tokens only: which sign-in this belongs to. A newer sign-in replaces it.
+  sid?: string;
 }
+
+/** Starts the 401 message when a newer sign-in has replaced this session. */
+export const SESSION_REPLACED = 'SESSION_REPLACED';
