@@ -187,6 +187,12 @@ import {
   LabAnalyserSchema,
 } from './lab/schemas/analyser.schema';
 import { PartnerAnalysersService } from './lab/partner-analysers.service';
+import {
+  FhirConnection,
+  FhirConnectionSchema,
+} from './lab/fhir/fhir-connection.schema';
+import { PartnerFhirService } from './lab/fhir/partner-fhir.service';
+import { PartnerFhirController } from './lab/fhir/partner-fhir.controller';
 import { TrendLink, TrendLinkSchema } from './lab/schemas/trend-link.schema';
 import { PartnerTrendLinksService } from './lab/partner-trend-links.service';
 import { PublicTrendsController } from './lab/public-trends.controller';
@@ -273,6 +279,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
       { name: QcMaterial.name, schema: QcMaterialSchema },
       { name: QcRun.name, schema: QcRunSchema },
       { name: LabAnalyser.name, schema: LabAnalyserSchema },
+      { name: FhirConnection.name, schema: FhirConnectionSchema },
       { name: AnalyserMessage.name, schema: AnalyserMessageSchema },
       { name: TrendLink.name, schema: TrendLinkSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },
@@ -302,6 +309,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerQcController,
     PartnerLabRoutesController,
     PartnerAnalysersController,
+    PartnerFhirController,
     LisIngestController,
     PublicTrendsController,
     PartnerDicomwebController,
@@ -332,6 +340,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerQcService,
     PartnerLabRoutesService,
     PartnerAnalysersService,
+    PartnerFhirService,
     PartnerTrendLinksService,
     PartnerWardsService,
     PartnerClaimsService,
