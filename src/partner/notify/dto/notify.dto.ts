@@ -27,6 +27,9 @@ export class NotificationRuleDto {
   @ApiProperty() @IsBoolean() sms: boolean;
   @ApiProperty() @IsBoolean() desktop: boolean;
   @ApiProperty() @IsBoolean() webhook: boolean;
+  // Optional so a portal tab opened before these channels existed can still save.
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() push?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() whatsapp?: boolean;
 
   @ApiProperty({ enum: StaffRole, isArray: true })
   @IsArray()

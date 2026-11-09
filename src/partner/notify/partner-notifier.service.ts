@@ -11,6 +11,9 @@ import { User, UserDocument } from '../../core/users/schemas/user.schema';
 import { AppNotificationsService } from '../../notifications/app-notifications.service';
 import { SMS_SENDER } from '../../notifications/sms/sms-sender';
 import type { SmsSender } from '../../notifications/sms/sms-sender';
+import { WHATSAPP_SENDER } from '../../notifications/sms/whatsapp-sender';
+import type { WhatsAppSender } from '../../notifications/sms/whatsapp-sender';
+import { UserPushService } from '../../notifications/user-push.service';
 import { MailService } from '../../mail/mail.service';
 import {
   MemberStatus,
@@ -39,11 +42,13 @@ export interface PartnerEvent {
   trigger: PartnerTrigger;
   /** Portal feed title, e.g. "New booking request". */
   title: string;
+  /** Used outside the portal when the title names someone. Defaults to `title`. */
+  safeTitle?: string;
   /** Portal feed detail. Shown only inside the authenticated portal, so it may name the patient. */
   message: string;
   /** When set, "{patient}" in title/message is replaced with the patient's name (portal feed only). */
   patientId?: string;
-  /** Email/SMS text. Leaves the platform, so it must carry no patient-identifying detail. */
+  /** Email, SMS, WhatsApp and push text. Leaves the platform, so it must carry no patient-identifying detail. */
   safeMessage?: string;
   /** Portal route the notification opens, e.g. /partner/appointments. */
   route: string;
@@ -63,6 +68,8 @@ export interface ResolvedRule {
   sms: boolean;
   desktop: boolean;
   webhook: boolean;
+  push: boolean;
+  whatsapp: boolean;
   roles: string[];
 }
 
@@ -91,6 +98,8 @@ export class PartnerNotifierService {
     private readonly mail: MailService,
     @Inject(SMS_SENDER) private readonly sms: SmsSender,
     private readonly config: ConfigService,
+    @Inject(WHATSAPP_SENDER) private readonly whatsapp: WhatsAppSender,
+    private readonly push: UserPushService,
   ) {}
 
   async emit(
@@ -132,6 +141,9 @@ export class PartnerNotifierService {
             sms: s.sms,
             desktop: s.desktop,
             webhook: s.webhook,
+            // Rows saved before these channels existed have no value for them.
+            push: s.push ?? false,
+            whatsapp: s.whatsapp ?? false,
             roles: s.roles,
           }
         : { trigger: d.trigger, ...d.defaultChannels, roles: d.defaultRoles };
@@ -186,9 +198,10 @@ export class PartnerNotifierService {
         ((byRole && rule.roles.includes(m.role)) || explicit.has(m.id)) &&
         m.userId.toString() !== event.excludeUserId,
     );
+    const safeTitle = event.safeTitle ?? event.title;
     const safe =
       event.safeMessage ??
-      `${event.title} — open the Ayuva Partner Portal for details.`;
+      `${safeTitle} — open the Ayuva Partner Portal for details.`;
     let patientName = 'A patient';
     if (event.patientId && Types.ObjectId.isValid(event.patientId)) {
       const patient = await this.userModel
@@ -221,13 +234,27 @@ export class PartnerNotifierService {
         tasks.push(
           this.mail.sendMail(
             m.email,
-            `[Ayuva] ${event.title}`,
-            this.emailHtml(provider.name, event.title, safe),
+            `[Ayuva] ${safeTitle}`,
+            this.emailHtml(provider.name, safeTitle, safe),
           ),
         );
       }
       if (rule.sms && m.phone) {
         tasks.push(this.sms.send(m.phone, `Ayuva: ${safe}`));
+      }
+      if (rule.push) {
+        tasks.push(
+          this.push.send(m.userId.toString(), {
+            title: safeTitle,
+            body: safe,
+            data: { type: 'partner_alert', trigger: event.trigger },
+          }),
+        );
+      }
+      if (rule.whatsapp && m.phone) {
+        tasks.push(
+          this.whatsapp.send(m.phone, `Ayuvax alert: ${safe}`, this.portalUrl()),
+        );
       }
     }
     if (
@@ -318,8 +345,12 @@ export class PartnerNotifierService {
     });
   }
 
+  private portalUrl(): string {
+    return `${this.config.get<string>('frontend.url') ?? ''}/partner/dashboard`;
+  }
+
   private emailHtml(orgName: string, title: string, text: string): string {
-    const portal = `${this.config.get<string>('frontend.url') ?? ''}/partner/dashboard`;
+    const portal = this.portalUrl();
     const esc = (s: string) =>
       s
         .replace(/&/g, '&amp;')

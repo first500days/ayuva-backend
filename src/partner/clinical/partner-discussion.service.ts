@@ -127,6 +127,7 @@ export class PartnerDiscussionService {
       await this.notifier.emit(actor.provider._id, {
         trigger: PartnerTrigger.CLINICAL_MENTION,
         title: `${actor.member.fullName} mentioned you`,
+        safeTitle: 'You were mentioned in a case discussion',
         message: `On {patient}'s case: “${clip(body, 140)}”`,
         patientId: patient.id,
         safeMessage:

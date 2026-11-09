@@ -29,6 +29,8 @@ export interface NotificationRuleInput {
   sms: boolean;
   desktop: boolean;
   webhook: boolean;
+  push?: boolean;
+  whatsapp?: boolean;
   roles: StaffRole[];
 }
 
@@ -101,6 +103,7 @@ export class PartnerNotifySettingsService {
       for (const r of input.rules) {
         if (!known.has(r.trigger))
           throw new BadRequestException(`Unknown trigger ${r.trigger}`);
+        const prior = byTrigger.get(r.trigger);
         byTrigger.set(r.trigger, {
           trigger: r.trigger,
           inApp: r.inApp,
@@ -108,6 +111,8 @@ export class PartnerNotifySettingsService {
           sms: r.sms,
           desktop: r.desktop,
           webhook: r.webhook,
+          push: r.push ?? prior?.push ?? false,
+          whatsapp: r.whatsapp ?? prior?.whatsapp ?? false,
           roles: [...new Set(r.roles)],
         });
       }

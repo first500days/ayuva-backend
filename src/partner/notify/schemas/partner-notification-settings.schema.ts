@@ -14,6 +14,8 @@ export class PartnerNotificationRule {
   @Prop({ default: false }) sms: boolean;
   @Prop({ default: false }) desktop: boolean;
   @Prop({ default: false }) webhook: boolean;
+  @Prop({ default: false }) push: boolean;
+  @Prop({ default: false }) whatsapp: boolean;
 
   @Prop({ type: [String], enum: StaffRole, default: [] })
   roles: StaffRole[];

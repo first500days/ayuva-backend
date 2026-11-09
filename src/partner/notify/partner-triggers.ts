@@ -40,13 +40,22 @@ export const DEFAULT_CAPACITY_RULES: CapacityRuleConfig[] = [
   { id: 'hospital', scope: 'hospital', thresholdPercent: 90, enabled: false },
 ];
 
-export type PartnerChannel = 'inApp' | 'email' | 'sms' | 'desktop' | 'webhook';
+export type PartnerChannel =
+  | 'inApp'
+  | 'email'
+  | 'sms'
+  | 'desktop'
+  | 'webhook'
+  | 'push'
+  | 'whatsapp';
 export const PARTNER_CHANNELS: PartnerChannel[] = [
   'inApp',
   'email',
   'sms',
   'desktop',
   'webhook',
+  'push',
+  'whatsapp',
 ];
 
 export interface TriggerDefinition {
@@ -70,6 +79,8 @@ const channels = (on: PartnerChannel[]): Record<PartnerChannel, boolean> => ({
   sms: on.includes('sms'),
   desktop: on.includes('desktop'),
   webhook: on.includes('webhook'),
+  push: on.includes('push'),
+  whatsapp: on.includes('whatsapp'),
 });
 
 export const TRIGGER_CATALOG: TriggerDefinition[] = [
