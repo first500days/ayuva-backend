@@ -285,7 +285,11 @@ export class PartnerNotesService {
       throw new BadRequestException(
         'This visit summary is already in the patient’s vault',
       );
-    const pdf = this.documents.visitSummaryPdf(note, actor.provider);
+    const pdf = this.documents.visitSummaryPdf(
+      note,
+      actor.provider,
+      await this.documents.brand(actor.provider),
+    );
     const record = await this.documents.deliverToVault({
       patientId: note.patientId,
       buffer: pdf,
@@ -318,8 +322,12 @@ export class PartnerNotesService {
     return { id, removed: true };
   }
 
-  pdf(actor: PartnerActor, note: ConsultationNoteDocument) {
-    return this.documents.visitSummaryPdf(note, actor.provider);
+  async pdf(actor: PartnerActor, note: ConsultationNoteDocument) {
+    return this.documents.visitSummaryPdf(
+      note,
+      actor.provider,
+      await this.documents.brand(actor.provider),
+    );
   }
 
   async loadReadable(actor: PartnerActor, id: string) {

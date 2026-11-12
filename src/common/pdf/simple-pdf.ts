@@ -57,6 +57,65 @@ const WIN_ANSI: Record<string, [number, number]> = {
 /** Characters with no WinAnsi glyph, rewritten before encoding. */
 const REWRITE: Record<string, string> = { '₹': 'Rs.', '→': '->', '←': '<-' };
 
+/** A JPEG ready to embed: the raw file bytes plus what the PDF image dictionary needs. */
+export interface PdfJpeg {
+  data: Buffer;
+  width: number;
+  height: number;
+  components: 1 | 3 | 4;
+}
+
+/** Reads size and colour components from a baseline/progressive JPEG; null if it isn't one. */
+export function parseJpeg(data: Buffer): PdfJpeg | null {
+  if (data.length < 4 || data[0] !== 0xff || data[1] !== 0xd8) return null;
+  let i = 2;
+  while (i + 9 < data.length) {
+    if (data[i] !== 0xff) {
+      i++;
+      continue;
+    }
+    const marker = data[i + 1];
+    if (marker === 0xff) {
+      i++;
+      continue;
+    }
+    if (
+      marker === 0xd8 ||
+      (marker >= 0xd0 && marker <= 0xd7) ||
+      marker === 0x01
+    ) {
+      i += 2;
+      continue;
+    }
+    const len = data.readUInt16BE(i + 2);
+    const isSof =
+      marker >= 0xc0 &&
+      marker <= 0xcf &&
+      marker !== 0xc4 &&
+      marker !== 0xc8 &&
+      marker !== 0xcc;
+    if (isSof) {
+      const height = data.readUInt16BE(i + 5);
+      const width = data.readUInt16BE(i + 7);
+      const components = data[i + 9];
+      if (!width || !height || ![1, 3, 4].includes(components)) return null;
+      return { data, width, height, components: components as 1 | 3 | 4 };
+    }
+    i += 2 + len;
+  }
+  return null;
+}
+
+export interface LetterheadOptions {
+  title: string;
+  /** Address, contact and registration lines under the title. */
+  lines?: string[];
+  /** Document reference on the right (order no., Rx no.). */
+  right?: string;
+  logo?: PdfJpeg;
+  accent?: Rgb;
+}
+
 export interface TextOptions {
   size?: number;
   font?: FontKey;
@@ -87,6 +146,8 @@ export class PdfBuilder {
   private readonly pages: string[][] = [];
   private y = 0;
   private footerText = '';
+  private footerNote = '';
+  private readonly images: PdfJpeg[] = [];
 
   constructor(private readonly opts: { title?: string; margin?: number } = {}) {
     this.margin = opts.margin ?? 48;
@@ -100,6 +161,71 @@ export class PdfBuilder {
   /** Small grey line printed at the bottom of every page, next to the page number. */
   footer(text: string) {
     this.footerText = text;
+    return this;
+  }
+
+  /** Organisation's own line, centred above the page number on every page. */
+  footerLine(text: string) {
+    this.footerNote = text.trim();
+    return this;
+  }
+
+  /**
+   * Organisation letterhead on a white page: optional logo on the left, the
+   * name and detail lines beside it, the document reference on the right and a
+   * coloured rule underneath. Call it first, instead of `banner`.
+   */
+  letterhead(o: LetterheadOptions) {
+    const accent = o.accent ?? COLORS.brand;
+    const top = PAGE_H - this.margin + 8;
+    const maxLogoH = 56;
+    const maxLogoW = 120;
+    let textX = this.margin;
+    let height = 0;
+    if (o.logo) {
+      const scale = Math.min(maxLogoW / o.logo.width, maxLogoH / o.logo.height);
+      const w = o.logo.width * scale;
+      const h = o.logo.height * scale;
+      const id = this.images.push(o.logo);
+      this.raw(
+        `q ${n(w)} 0 0 ${n(h)} ${n(this.margin)} ${n(top - h)} cm /Im${id} Do Q`,
+      );
+      textX = this.margin + w + 14;
+      height = h;
+    }
+    const rightW = o.right ? this.measure(o.right, 10, 'bold') + 20 : 0;
+    const room = PAGE_W - this.margin - textX - rightW;
+    let ty = top - 15;
+    this.raw(
+      this.textOp(this.fit(o.title, room, 17, 'bold'), textX, ty, 17, 'bold', accent),
+    );
+    for (const line of (o.lines ?? []).filter(Boolean).slice(0, 4)) {
+      ty -= 12.5;
+      this.raw(
+        this.textOp(
+          this.fit(line, room, 8.5, 'regular'),
+          textX,
+          ty,
+          8.5,
+          'regular',
+          COLORS.muted,
+        ),
+      );
+    }
+    if (o.right)
+      this.raw(
+        this.textOp(
+          o.right,
+          PAGE_W - this.margin - (rightW - 20),
+          top - 15,
+          10,
+          'bold',
+          COLORS.ink,
+        ),
+      );
+    const bottom = Math.min(top - height, ty - 6);
+    this.rect(this.margin, bottom - 4, this.contentWidth, 2.2, accent);
+    this.y = PAGE_H - bottom + 18;
     return this;
   }
 
@@ -447,6 +573,20 @@ export class PdfBuilder {
         COLORS.rule,
         0.5,
       );
+      if (this.footerNote) {
+        const text = this.fit(this.footerNote, this.contentWidth, 8, 'bold');
+        const w = this.measure(text, 8, 'bold');
+        ops.push(
+          this.textOp(
+            text,
+            this.margin + Math.max(0, (this.contentWidth - w) / 2),
+            y + 20,
+            8,
+            'bold',
+            COLORS.ink,
+          ),
+        );
+      }
       if (this.footerText)
         ops.push(
           this.textOp(
@@ -474,6 +614,10 @@ export class PdfBuilder {
     const pageIds: number[] = [];
     // 1 catalog, 2 pages, 3-5 fonts, 6 info; pages start at 7 (page, content pairs).
     this.pages.forEach((_, i) => pageIds.push(7 + i * 2));
+    const imageBase = 7 + this.pages.length * 2;
+    const xobjects = this.images.length
+      ? ` /XObject << ${this.images.map((_, k) => `/Im${k + 1} ${imageBase + k} 0 R`).join(' ')} >>`
+      : '';
     objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
     objects[2] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${total} >>`;
     objects[3] =
@@ -492,7 +636,7 @@ export class PdfBuilder {
       const contentId = pageId + 1;
       objects[pageId] =
         `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] ` +
-        `/Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents ${contentId} 0 R >>`;
+        `/Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >>${xobjects} >> /Contents ${contentId} 0 R >>`;
       streams[contentId] = Buffer.from(ops.join('\n'), 'latin1');
     });
 
@@ -503,11 +647,27 @@ export class PdfBuilder {
       offset += b.length;
     };
     push(Buffer.from('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n', 'latin1'));
-    const count = 7 + this.pages.length * 2;
+    const count = imageBase + this.images.length;
     const offsets: number[] = [];
     for (let id = 1; id < count; id++) {
       offsets[id] = offset;
-      if (streams[id]) {
+      const img = this.images[id - imageBase];
+      if (img) {
+        const cs =
+          img.components === 1
+            ? '/DeviceGray'
+            : img.components === 4
+              ? '/DeviceCMYK /Decode [1 0 1 0 1 0 1 0]'
+              : '/DeviceRGB';
+        push(
+          Buffer.from(
+            `${id} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${img.width} /Height ${img.height} /ColorSpace ${cs} /BitsPerComponent 8 /Filter /DCTDecode /Length ${img.data.length} >>\nstream\n`,
+            'latin1',
+          ),
+        );
+        push(img.data);
+        push(Buffer.from('\nendstream\nendobj\n', 'latin1'));
+      } else if (streams[id]) {
         push(
           Buffer.from(
             `${id} 0 obj\n<< /Length ${streams[id].length} >>\nstream\n`,

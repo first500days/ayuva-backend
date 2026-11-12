@@ -499,7 +499,7 @@ export class PartnerClinicalController {
     const note = await this.notes.loadReadable(a, id);
     sendFile(
       res,
-      this.notes.pdf(a, note),
+      await this.notes.pdf(a, note),
       `Visit summary ${note.patientName}.pdf`,
     );
   }

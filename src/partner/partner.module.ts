@@ -68,6 +68,8 @@ import { PartnerStaffService } from './staff/partner-staff.service';
 import { PartnerNotifyModule } from './notify/partner-notify.module';
 import { PartnerSecurityService } from './security/partner-security.service';
 import { PartnerDocumentsService } from './documents/partner-documents.service';
+import { PartnerLetterheadService } from './documents/partner-letterhead.service';
+import { PartnerLetterheadController } from './documents/partner-letterhead.controller';
 import {
   ConsultationNote,
   ConsultationNoteSchema,
@@ -296,6 +298,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerStaffController,
     PartnerSecurityController,
     PartnerNotifyController,
+    PartnerLetterheadController,
     PartnerClinicalController,
     PartnerReferralsController,
     PartnerLabController,
@@ -329,6 +332,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerStaffService,
     PartnerSecurityService,
     PartnerDocumentsService,
+    PartnerLetterheadService,
     PartnerPatientsService,
     PartnerTimelineService,
     PartnerNotesService,

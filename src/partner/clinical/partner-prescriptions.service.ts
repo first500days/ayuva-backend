@@ -249,7 +249,11 @@ export class PartnerPrescriptionsService {
     rx.signatureHash = this.contentHash(rx, actor.userId, signedAt);
     await rx.save();
 
-    const pdf = this.documents.prescriptionPdf(rx, actor.provider);
+    const pdf = this.documents.prescriptionPdf(
+      rx,
+      actor.provider,
+      await this.documents.brand(actor.provider),
+    );
     const fileName = `Prescription ${rx.rxNumber} - ${actor.provider.name}.pdf`;
     if (toVault) {
       const record = await this.documents.deliverToVault({
@@ -372,7 +376,11 @@ export class PartnerPrescriptionsService {
   async pdf(actor: PartnerActor, id: string) {
     const rx = await this.loadReadable(actor, id);
     return {
-      buffer: this.documents.prescriptionPdf(rx, actor.provider),
+      buffer: this.documents.prescriptionPdf(
+        rx,
+        actor.provider,
+        await this.documents.brand(actor.provider),
+      ),
       fileName: `Prescription ${rx.rxNumber ?? 'draft'}.pdf`,
     };
   }

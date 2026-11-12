@@ -423,7 +423,11 @@ export class PartnerWardsService {
     );
 
     if (dto.sendSummary && admission.patientId) {
-      const pdf = this.documents.dischargeSummaryPdf(admission, actor.provider);
+      const pdf = this.documents.dischargeSummaryPdf(
+        admission,
+        actor.provider,
+        await this.documents.brand(actor.provider),
+      );
       const record = await this.documents.deliverToVault({
         patientId: admission.patientId,
         buffer: pdf,

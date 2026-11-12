@@ -117,6 +117,32 @@ export class ProviderCredential {
 export const ProviderCredentialSchema =
   SchemaFactory.createForClass(ProviderCredential);
 
+/**
+ * How the organisation's own documents (prescriptions, lab reports, summaries)
+ * are headed and footed. Every field is optional; unset fields fall back to the
+ * organisation's profile name, first location and phone.
+ */
+@Schema({ _id: false })
+export class ProviderLetterhead {
+  /** Name printed in the header, e.g. "Orange Labs & Diagnostics". */
+  @Prop() displayName?: string;
+  /** Small line under the name, e.g. "NABL accredited · Since 1998". */
+  @Prop() tagline?: string;
+  @Prop() addressLine?: string;
+  /** Phone, email and website on one line. */
+  @Prop() contactLine?: string;
+  /** Registration / licence line, e.g. "Reg. no. KMC/12345 · GSTIN ...". */
+  @Prop() registrationLine?: string;
+  /** Printed above the page number on every page. */
+  @Prop() footerNote?: string;
+  /** Header accent colour as #rrggbb. */
+  @Prop() accentColor?: string;
+  /** Encrypted JPEG logo in storage. */
+  @Prop() logoRef?: string;
+}
+export const ProviderLetterheadSchema =
+  SchemaFactory.createForClass(ProviderLetterhead);
+
 export type ProviderDocument = HydratedDocument<Provider>;
 
 @Schema({ timestamps: true })
@@ -165,6 +191,9 @@ export class Provider {
 
   @Prop()
   profileImageUrl?: string;
+
+  @Prop({ type: ProviderLetterheadSchema })
+  letterhead?: ProviderLetterhead;
 
   @Prop({ type: [SchemaTypes.ObjectId], ref: 'MedicalRecord' })
   verificationDocuments?: Types.ObjectId[];

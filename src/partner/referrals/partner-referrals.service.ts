@@ -381,10 +381,12 @@ export class PartnerReferralsService {
     const from = referral.fromProviderId.equals(actor.provider._id)
       ? actor.provider
       : await this.providerModel.findById(referral.fromProviderId);
+    const sender = from ?? actor.provider;
     return {
       buffer: this.documents.referralLetterPdf(
         referral,
-        from ?? actor.provider,
+        sender,
+        await this.documents.brand(sender),
       ),
       fileName: `Referral ${referral.referralNo}.pdf`,
     };

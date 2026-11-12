@@ -12,7 +12,12 @@ import { ProviderDocument } from '../../core/providers/schemas/provider.schema';
 import { User, UserDocument } from '../../core/users/schemas/user.schema';
 import { StorageService } from '../../storage/storage.service';
 import { AppNotificationsService } from '../../notifications/app-notifications.service';
-import { PdfBuilder, Rgb } from '../../common/pdf/simple-pdf';
+import {
+  PdfBuilder,
+  PdfJpeg,
+  Rgb,
+  parseJpeg,
+} from '../../common/pdf/simple-pdf';
 import {
   PrescriptionDocument,
   PrescriptionStatus,
@@ -27,6 +32,11 @@ import {
   SKETCH_TEMPLATES,
   SKETCH_W,
 } from '../clinical/sketch-templates';
+
+/** Resolved letterhead assets (the logo is read from storage once per document). */
+export interface DocBrand {
+  logo?: PdfJpeg;
+}
 
 export interface VaultDelivery {
   patientId: Types.ObjectId | string;
@@ -81,6 +91,21 @@ export class PartnerDocumentsService {
     private readonly storage: StorageService,
     private readonly notifications: AppNotificationsService,
   ) {}
+
+  /** Loads the organisation's logo for its documents; a missing or unreadable logo is skipped. */
+  async brand(provider: ProviderDocument): Promise<DocBrand> {
+    const ref = provider.letterhead?.logoRef;
+    if (!ref) return {};
+    try {
+      const logo = parseJpeg(await this.storage.read(ref));
+      return logo ? { logo } : {};
+    } catch (err) {
+      this.logger.warn(
+        `Letterhead logo unreadable for ${provider.id}: ${String(err)}`,
+      );
+      return {};
+    }
+  }
 
   async deliverToVault(d: VaultDelivery): Promise<MedicalRecordDocument> {
     const patientId = d.patientId.toString();
@@ -139,15 +164,18 @@ export class PartnerDocumentsService {
   prescriptionPdf(
     rx: PrescriptionDocument,
     provider: ProviderDocument,
+    brand?: DocBrand,
   ): Buffer {
     const draft = rx.status === PrescriptionStatus.DRAFT;
-    const pdf = new PdfBuilder({
-      title: `Prescription ${rx.rxNumber ?? '(draft)'}`,
-    }).banner(
-      provider.name,
-      [this.address(provider), provider.phone].filter(Boolean).join(' · ') ||
-        'Ayuva partner',
-      rx.rxNumber ?? 'DRAFT',
+    const pdf = this.head(
+      new PdfBuilder({ title: `Prescription ${rx.rxNumber ?? '(draft)'}` }),
+      provider,
+      brand,
+      {
+        label: 'Prescription',
+        contactSubtitle: 'Ayuva partner',
+        right: rx.rxNumber ?? 'DRAFT',
+      },
     );
     if (draft)
       pdf.text('DRAFT — not signed, not valid for dispensing', {
@@ -220,7 +248,7 @@ export class PartnerDocumentsService {
         `Verification hash ${rx.signatureHash?.slice(0, 16) ?? ''}`,
       ]);
     }
-    return pdf
+    return this.foot(pdf, provider)
       .footer(
         'Issued via Ayuva Partner Portal. Medicines are entered by the prescribing doctor; Ayuva does not recommend treatment.',
       )
@@ -230,14 +258,18 @@ export class PartnerDocumentsService {
   visitSummaryPdf(
     note: ConsultationNoteDocument,
     provider: ProviderDocument,
+    brand?: DocBrand,
   ): Buffer {
     const s = note.sections;
-    const pdf = new PdfBuilder({ title: 'Visit summary' })
-      .banner(
-        provider.name,
-        'Consultation summary',
-        fmtDate(note.signedAt ?? note.createdAt),
-      )
+    const pdf = this.head(
+      new PdfBuilder({ title: 'Visit summary' }),
+      provider,
+      brand,
+      {
+        label: 'Consultation summary',
+        right: fmtDate(note.signedAt ?? note.createdAt),
+      },
+    )
       .keyValues(
         [
           ['Patient', note.patientName],
@@ -288,7 +320,7 @@ export class PartnerDocumentsService {
       );
     }
     pdf.signature([note.authorName, `Signed ${fmtDateTime(note.signedAt)}`]);
-    return pdf
+    return this.foot(pdf, provider)
       .footer(
         'Written and signed by your doctor. Bring questions to your doctor; Ayuva does not give medical advice.',
       )
@@ -300,14 +332,18 @@ export class PartnerDocumentsService {
     result: LabResultDocument,
     provider: ProviderDocument,
     trendUrl?: string,
+    brand?: DocBrand,
   ): Buffer {
-    const pdf = new PdfBuilder({ title: `Lab report ${order.orderNo}` })
-      .banner(
-        provider.name,
-        [this.address(provider), provider.phone].filter(Boolean).join(' · ') ||
-          'Diagnostic report',
-        order.orderNo,
-      )
+    const pdf = this.head(
+      new PdfBuilder({ title: `Lab report ${order.orderNo}` }),
+      provider,
+      brand,
+      {
+        label: 'Laboratory report',
+        contactSubtitle: 'Diagnostic report',
+        right: order.orderNo,
+      },
+    )
       .keyValues(
         [
           ['Patient', order.patientName],
@@ -369,7 +405,7 @@ export class PartnerDocumentsService {
         fmtDateTime(result.releasedAt),
       ]);
     }
-    return pdf
+    return this.foot(pdf, provider)
       .footer(
         'Reference intervals are those used by the reporting laboratory. Interpretation is for your doctor.',
       )
@@ -379,9 +415,14 @@ export class PartnerDocumentsService {
   dischargeSummaryPdf(
     a: AdmissionDocument,
     provider: ProviderDocument,
+    brand?: DocBrand,
   ): Buffer {
-    const pdf = new PdfBuilder({ title: `Discharge summary ${a.admissionNo}` })
-      .banner(provider.name, 'Discharge summary', a.admissionNo)
+    const pdf = this.head(
+      new PdfBuilder({ title: `Discharge summary ${a.admissionNo}` }),
+      provider,
+      brand,
+      { label: 'Discharge summary', right: a.admissionNo },
+    )
       .keyValues(
         [
           ['Patient', a.patientName],
@@ -420,14 +461,22 @@ export class PartnerDocumentsService {
       a.attendingName ?? provider.name,
       `Discharged ${fmtDate(a.dischargedAt)}`,
     ]);
-    return pdf
+    return this.foot(pdf, provider)
       .footer('Issued by the treating hospital via Ayuva Partner Portal.')
       .build();
   }
 
-  referralLetterPdf(r: ReferralDocument, provider: ProviderDocument): Buffer {
-    const pdf = new PdfBuilder({ title: `Referral ${r.referralNo}` })
-      .banner(provider.name, 'Referral letter', r.referralNo)
+  referralLetterPdf(
+    r: ReferralDocument,
+    provider: ProviderDocument,
+    brand?: DocBrand,
+  ): Buffer {
+    const pdf = this.head(
+      new PdfBuilder({ title: `Referral ${r.referralNo}` }),
+      provider,
+      brand,
+      { label: 'Referral letter', right: r.referralNo },
+    )
       .keyValues(
         [
           ['Patient', r.patientName],
@@ -446,11 +495,93 @@ export class PartnerDocumentsService {
     if (r.requestedTests.length)
       pdf.heading('Tests requested').text(r.requestedTests.join(', '));
     pdf.signature([r.fromName, provider.name, fmtDate(r.createdAt)]);
-    return pdf
+    return this.foot(pdf, provider)
       .footer(
         'Records are shared only with the patient’s consent through their Ayuva Medical Vault.',
       )
       .build();
+  }
+
+  /** A made-up lab report so a provider can see their letterhead before real documents carry it. */
+  letterheadSamplePdf(provider: ProviderDocument, brand?: DocBrand): Buffer {
+    const now = new Date();
+    const order = {
+      orderNo: 'LAB-SAMPLE',
+      patientName: 'Sample Patient',
+      createdAt: now,
+      sampleCollection: { collectedAt: now },
+      referringDoctorName: 'Dr. Sample Referrer',
+    } as unknown as LabOrderDocument;
+    const result = {
+      status: 'released',
+      releasedAt: now,
+      releasedByName: 'Authorised signatory',
+      comments: 'This is a sample to preview your letterhead. No real patient data.',
+      tests: [
+        {
+          name: 'Complete Blood Count',
+          values: [
+            { name: 'Haemoglobin', value: '13.8', unit: 'g/dL', refLow: 12, refHigh: 16, flag: 'normal' },
+            { name: 'WBC count', value: '11.9', unit: '10^3/uL', refLow: 4, refHigh: 11, flag: 'high' },
+            { name: 'Platelets', value: '250', unit: '10^3/uL', refLow: 150, refHigh: 400, flag: 'normal' },
+          ],
+        },
+      ],
+    } as unknown as LabResultDocument;
+    return this.labReportPdf(order, result, provider, undefined, brand);
+  }
+
+  /**
+   * Opens a document with the organisation's own letterhead when it has set
+   * one (name, address lines, logo, accent colour); otherwise the Ayuva band.
+   */
+  private head(
+    pdf: PdfBuilder,
+    provider: ProviderDocument,
+    brand: DocBrand | undefined,
+    o: { label: string; right: string; contactSubtitle?: string },
+  ): PdfBuilder {
+    const lh = provider.letterhead;
+    const custom =
+      !!brand?.logo ||
+      !!(
+        lh?.displayName?.trim() ||
+        lh?.tagline?.trim() ||
+        lh?.addressLine?.trim() ||
+        lh?.contactLine?.trim() ||
+        lh?.registrationLine?.trim()
+      );
+    if (!custom) {
+      // The Ayuva band: prescriptions and lab reports show the address, the rest name the document.
+      const subtitle = o.contactSubtitle
+        ? [this.address(provider), provider.phone].filter(Boolean).join(' · ') ||
+          o.contactSubtitle
+        : o.label;
+      return pdf.banner(provider.name, subtitle, o.right);
+    }
+    pdf.letterhead({
+      title: lh?.displayName?.trim() || provider.name,
+      lines: [
+        lh?.tagline,
+        lh?.addressLine?.trim() || this.address(provider),
+        lh?.contactLine?.trim() || provider.phone,
+        lh?.registrationLine,
+      ].filter((x): x is string => !!x?.trim()),
+      right: o.right,
+      ...(brand?.logo && { logo: brand.logo }),
+      ...(lh?.accentColor && { accent: hexRgb(lh.accentColor) }),
+    });
+    return pdf.text(o.label.toUpperCase(), {
+      size: 11,
+      font: 'bold',
+      color: pdf.colors.muted,
+      gapAfter: 6,
+    });
+  }
+
+  private foot(pdf: PdfBuilder, provider: ProviderDocument): PdfBuilder {
+    const note = provider.letterhead?.footerNote?.trim();
+    return note ? pdf.footerLine(note) : pdf;
   }
 
   private address(p: ProviderDocument): string {

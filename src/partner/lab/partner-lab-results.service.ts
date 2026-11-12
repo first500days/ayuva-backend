@@ -273,6 +273,7 @@ export class PartnerLabResultsService {
       result,
       actor.provider,
       trendLink?.url,
+      await this.documents.brand(actor.provider),
     );
     const record = await this.deliver(
       actor,
@@ -361,7 +362,13 @@ export class PartnerLabResultsService {
       });
     }
     return {
-      buffer: this.documents.labReportPdf(order, result, actor.provider),
+      buffer: this.documents.labReportPdf(
+        order,
+        result,
+        actor.provider,
+        undefined,
+        await this.documents.brand(actor.provider),
+      ),
       fileName: `Preview ${order.orderNo}.pdf`,
     };
   }
