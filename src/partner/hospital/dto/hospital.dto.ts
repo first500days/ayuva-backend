@@ -241,6 +241,13 @@ export class DischargeDto {
   @IsOptional()
   @IsBoolean()
   sendSummary?: boolean;
+
+  @ApiProperty({
+    description:
+      'A person must confirm the discharge. Any AI length-of-stay forecast is only a cue and never releases the pipeline to pharmacy and billing by itself.',
+  })
+  @IsBoolean()
+  approveRelease: boolean;
 }
 
 export class AdmissionsQueryDto {

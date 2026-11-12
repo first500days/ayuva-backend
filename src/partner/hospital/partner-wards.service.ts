@@ -407,6 +407,11 @@ export class PartnerWardsService {
     const admission = await this.loadAdmission(actor, id);
     if (admission.status !== AdmissionStatus.ADMITTED)
       throw new BadRequestException('This patient is already discharged');
+    if (dto.approveRelease !== true) {
+      throw new BadRequestException(
+        'A staff member must approve the discharge before it is released to pharmacy and billing',
+      );
+    }
     if (dto.sendSummary && !admission.patientId) {
       throw new BadRequestException(
         'Only a patient with an Ayuva account can receive the summary in their vault',
@@ -456,6 +461,9 @@ export class PartnerWardsService {
     );
     await this.recordAdmission(actor, admission, {
       change: 'discharged',
+      approvedBy: actor.userId,
+      approvedAt: new Date().toISOString(),
+      approval: 'Approved AI Length-of-Stay Forecast and Released Discharge Pipeline to Pharmacy/Billing',
       dischargeType: dto.type,
       summarySent: !!admission.vaultRecordId,
     });
