@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { MedicalRecordType } from '../../core/records/schemas/medical-record.schema';
@@ -17,6 +22,8 @@ import {
 } from './schemas/lab-catalog-item.schema';
 import { LabOrderDocument, LabOrderStatus } from './schemas/lab-order.schema';
 import { LabResult, LabResultDocument } from './schemas/lab-result.schema';
+import { QcMaterial, QcMaterialDocument, QcRun, QcRunDocument } from './schemas/qc.schema';
+import { User, UserDocument } from '../../core/users/schemas/user.schema';
 import { computeFlag, isCriticalFlag } from './lab-flags';
 import {
   ResultRow,
@@ -92,6 +99,12 @@ export class PartnerLabResultsService {
     private readonly resultModel: Model<LabResultDocument>,
     @InjectModel(LabCatalogItem.name)
     private readonly catalogModel: Model<LabCatalogItemDocument>,
+    @InjectModel(QcRun.name)
+    private readonly qcRunModel: Model<QcRunDocument>,
+    @InjectModel(QcMaterial.name)
+    private readonly qcMaterialModel: Model<QcMaterialDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly orders: PartnerLabOrdersService,
     private readonly critical: PartnerLabCriticalService,
     private readonly trendLinks: PartnerTrendLinksService,
@@ -108,8 +121,10 @@ export class PartnerLabResultsService {
     const result = await this.resultModel
       .findOne({ orderId: order._id })
       .exec();
-    if (result) return this.toResponse(result, order);
+    const qcHold = await this.qcHold(actor);
+    if (result) return { ...this.toResponse(result, order), qcHold };
     return {
+      qcHold,
       orderId: order.id,
       status: 'new' as const,
       critical: false,
@@ -244,6 +259,10 @@ export class PartnerLabResultsService {
     if (!result.tests.some((t) => t.values.some((v) => v.value?.trim()))) {
       throw new BadRequestException('The report has no values yet');
     }
+    // A rejected control run (Westgard) that nobody has reviewed blocks release unless a
+    // signer gives a written rationale and re-confirms their identity.
+    const hold = await this.qcHold(actor);
+    if (hold) await this.assertHoldOverride(actor, dto, hold);
     // Flagged delta / contamination checks need a person to look before sign-off.
     const checks = result.checks ?? [];
     const note = dto.checksNote?.trim();
@@ -289,9 +308,16 @@ export class PartnerLabResultsService {
       order,
       record._id,
       result.critical,
-      checks.length
-        ? { checks: checks.map((c) => c.code), checksNote: note ?? null }
-        : {},
+      {
+        ...(checks.length && {
+          checks: checks.map((c) => c.code),
+          checksNote: note ?? null,
+        }),
+        ...(hold && {
+          qcHoldOverride: dto.overrideRationale?.trim(),
+          qcHold: hold.runs,
+        }),
+      },
     );
     return { ...this.toResponse(result, order), trendLink, dispatch };
   }
@@ -662,6 +688,60 @@ export class PartnerLabResultsService {
       actorUserId: actor.userId,
       ip: actor.ip,
     });
+  }
+
+  /** Control runs rejected in the last day and not yet reviewed: patient results are on hold. */
+  async qcHold(actor: PartnerActor) {
+    const since = new Date(Date.now() - 24 * 3_600_000);
+    const runs = await this.qcRunModel
+      .find({
+        providerId: actor.provider._id,
+        status: 'reject',
+        reviewedAt: { $exists: false },
+        at: { $gte: since },
+      })
+      .sort({ at: -1 })
+      .limit(10)
+      .lean()
+      .exec();
+    if (!runs.length) return null;
+    const mats = await this.qcMaterialModel
+      .find({ _id: { $in: runs.map((r) => r.materialId) } })
+      .select('analyte')
+      .lean()
+      .exec();
+    const name = new Map(mats.map((m) => [m._id.toString(), m.analyte]));
+    return {
+      message:
+        'Automated flags detected. To release this report to the patient, input a manual clinical rationale validation string.',
+      runs: runs.map((r) => ({
+        id: r._id.toString(),
+        analyte: name.get(r.materialId.toString()) ?? 'Control',
+        rules: r.rules,
+        at: r.at,
+      })),
+    };
+  }
+
+  private async assertHoldOverride(
+    actor: PartnerActor,
+    dto: ReleaseResultDto,
+    hold: { runs: unknown[] },
+  ) {
+    const why = dto.overrideRationale?.trim();
+    if (!why || why.length < 10)
+      throw new BadRequestException(
+        `A quality-control rejection is unreviewed (${hold.runs.length} run${hold.runs.length === 1 ? '' : 's'}). Review it in Quality Control, or enter a clinical rationale of at least 10 characters to release anyway`,
+      );
+    const user = await this.userModel.findById(actor.userId);
+    const ok =
+      !!dto.verificationPassword &&
+      !!user?.passwordHash &&
+      (await bcrypt.compare(dto.verificationPassword, user.passwordHash));
+    if (!ok)
+      throw new ForbiddenException(
+        'Enter your password to confirm the override',
+      );
   }
 
   /** The patient's earlier released results here (for delta checks), newest first. */

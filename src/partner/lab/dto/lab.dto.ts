@@ -530,6 +530,24 @@ export class ReleaseResultDto {
   @IsString()
   @MaxLength(500)
   checksNote?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Clinical rationale for releasing while a rejected QC run is unreviewed (required then)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  overrideRationale?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "The signer's password, re-entered to confirm an override of a QC hold",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  verificationPassword?: string;
 }
 
 export class TrackScanDto {
