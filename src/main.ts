@@ -9,6 +9,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppLogger } from './common/logger/app-logger.service';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { requestContextMiddleware } from './common/request-context/client-ip';
 import { scalarCustomCss } from './docs/scalar-theme';
 
 const API_PREFIX = 'api/v1';
@@ -22,6 +23,8 @@ async function bootstrap() {
   // Hosted behind a proxy: without this every request.ip (audit log, security
   // flags) is the proxy's. TRUST_PROXY_HOPS is the number of proxies in front.
   app.set('trust proxy', Number(config.get<string>('TRUST_PROXY_HOPS') ?? 1));
+
+  app.use(requestContextMiddleware);
 
   // Security headers. The portal on another origin reads files from this API,
   // and the /docs page runs its own scripts.

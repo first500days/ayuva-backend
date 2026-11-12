@@ -71,7 +71,7 @@ export class AdminAuditExplorerService {
         targetId: l.targetId?.toString() || '',
         timestamp: (l as any).createdAt?.toISOString() || new Date().toISOString(),
         metadata: l.metadata || {},
-        ipAddress: l.ipAddress || '127.0.0.1',
+        ipAddress: l.ipAddress || 'Not recorded',
         reason: (l.metadata as any)?.reason || 'Standard administrative operation',
         outcome: (l.metadata as any)?.outcome || 'succeeded',
         beforeState: (l.metadata as any)?.beforeState || null,

@@ -313,6 +313,13 @@ export class PartnerPrescriptionsService {
       diagnoses: rx.diagnoses.map((d) => d.icd11),
       registration: regNo,
       attested: true,
+      // The signature entry: audit rows are hash-sealed, so this cannot be edited afterwards.
+      validation: {
+        action: 'MANUALLY_AUTHORIZED_CLINICAL_NOTE',
+        state: 'Signed',
+        userId: actor.userId,
+        timestamp: new Date().toISOString(),
+      },
       toVault,
       toPharmacy: !!rx.pharmacySentAt,
       dispatchTo: rx.dispatchTo,

@@ -13,6 +13,7 @@ import {
   PartnerContext,
   PartnerContextService,
 } from '../partner-context.service';
+import { clientIp } from '../../common/request-context/client-ip';
 import { Perm } from './partner-permissions';
 
 const PERMS_KEY = 'partner:perms';
@@ -60,7 +61,7 @@ export class PartnerPermGuard implements CanActivate {
         `Your role (${resolved.role}) does not allow this action`,
       );
     }
-    request.partnerActor = { ...resolved, userId, ip: request.ip };
+    request.partnerActor = { ...resolved, userId, ip: clientIp(request) };
     return true;
   }
 }

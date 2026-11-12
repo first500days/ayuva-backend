@@ -7,6 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { Observable, tap } from 'rxjs';
+import { clientIp } from '../../common/request-context/client-ip';
 import { AuditLogService } from '../audit-log.service';
 import { AUDIT_EVENT_KEY, AuditEventMetadata } from '../decorators/audit-event.decorator';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
@@ -51,7 +52,7 @@ export class AuditLogInterceptor implements NestInterceptor {
           action: metadata.action,
           targetType: metadata.targetType,
           targetId,
-          ipAddress: request.ip,
+          ipAddress: clientIp(request),
         });
       }),
     );
