@@ -38,7 +38,12 @@ const PROMPT_FIELDS = [
   'safetyGuards',
   'fallbackResponses',
 ] as const;
-const EDITABLE_FIELDS = [...PROMPT_FIELDS, 'displayName', 'isActive'] as const;
+const EDITABLE_FIELDS = [
+  ...PROMPT_FIELDS,
+  'displayName',
+  'isActive',
+  'routing',
+] as const;
 
 export interface SurfaceVersionSummary {
   version: string;

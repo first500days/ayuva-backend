@@ -41,6 +41,10 @@ export class UpdateSurfaceDto {
 
   @ApiPropertyOptional() @IsOptional() @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ enum: ['fixed', 'balanced'] })
+  @IsOptional() @IsIn(['fixed', 'balanced'])
+  routing?: 'fixed' | 'balanced';
 }
 
 export class RollbackSurfaceDto {

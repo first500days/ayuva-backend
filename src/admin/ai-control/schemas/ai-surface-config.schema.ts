@@ -49,6 +49,11 @@ export class AiSurfaceConfig {
   @Prop({ default: 0.2 })
   temperature: number;
 
+  // Gemini Pro/Flash balancing: "fixed" keeps `model`; "balanced" sends routine,
+  // short requests to Flash and long or safety-relevant ones to Pro (ai-usage.ts).
+  @Prop({ type: String, enum: ['fixed', 'balanced'], default: 'fixed' })
+  routing: 'fixed' | 'balanced';
+
   @Prop({ required: true })
   systemPrompt: string;
 

@@ -66,6 +66,20 @@ export class AdminAiLogResponseDto {
   })
   releaseStatus?: ReportReleaseStatus;
 
+  @ApiPropertyOptional({
+    type: Object,
+    description:
+      'Estimated prompt/output tokens, guardrail fields the answer touched, and the Gemini model the balancing rule picks',
+  })
+  usage?: {
+    promptTokens: number;
+    outputTokens: number;
+    estimated: boolean;
+    guardrails: { path: string; value: string }[];
+    routedModel: string | null;
+    routeReason: string | null;
+  };
+
   @ApiProperty({ example: '2026-08-02T10:00:00.000Z' })
   createdAt: string;
 }

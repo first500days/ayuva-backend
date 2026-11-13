@@ -17,6 +17,8 @@ import {
   MedicalRecordDocument,
   RecordStatusEnhanced,
 } from '../../core/records/schemas/medical-record.schema';
+import { estimateTokens, guardrailHits } from '../../ai/common/ai-usage';
+import { AiSource } from '../../ai/common/ai-source.enum';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { AppNotificationsService } from '../../notifications/app-notifications.service';
@@ -73,6 +75,27 @@ export class AdminAiService {
       count: countByService.get(service) ?? 0,
     }));
 
+    // Token usage over the last 24 hours, by the model each call was routed to.
+    const since = Date.now() - 86_400_000;
+    const recent = logs.filter((l) => (l.createdAt?.getTime() ?? 0) >= since);
+    const byModel = new Map<string, { calls: number; promptTokens: number; outputTokens: number }>();
+    let promptTokens = 0;
+    let outputTokens = 0;
+    let guardrailCalls = 0;
+    for (const l of recent) {
+      const p = l.promptTokens ?? estimateTokens(l.input);
+      const o = l.outputTokens ?? estimateTokens(l.outcome);
+      promptTokens += p;
+      outputTokens += o;
+      if ((l.guardrails?.length ?? guardrailHits(l.outcome).length) > 0) guardrailCalls++;
+      const key = l.routedModel ?? 'not routed';
+      const m = byModel.get(key) ?? { calls: 0, promptTokens: 0, outputTokens: 0 };
+      m.calls++;
+      m.promptTokens += p;
+      m.outputTokens += o;
+      byModel.set(key, m);
+    }
+
     return {
       totalPrompts,
       avgResponseTimeMs,
@@ -80,6 +103,13 @@ export class AdminAiService {
       flaggedCount,
       pendingReviewCount,
       byService,
+      tokens24h: {
+        promptTokens,
+        outputTokens,
+        estimated: !recent.some((l) => l.source === AiSource.REAL),
+        guardrailCalls,
+        byModel: [...byModel.entries()].map(([model, m]) => ({ model, ...m })),
+      },
     };
   }
 
@@ -318,6 +348,15 @@ export class AdminAiService {
       promptVersion: log.promptVersion,
       releaseStatus:
         typeof interpretationId === 'string' ? releaseById.get(interpretationId) : undefined,
+      usage: {
+        // Older rows predate stored usage; work it out from what was logged.
+        promptTokens: log.promptTokens ?? estimateTokens(log.input),
+        outputTokens: log.outputTokens ?? estimateTokens(log.outcome),
+        estimated: log.source !== AiSource.REAL,
+        guardrails: guardrailHits(log.outcome),
+        routedModel: log.routedModel ?? null,
+        routeReason: log.routeReason ?? null,
+      },
       createdAt: (log.createdAt ?? new Date(0)).toISOString(),
     };
   }

@@ -70,6 +70,24 @@ export class AIInteractionLog {
   @Prop()
   promptVersion?: string;
 
+  // Usage, worked out when the interaction is written (ai-usage.ts). Token
+  // counts are estimates while the engine is rule-based.
+  @Prop()
+  promptTokens?: number;
+
+  @Prop()
+  outputTokens?: number;
+
+  @Prop({ type: [String], default: undefined })
+  guardrails?: string[];
+
+  // The Gemini model the surface's balancing rule picks, and why.
+  @Prop()
+  routedModel?: string;
+
+  @Prop()
+  routeReason?: string;
+
   // Human review outcome from the AI Monitoring queue.
   @Prop({ type: String, enum: ['approved', 'escalated'] })
   reviewAction?: 'approved' | 'escalated';
