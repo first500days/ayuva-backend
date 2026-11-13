@@ -34,6 +34,15 @@ import {
 } from './dto/clinical.dto';
 import { PartnerPatientsService } from './partner-patients.service';
 import { resolveDiagnosisCodes, searchDiagnosisCodes } from './diagnosis-codes';
+import { suggestDiagnosisCodes } from '../referrals/prior-auth-draft';
+
+const SECTION_LABEL: Record<string, string> = {
+  chiefComplaint: 'Chief complaint',
+  history: 'History',
+  examination: 'Examination',
+  assessment: 'Assessment',
+  plan: 'Plan',
+};
 
 /** Clinical Notes & AYUVA Scribe. */
 /** Sketches per note, and x/y numbers per sketch (≈ 4000 points). */
@@ -79,6 +88,43 @@ export class PartnerNotesService {
       source: AiSource.MOCK,
     });
     return { ...result, source: AiSource.MOCK, disclaimer: AI_DISCLAIMER };
+  }
+
+  /**
+   * Insurance coding assistant: the ICD-11 / SNOMED CT codes the note's own
+   * words point to, each with the phrase and section it came from. A
+   * provisional draft only — nothing is saved; the doctor accepts or rejects
+   * every code, and only accepted codes are signed. Rule-based; sizes logged only.
+   */
+  async suggestCodes(
+    actor: PartnerActor,
+    sections: Record<string, string | undefined>,
+  ) {
+    const started = Date.now();
+    const sources = Object.entries(sections)
+      .filter(([, v]) => typeof v === 'string' && v.trim())
+      .map(([k, v]) => ({
+        label: SECTION_LABEL[k] ?? k,
+        text: (v ?? '').slice(0, 20_000),
+      }));
+    const suggestions = suggestDiagnosisCodes(sources);
+    await this.aiLog.record({
+      userId: actor.userId,
+      service: AiService.CODING,
+      input: {
+        characters: sources.reduce((n, s) => n + s.text.length, 0),
+        providerId: actor.provider.id,
+      },
+      outcome: { codesSuggested: suggestions.map((s) => s.icd11) },
+      latencyMs: Date.now() - started,
+      source: AiSource.MOCK,
+    });
+    return {
+      suggestions,
+      provisional: true,
+      source: 'rules',
+      disclaimer: AI_DISCLAIMER,
+    };
   }
 
   /** ICD-11 / SNOMED CT diagnosis search for the notes and prescription forms. */
@@ -267,7 +313,18 @@ export class PartnerNotesService {
     note.status = NoteStatus.SIGNED;
     note.signedAt = new Date();
     await note.save();
-    await this.record(actor, AuditAction.PARTNER_NOTE_SIGN, note);
+    await this.record(actor, AuditAction.PARTNER_NOTE_SIGN, note, {
+      // The human authorisation entry. Audit rows are hash-sealed, so it can't be edited later.
+      validation: {
+        action: 'MANUALLY_AUTHORIZED_CLINICAL_NOTE',
+        state: 'Signed',
+        userId: actor.userId,
+        timestamp: note.signedAt.toISOString(),
+      },
+      // Whether any part was drafted by the Scribe or the coding assistant before the doctor signed.
+      structuringSource: note.structuringSource ?? 'manual',
+      diagnoses: (note.diagnoses ?? []).map((d) => d.icd11),
+    });
     this.live.publish(actor.provider._id, 'notes');
     return this.toResponse(note);
   }
@@ -394,6 +451,7 @@ export class PartnerNotesService {
     actor: PartnerActor,
     action: AuditAction,
     note: ConsultationNoteDocument,
+    extra: Record<string, unknown> = {},
   ) {
     return this.audit.record({
       actorId: actor.userId,
@@ -404,6 +462,7 @@ export class PartnerNotesService {
         providerId: actor.provider.id,
         patientId: note.patientId.toString(),
         label: 'Consultation note',
+        ...extra,
       },
       ipAddress: actor.ip,
     });

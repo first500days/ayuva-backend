@@ -65,6 +65,35 @@ export class ScribeStructureDto {
   text: string;
 }
 
+/** The note's current sections, read by the coding assistant (nothing is saved). */
+export class SuggestCodesDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  chiefComplaint?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  history?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  examination?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  assessment?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  plan?: string;
+}
+
 export class NoteSectionsDto {
   @ApiPropertyOptional()
   @IsOptional()

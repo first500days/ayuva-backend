@@ -10,6 +10,8 @@ export enum AiService {
   ASSISTANT = 'assistant',
   // Partner Portal AYUVA Scribe — structures a doctor's own notes (never clinical advice).
   SCRIBE = 'scribe',
+  // Insurance coding assistant — ICD-11 codes the note's own words name, as a provisional draft.
+  CODING = 'coding',
 }
 
 export enum AiReviewStatus {

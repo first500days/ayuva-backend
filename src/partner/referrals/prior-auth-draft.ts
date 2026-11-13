@@ -164,6 +164,35 @@ function found(term: string, lower: string, original: string): boolean {
   return phrase(term).test(lower);
 }
 
+/**
+ * ICD-11 / SNOMED CT codes the text itself names (a condition or one of its
+ * synonyms, whole words only), each with the words matched and where. Used by
+ * the pre-auth drafter and the consultation note's coding assistant; the
+ * clinician accepts or rejects every suggestion.
+ */
+export function suggestDiagnosisCodes(sources: TextSource[]): DraftDiagnosis[] {
+  const out = new Map<string, DraftDiagnosis>();
+  for (const s of sources) {
+    const original = s.text ?? '';
+    const lower = original.toLowerCase();
+    if (!lower.trim()) continue;
+    for (const d of DIAGNOSIS_CODES) {
+      if (out.has(d.icd11)) continue;
+      const term = [d.display, ...d.synonyms].find((t) =>
+        found(t.toLowerCase(), lower, original),
+      );
+      if (term)
+        out.set(d.icd11, {
+          icd11: d.icd11,
+          snomed: d.snomed,
+          display: d.display,
+          evidence: `"${term}" in ${s.label}`,
+        });
+    }
+  }
+  return [...out.values()];
+}
+
 export function draftPriorAuth(
   sources: TextSource[],
   context: {
@@ -173,25 +202,14 @@ export function draftPriorAuth(
     estimatedAmount?: number | null;
   },
 ): PriorAuthDraft {
-  const diagnoses = new Map<string, DraftDiagnosis>();
+  const diagnoses = new Map(
+    suggestDiagnosisCodes(sources).map((d) => [d.icd11, d]),
+  );
   const procedures = new Map<string, DraftProcedure>();
   for (const s of sources) {
     const original = s.text ?? '';
     const lower = original.toLowerCase();
     if (!lower.trim()) continue;
-    for (const d of DIAGNOSIS_CODES) {
-      if (diagnoses.has(d.icd11)) continue;
-      const term = [d.display, ...d.synonyms].find((t) =>
-        found(t.toLowerCase(), lower, original),
-      );
-      if (term)
-        diagnoses.set(d.icd11, {
-          icd11: d.icd11,
-          snomed: d.snomed,
-          display: d.display,
-          evidence: `"${term}" in ${s.label}`,
-        });
-    }
     for (const p of PROCEDURES) {
       if (procedures.has(p.name)) continue;
       const term = p.keywords.find((k) => found(k, lower, original));

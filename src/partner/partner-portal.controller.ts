@@ -67,6 +67,7 @@ import {
   SaveSketchDto,
   ScribeStructureDto,
   SignPrescriptionDto,
+  SuggestCodesDto,
   UpdateNoteDto,
   UpdatePrescriptionDto,
 } from './clinical/dto/clinical.dto';
@@ -469,6 +470,17 @@ export class PartnerClinicalController {
   })
   structure(@PartnerCtx() a: PartnerActor, @Body() dto: ScribeStructureDto) {
     return this.notes.structure(a, dto.text);
+  }
+
+  @Post('scribe/codes')
+  @HttpCode(200)
+  @RequirePerm(Perm.CLINICAL_WRITE)
+  @ApiOperation({
+    summary:
+      'Coding assistant: ICD-11 / SNOMED CT codes the note sections name — a provisional draft, nothing is saved',
+  })
+  suggestCodes(@PartnerCtx() a: PartnerActor, @Body() dto: SuggestCodesDto) {
+    return this.notes.suggestCodes(a, { ...dto });
   }
 
   @Get('diagnosis-codes')
