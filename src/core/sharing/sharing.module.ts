@@ -1,3 +1,4 @@
+import { ShareLiveService } from './share-live.service';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ShareGrant, ShareGrantSchema } from './schemas/share-grant.schema';
@@ -38,7 +39,7 @@ import { PartnerNotifyModule } from '../../partner/notify/partner-notify.module'
     ]),
   ],
   controllers: [SharingController],
-  providers: [SharingService],
+  providers: [ShareLiveService, SharingService],
   // SharingService: appointments and the partner portal revoke "this visit"
   // grants when a visit is cancelled or rejected.
   exports: [SharingService],

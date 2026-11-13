@@ -109,6 +109,15 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
     this.unsubscribe = [
       this.bus.onChange((e) => this.notifyProvider(e.providerId, e.topics)),
       this.bus.onFrame((f) => this.forwardFrame(f)),
+      // A patient's share ended: screens showing that patient blur and re-check.
+      this.bus.onShareEnded((e) => {
+        for (const conn of this.byProvider.get(e.providerId) ?? [])
+          this.send(conn, {
+            t: 'share.ended',
+            patientId: e.patientId,
+            reason: e.reason,
+          });
+      }),
       this.bus.onSessionEnd((e) =>
         this.closeUser(
           e.userId,

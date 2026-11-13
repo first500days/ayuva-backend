@@ -1,3 +1,4 @@
+import { ShareLiveService } from './share-live.service';
 import {
   BadRequestException,
   Injectable,
@@ -46,8 +47,10 @@ import {
 } from './share-scope';
 
 const DURATION_TO_MS: Record<string, number | null> = {
-  // v1 values — still honoured for display, no longer accepted on create.
-  '24h': 24 * 60 * 60 * 1000,
+  [ShareDuration.HOURS_1]: 60 * 60 * 1000,
+  [ShareDuration.HOURS_2]: 2 * 60 * 60 * 1000,
+  [ShareDuration.HOURS_24]: 24 * 60 * 60 * 1000,
+  // v1 value — still honoured for display, no longer accepted on create.
   '7d': 7 * 24 * 60 * 60 * 1000,
   [ShareDuration.DAYS_30]: 30 * 24 * 60 * 60 * 1000,
   [ShareDuration.UNTIL_REVOKED]: null,
@@ -83,6 +86,9 @@ export class SharingService {
     // Tells the receiving partner organisation (Notification Center "Patient shared records").
     @Optional()
     private readonly partnerNotifier?: PartnerNotifierService,
+    // Closes open partner screens when a share ends. Optional for hand-built test modules.
+    @Optional()
+    private readonly shareLive?: ShareLiveService,
   ) {}
 
   /** Share recipients: verified partners only (an org is `connected` once its provider is approved). */
@@ -275,6 +281,8 @@ export class SharingService {
     grant.status = 'revoked';
     grant.revokedAt = new Date();
     await grant.save();
+    // The partner's open screens blur now, not at their next refresh.
+    await this.shareLive?.ended(grant, 'revoked');
 
     const scopeLabel = describeScope(grant);
     await this.logModel.create({

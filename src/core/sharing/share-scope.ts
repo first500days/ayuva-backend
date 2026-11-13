@@ -19,8 +19,15 @@ export enum ShareScope {
   SUMMARY = 'summary',
 }
 
-/** U10 "Duration". The v1 values 24h and 7d are still read but no longer offered. */
+/**
+ * U10 "Duration". Short windows (1, 2, 24 hours) let a patient share for one
+ * consultation; the partner's screen closes when the window ends. The v1
+ * value 7d is still read but no longer offered.
+ */
 export enum ShareDuration {
+  HOURS_1 = '1h',
+  HOURS_2 = '2h',
+  HOURS_24 = '24h',
   VISIT = 'visit',
   DAYS_30 = '30d',
   UNTIL_REVOKED = 'until_revoked',

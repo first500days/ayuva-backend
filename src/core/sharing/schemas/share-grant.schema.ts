@@ -37,7 +37,7 @@ export class ShareGrant {
   @Prop({ required: true })
   purpose: string;
 
-  // ShareDuration: 'visit' | '30d' | 'until_revoked' (v1 also '24h' | '7d').
+  // ShareDuration: '1h' | '2h' | '24h' | 'visit' | '30d' | 'until_revoked' (v1 also '7d').
   @Prop({ required: true })
   duration: string;
 
@@ -54,6 +54,10 @@ export class ShareGrant {
 
   @Prop()
   revokedAt?: Date;
+
+  // When the end of this share (expiry) was announced to the partner's open screens.
+  @Prop()
+  endAnnouncedAt?: Date;
 
   @Prop({ default: 0 })
   accessCount: number;

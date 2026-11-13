@@ -17,7 +17,8 @@ export type LiveTopic =
   | 'er'
   | 'pharmacy'
   | 'assets'
-  | 'lab';
+  | 'lab'
+  | 'shares';
 
 export interface LiveEvent {
   providerId: string;
@@ -27,6 +28,14 @@ export interface LiveEvent {
 export interface SessionEnd {
   userId: string;
   reason: 'session_replaced' | 'frozen' | 'signed_out' | 'tokens_revoked';
+}
+
+/** A patient's share with a partner ended: its open screens must stop showing that patient's shared data. */
+export interface ShareEnded {
+  providerId: string;
+  patientId: string;
+  grantId: string;
+  reason: 'expired' | 'revoked';
 }
 
 /** A slice of bedside telemetry. Carries numbers and waveform only, never a name. */
@@ -105,6 +114,21 @@ export class LiveBus {
   onChange(listener: (e: LiveEvent) => void): () => void {
     this.emitter.on('change', listener);
     return () => this.emitter.off('change', listener);
+  }
+
+  /** Announces an ended share to this instance's partner sockets (see ShareLiveService). */
+  shareEnded(e: ShareEnded): void {
+    try {
+      this.emitter.emit('share-ended', e);
+      this.publish(e.providerId, 'shares');
+    } catch {
+      // As above.
+    }
+  }
+
+  onShareEnded(listener: (e: ShareEnded) => void): () => void {
+    this.emitter.on('share-ended', listener);
+    return () => this.emitter.off('share-ended', listener);
   }
 
   onSessionEnd(listener: (e: SessionEnd) => void): () => void {
