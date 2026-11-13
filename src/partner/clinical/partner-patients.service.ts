@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  PartnerPatientIntake,
+  PartnerPatientIntakeDocument,
+} from './schemas/patient-intake.schema';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User, UserDocument } from '../../core/users/schemas/user.schema';
@@ -45,7 +49,13 @@ import {
 } from './schemas/prescription.schema';
 
 export type PatientLinkSource =
-  'appointment' | 'shared_records' | 'referral' | 'lab_order' | 'admission';
+  | 'appointment'
+  | 'shared_records'
+  | 'referral'
+  | 'lab_order'
+  | 'admission'
+  // Registered at the desk by scanning the patient's AYUVA profile QR.
+  | 'registration';
 
 const LIVE_APPOINTMENT = [
   AppointmentStatus.CONFIRMED,
@@ -79,6 +89,10 @@ export class PartnerPatientsService {
     private readonly noteModel: Model<ConsultationNoteDocument>,
     @InjectModel(Prescription.name)
     private readonly rxModel: Model<PrescriptionDocument>,
+    // Optional for hand-built test modules.
+    @Optional()
+    @InjectModel(PartnerPatientIntake.name)
+    private readonly intakeModel?: Model<PartnerPatientIntakeDocument>,
   ) {}
 
   /** Throws 404 (not 403) for an unlinked patient, so the API never confirms someone exists. */
@@ -98,7 +112,8 @@ export class PartnerPatientsService {
         $or: [{ fromProviderId: providerId }, { toProviderId: providerId }],
       })) ||
       (await this.labOrderModel.exists({ providerId, patientId: pid })) ||
-      (await this.admissionModel.exists({ providerId, patientId: pid }));
+      (await this.admissionModel.exists({ providerId, patientId: pid })) ||
+      (await this.intakeModel?.exists({ providerId, patientId: pid }));
     const patient = linked
       ? await this.userModel.findById(pid).select('fullName').exec()
       : null;
@@ -202,6 +217,14 @@ export class PartnerPatientsService {
     referrals.forEach((r) => add(r.patientId, 'referral'));
     orders.forEach((o) => add(o.patientId, 'lab_order'));
     admissions.forEach((a) => add(a.patientId, 'admission'));
+    if (!q.mine && this.intakeModel) {
+      const intakes = await this.intakeModel
+        .find({ providerId })
+        .select('patientId')
+        .lean()
+        .exec();
+      intakes.forEach((i) => add(i.patientId, 'registration'));
+    }
 
     const ids = [...sources.keys()].map((id) => new Types.ObjectId(id));
     const nameFilter = q.q?.trim()

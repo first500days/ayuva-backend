@@ -33,7 +33,7 @@ export const PROFILE_HEADER = 'x-ayuva-profile';
  * family management, billing…) always stays the signed-in person's.
  */
 const ACTING_PATHS =
-  /^(?:\/api\/v\d+)?\/(appointments|care-journey|dashboard|medications|nav-intent|prep-pack|profile\/(health|medications|emergency-contact)|records|report-interpreter|sharing|ai\/chat)(\/|\?|$)/;
+  /^(?:\/api\/v\d+)?\/(appointments|care-journey|dashboard|medications|nav-intent|prep-pack|profile\/(health|medications|emergency-contact|intake-qr)|records|report-interpreter|sharing|ai\/chat)(\/|\?|$)/;
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {

@@ -53,6 +53,8 @@ import {
 import { PartnerNotifySettingsService } from './notify/partner-notify-settings.service';
 import { UpdateNotificationSettingsDto } from './notify/dto/notify.dto';
 import { PartnerPatientsService } from './clinical/partner-patients.service';
+import { PartnerIntakeService } from './clinical/partner-intake.service';
+import { IntakeScanDto } from './clinical/dto/intake.dto';
 import { PartnerTimelineService } from './clinical/partner-timeline.service';
 import { PartnerNotesService } from './clinical/partner-notes.service';
 import { PartnerPrescriptionsService } from './clinical/partner-prescriptions.service';
@@ -434,6 +436,7 @@ export class PartnerClinicalController {
     private readonly timeline: PartnerTimelineService,
     private readonly notes: PartnerNotesService,
     private readonly rx: PartnerPrescriptionsService,
+    private readonly intakeSvc: PartnerIntakeService,
   ) {}
 
   @Get('patients')
@@ -444,6 +447,16 @@ export class PartnerClinicalController {
   })
   listPatients(@PartnerCtx() a: PartnerActor, @Query() q: PatientsQueryDto) {
     return this.patients.list(a, q);
+  }
+
+  @Post('patients/intake')
+  @RequirePerm(Perm.PATIENTS_VIEW)
+  @ApiOperation({
+    summary:
+      'Register a patient by scanning their AYUVA profile QR: name, time zone and emergency contact pre-filled; they join this patient list',
+  })
+  intake(@PartnerCtx() a: PartnerActor, @Body() dto: IntakeScanDto) {
+    return this.intakeSvc.scan(a, dto.code);
   }
 
   @Get('patients/:id')

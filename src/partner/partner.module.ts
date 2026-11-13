@@ -150,6 +150,11 @@ import {
 import { PartnerAssetsService } from './hospital/partner-assets.service';
 import { PartnerAssetTrackingService } from './hospital/partner-asset-tracking.service';
 import { PartnerDischargeReadinessService } from './hospital/partner-discharge-readiness.service';
+import { PartnerIntakeService } from './clinical/partner-intake.service';
+import {
+  PartnerPatientIntake,
+  PartnerPatientIntakeSchema,
+} from './clinical/schemas/patient-intake.schema';
 import { ErVisit, ErVisitSchema } from './hospital/schemas/er-visit.schema';
 import { PartnerErService } from './hospital/partner-er.service';
 import { PartnerErController } from './hospital/partner-er.controller';
@@ -266,6 +271,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
       { name: ShareGrant.name, schema: ShareGrantSchema },
       { name: ShareOrganisation.name, schema: ShareOrganisationSchema },
       { name: AccessLog.name, schema: AccessLogSchema },
+      { name: PartnerPatientIntake.name, schema: PartnerPatientIntakeSchema },
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
       { name: AuditLog.name, schema: AuditLogSchema },
       { name: PartnerMember.name, schema: PartnerMemberSchema },
@@ -390,6 +396,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerDicomwebService,
     PartnerTelemetryService,
     PartnerDischargeReadinessService,
+    PartnerIntakeService,
     TelemetryIngestGateway,
   ],
 })

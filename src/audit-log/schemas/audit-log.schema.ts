@@ -65,6 +65,8 @@ export enum AuditAction {
   ADMIN_REPORT_ARCHIVE = 'admin_report_archive',
   ADMIN_AI_ESCALATION_UPDATE = 'admin_ai_escalation_update',
   PARTNER_REGISTER = 'partner_register',
+  // A partner desk registered a patient by scanning their AYUVA profile QR.
+  PARTNER_PATIENT_INTAKE = 'partner_patient_intake',
   PARTNER_RECORD_VIEW = 'partner_record_view',
   PARTNER_APPOINTMENT_UPDATE = 'partner_appointment_update',
   ADMIN_PLAN_CREATE = 'admin_plan_create',

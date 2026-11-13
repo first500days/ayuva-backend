@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Put, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -127,6 +135,15 @@ export class ProfileController {
       scheduleTimes: medication.scheduleTimes,
       active: medication.active,
     };
+  }
+
+  @Get('intake-qr')
+  @ApiOperation({
+    summary:
+      'Registration QR: name, time zone and emergency contact, encrypted for the Partner Portal, valid 10 minutes',
+  })
+  intakeQr(@CurrentUser() user: JwtPayload, @Query('tz') tz?: string) {
+    return this.profileService.intakeQr(user.sub, tz);
   }
 
   @Get('emergency-contact')
