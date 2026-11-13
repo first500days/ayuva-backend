@@ -17,7 +17,9 @@ export type MilestoneKind =
   | 'prescription'
   | 'lab_report'
   | 'scan'
-  | 'discharge';
+  | 'discharge'
+  | 'pharmacy'
+  | 'lab_order';
 
 export type MilestoneState = 'done' | 'current' | 'upcoming';
 
@@ -75,13 +77,44 @@ export interface MapRecord {
   uploadedAt: Date;
 }
 
+/** A hospital pharmacy handing over a prescription's medicines (Partner Portal). */
+export interface MapDispense {
+  id: string;
+  providerName: string;
+  at: Date;
+  /** False when some lines were not supplied. */
+  complete: boolean;
+}
+
+/** A diagnostic order placed with a lab or hospital (Partner Portal). */
+export interface MapLabOrder {
+  id: string;
+  orderNo: string;
+  providerName: string;
+  status: string;
+  orderedAt: Date;
+  /** When the lab closed it (report ready or delivered). */
+  closedAt?: Date;
+  tests: number;
+}
+
 export interface JourneyMapInput {
   now: Date;
   journey?: MapJourney | null;
   appointments: MapAppointment[];
   prescriptions: MapPrescription[];
   records: MapRecord[];
+  dispenses?: MapDispense[];
+  labOrders?: MapLabOrder[];
 }
+
+const LAB_OPEN_LABEL: Record<string, string> = {
+  ordered: 'Ordered — waiting for your sample',
+  sample_collected: 'Sample collected',
+  processing: 'Being tested',
+};
+
+const LAB_CLOSED = new Set(['report_ready', 'delivered']);
 
 export interface JourneyMap {
   milestones: Milestone[];
@@ -307,6 +340,43 @@ export function buildJourneyMap(input: JourneyMapInput): JourneyMap {
       route: '/record/[id]',
       params: { id: r.id },
     });
+  }
+
+  for (const d of input.dispenses ?? []) {
+    nodes.push({
+      id: `disp:${d.id}`,
+      kind: 'pharmacy',
+      title: `Medicines dispensed at ${d.providerName}`,
+      detail: d.complete
+        ? 'Everything on the prescription was handed over'
+        : 'Some items weren’t supplied — check with the pharmacy',
+      at: d.at.toISOString(),
+      state: 'done',
+      route: '/meds',
+    });
+  }
+
+  for (const o of input.labOrders ?? []) {
+    const tests = `${o.tests} test${o.tests === 1 ? '' : 's'}`;
+    if (LAB_CLOSED.has(o.status)) {
+      nodes.push({
+        id: `lab:${o.id}`,
+        kind: 'lab_order',
+        title: `Lab results ready at ${o.providerName}`,
+        detail: `Order ${o.orderNo} · ${tests}`,
+        at: (o.closedAt ?? o.orderedAt).toISOString(),
+        state: 'done',
+        route: '/(tabs)/records',
+      });
+    } else if (LAB_OPEN_LABEL[o.status]) {
+      nodes.push({
+        id: `lab:${o.id}`,
+        kind: 'lab_order',
+        title: `Lab tests at ${o.providerName}`,
+        detail: `${LAB_OPEN_LABEL[o.status]} · ${tests}`,
+        state: 'upcoming',
+      });
+    }
   }
 
   const time = (m: Milestone) => (m.at ? Date.parse(m.at) : 0);

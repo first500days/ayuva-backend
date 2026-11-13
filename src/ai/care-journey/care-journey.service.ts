@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -23,7 +23,19 @@ import {
   CareJourneyMapResponseDto,
   CareJourneyResponseDto,
 } from './dto/care-journey-response.dto';
-import { buildJourneyMap, type MapAppointment, type MapStep } from './journey-map';
+import {
+  buildJourneyMap,
+  type MapAppointment,
+  type MapDispense,
+  type MapLabOrder,
+  type MapStep,
+} from './journey-map';
+import { Dispense, DispenseDocument } from '../../partner/hospital/schemas/dispense.schema';
+import {
+  LabOrderDocument,
+  LabOrderStatus,
+  PartnerLabOrder,
+} from '../../partner/lab/schemas/lab-order.schema';
 import { NavIntent, NavIntentDocument } from '../nav-intent/schemas/nav-intent.schema';
 import {
   Appointment,
@@ -182,6 +194,13 @@ export class CareJourneyService {
     @InjectModel(MedicalRecord.name)
     private readonly recordModel: Model<MedicalRecordDocument>,
     private readonly aiInteractionLogService: AiInteractionLogService,
+    // Partner Portal pharmacy and lab checkpoints. Optional for hand-built test modules.
+    @Optional()
+    @InjectModel(Dispense.name)
+    private readonly dispenseModel?: Model<DispenseDocument>,
+    @Optional()
+    @InjectModel(PartnerLabOrder.name)
+    private readonly labOrderModel?: Model<LabOrderDocument>,
   ) {}
 
   async generate(
@@ -271,7 +290,7 @@ export class CareJourneyService {
   /** Everything for the Journey tab in one read, with pathway steps brought up to date. */
   async map(userId: string): Promise<CareJourneyMapResponseDto> {
     const patientId = new Types.ObjectId(userId);
-    const [journey, appointments, prescriptions, records] = await Promise.all([
+    const [journey, appointments, prescriptions, records, dispenses, labOrders] = await Promise.all([
       this.careJourneyModel
         .findOne({ userId: patientId, status: CareJourneyStatus.ACTIVE })
         .sort({ createdAt: -1 })
@@ -293,6 +312,8 @@ export class CareJourneyService {
         .sort({ recordDate: -1 })
         .limit(MAP_QUERY_LIMIT)
         .exec(),
+      this.loadDispenses(patientId),
+      this.loadLabOrders(patientId),
     ]);
 
     const built = buildJourneyMap({
@@ -322,6 +343,8 @@ export class CareJourneyService {
           uploadedAt,
         };
       }),
+      dispenses,
+      labOrders,
     });
 
     if (journey) await this.saveProgress(journey, built.steps, built.progressPct);
@@ -348,6 +371,60 @@ export class CareJourneyService {
     }
     journey.markModified('steps');
     await journey.save();
+  }
+
+  /** Hospital pharmacy hand-overs of this patient's prescriptions. */
+  private async loadDispenses(patientId: Types.ObjectId): Promise<MapDispense[]> {
+    if (!this.dispenseModel) return [];
+    const rows = await this.dispenseModel
+      .find({ patientId })
+      .sort({ createdAt: -1 })
+      .limit(MAP_QUERY_LIMIT)
+      .lean()
+      .exec();
+    const names = await this.providerNames(rows.map((r) => r.providerId));
+    return rows.map((r) => ({
+      id: r._id.toString(),
+      providerName: names.get(r.providerId.toString()) ?? 'the hospital pharmacy',
+      at: (r as unknown as { createdAt?: Date }).createdAt ?? new Date(0),
+      complete: (r.lines ?? []).every((l) => l.complete !== false),
+    }));
+  }
+
+  /** Diagnostic orders placed for this patient, open or closed by the lab. */
+  private async loadLabOrders(patientId: Types.ObjectId): Promise<MapLabOrder[]> {
+    if (!this.labOrderModel) return [];
+    const rows = await this.labOrderModel
+      .find({ patientId, status: { $ne: LabOrderStatus.CANCELLED } })
+      .sort({ createdAt: -1 })
+      .limit(MAP_QUERY_LIMIT)
+      .lean()
+      .exec();
+    const names = await this.providerNames(rows.map((r) => r.providerId));
+    return rows.map((r) => {
+      const closed = [...(r.statusHistory ?? [])]
+        .reverse()
+        .find((e) => e.status === LabOrderStatus.REPORT_READY || e.status === LabOrderStatus.DELIVERED);
+      return {
+        id: r._id.toString(),
+        orderNo: r.orderNo,
+        providerName: names.get(r.providerId.toString()) ?? 'the lab',
+        status: r.status,
+        orderedAt: (r as unknown as { createdAt?: Date }).createdAt ?? new Date(0),
+        closedAt: closed?.at,
+        tests: r.items?.length ?? 0,
+      };
+    });
+  }
+
+  private async providerNames(ids: Types.ObjectId[]): Promise<Map<string, string>> {
+    if (!ids.length) return new Map();
+    const rows = await this.providerModel
+      .find({ _id: { $in: ids } })
+      .select('name')
+      .lean()
+      .exec();
+    return new Map(rows.map((p) => [p._id.toString(), p.name]));
   }
 
   private async loadAppointments(patientId: Types.ObjectId): Promise<MapAppointment[]> {

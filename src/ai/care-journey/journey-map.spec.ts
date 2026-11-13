@@ -156,3 +156,47 @@ describe('buildJourneyMap', () => {
     });
   });
 });
+
+describe('Partner Portal checkpoints', () => {
+  it('marks a hospital pharmacy hand-over and a closed lab order as done, and an open order as upcoming', () => {
+    const { milestones } = buildJourneyMap(
+      base({
+        dispenses: [
+          {
+            id: 'd1',
+            providerName: 'City Hospital',
+            at: d('2026-11-05T09:00:00Z'),
+            complete: false,
+          },
+        ],
+        labOrders: [
+          {
+            id: 'o1',
+            orderNo: 'LAB-1',
+            providerName: 'Metro Labs',
+            status: 'report_ready',
+            orderedAt: d('2026-11-03T09:00:00Z'),
+            closedAt: d('2026-11-04T12:00:00Z'),
+            tests: 2,
+          },
+          {
+            id: 'o2',
+            orderNo: 'LAB-2',
+            providerName: 'Metro Labs',
+            status: 'sample_collected',
+            orderedAt: d('2026-11-07T09:00:00Z'),
+            tests: 1,
+          },
+        ],
+      }),
+    );
+    expect(milestones.map((m) => [m.id, m.state])).toEqual([
+      ['lab:o1', 'done'],
+      ['disp:d1', 'done'],
+      ['lab:o2', 'current'],
+    ]);
+    expect(milestones[0].at).toBe('2026-11-04T12:00:00.000Z');
+    expect(milestones[1].detail).toMatch(/weren’t supplied/);
+    expect(milestones[2].detail).toBe('Sample collected · 1 test');
+  });
+});
