@@ -192,7 +192,24 @@ export class PartnerLabOrdersService {
       .sort({ createdAt: -1 })
       .limit(300)
       .exec();
-    return orders.map((o) => this.toResponse(o));
+    // Drafts holding a critical value jump the Report Builder's queue.
+    const critical = new Set(
+      (
+        await this.resultModel
+          .find({
+            orderId: { $in: orders.map((o) => o._id) },
+            critical: true,
+            status: 'draft',
+          })
+          .select('orderId')
+          .lean()
+          .exec()
+      ).map((r) => r.orderId.toString()),
+    );
+    return orders.map((o) => ({
+      ...this.toResponse(o),
+      criticalPending: critical.has(o.id),
+    }));
   }
 
   async get(actor: PartnerActor, id: string) {
