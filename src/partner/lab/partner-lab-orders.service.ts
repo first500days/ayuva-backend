@@ -879,6 +879,7 @@ export class PartnerLabOrdersService {
       critical30,
       alerts,
       volume,
+      coldChainAlerts,
     ] = await Promise.all([
       this.orderModel.aggregate<{ _id: string; n: number }>([
         { $match: { providerId, status: { $in: OPEN } } },
@@ -941,6 +942,7 @@ export class PartnerLabOrdersService {
         { $sort: { n: -1 } },
         { $limit: 6 },
       ]),
+      this.coldChain.alerts(providerId),
     ]);
     const tats = delivered30.map(
       (o) =>
@@ -973,6 +975,8 @@ export class PartnerLabOrdersService {
       revenueThisMonth: revenue[0]?.total ?? 0,
       inventory: alerts,
       topTests: volume.map((v) => ({ name: v._id, count: v.n })),
+      // Transport boxes out of range that no supervisor has acknowledged yet.
+      coldChainAlerts,
     };
   }
 

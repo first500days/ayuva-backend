@@ -153,6 +153,7 @@ export class PartnerColdChainService {
     });
     this.append(run, readings);
     await run.save();
+    await this.flagExcursion(actor, run);
     return this.view(run);
   }
 
@@ -181,7 +182,84 @@ export class PartnerColdChainService {
       run,
       `${run.boxLabel}: ${fresh.length} logger readings imported`,
     );
+    await this.flagExcursion(actor, run);
     return { run: this.view(run), imported: fresh.length, skipped };
+  }
+
+  /**
+   * The moment a box's readings breach its range — not only at handover — the
+   * lab is alerted once and the box shows on the supervisor's dashboard until
+   * someone acknowledges it.
+   */
+  private async flagExcursion(actor: PartnerActor, run: ColdChainRunDocument) {
+    if (run.excursionAlertedAt) return;
+    const s = summarize(run.readings, run.minC, run.maxC, null);
+    if (s.verdict !== 'excursion') return;
+    run.excursionAlertedAt = new Date();
+    await run.save();
+    const range = rangeLabel(run);
+    await this.record(
+      actor,
+      run,
+      `${run.boxLabel}: excursion in transit — ${s.minutesOut} min outside ${range}`,
+    );
+    await this.notifier.emit(actor.provider._id, {
+      trigger: PartnerTrigger.COLD_CHAIN_EXCURSION,
+      title: `Cold-chain excursion in transit — ${run.boxLabel}`,
+      message: `${run.boxLabel} has gone outside ${range} (max ${s.maxC} °C, min ${s.minC} °C, ${s.minutesOut} min so far) with ${run.vials.length} vial${run.vials.length === 1 ? '' : 's'} on board. Check the box and its samples.`,
+      safeMessage: `A transport box (${run.boxLabel}) is outside its temperature range — check it in the Ayuva Partner Portal.`,
+      route: '/partner/lab/cold-chain',
+      data: { runId: run.id, minutesOut: s.minutesOut, inTransit: true },
+    });
+  }
+
+  /** The supervisor's acknowledgement of an excursion flag, with what was done. */
+  async acknowledge(actor: PartnerActor, id: string, note?: string) {
+    if (!Types.ObjectId.isValid(id))
+      throw new NotFoundException('Transport box not found');
+    const run = await this.runModel
+      .findOne({ _id: id, providerId: actor.provider._id })
+      .exec();
+    if (!run) throw new NotFoundException('Transport box not found');
+    if (!run.excursionAlertedAt)
+      throw new BadRequestException('This box has no excursion to acknowledge');
+    run.excursionAckAt = new Date();
+    run.excursionAckByName = actor.member.fullName;
+    run.excursionAckNote = note?.trim() || undefined;
+    await run.save();
+    await this.record(
+      actor,
+      run,
+      `${run.boxLabel}: excursion acknowledged${run.excursionAckNote ? ` — ${run.excursionAckNote}` : ''}`,
+    );
+    return this.view(run);
+  }
+
+  /** Excursions nobody has acknowledged yet, for the dashboard's emergency flag. */
+  async alerts(providerId: Types.ObjectId) {
+    const runs = await this.runModel
+      .find({
+        providerId,
+        excursionAlertedAt: { $exists: true },
+        excursionAckAt: { $exists: false },
+      })
+      .sort({ excursionAlertedAt: -1 })
+      .limit(20)
+      .exec();
+    return runs.map((r) => {
+      const s = summarize(r.readings, r.minC, r.maxC, r.endedAt ?? null);
+      return {
+        id: r.id,
+        boxLabel: r.boxLabel,
+        rangeLabel: rangeLabel(r),
+        status: r.status,
+        minutesOut: s.minutesOut,
+        maxC: s.maxC,
+        minC: s.minC,
+        vials: r.vials.length,
+        alertedAt: r.excursionAlertedAt!.toISOString(),
+      };
+    });
   }
 
   /** Handover at the lab: the verdict is fixed and an excursion is flagged on every affected order. */
@@ -215,19 +293,25 @@ export class PartnerColdChainService {
         });
         await o.save();
       }
-      await this.notifier.emit(actor.provider._id, {
-        trigger: PartnerTrigger.COLD_CHAIN_EXCURSION,
-        title: `Cold-chain excursion — ${run.boxLabel}`,
-        message: `${run.vials.length} vial${run.vials.length === 1 ? '' : 's'} spent ${s.minutesOut} min outside ${range} (max ${s.maxC} °C, min ${s.minC} °C). Review them at reception before analysis.`,
-        safeMessage: `A transport box (${run.boxLabel}) had a temperature excursion — review its samples in the Ayuva Partner Portal.`,
-        route: '/partner/lab/cold-chain',
-        data: {
-          runId: run.id,
-          vials: run.vials.length,
-          minutesOut: s.minutesOut,
-        },
-        excludeUserId: actor.userId,
-      });
+      // Alerted once: a box already flagged in transit isn't announced again at handover.
+      if (!run.excursionAlertedAt)
+        await this.notifier.emit(actor.provider._id, {
+          trigger: PartnerTrigger.COLD_CHAIN_EXCURSION,
+          title: `Cold-chain excursion — ${run.boxLabel}`,
+          message: `${run.vials.length} vial${run.vials.length === 1 ? '' : 's'} spent ${s.minutesOut} min outside ${range} (max ${s.maxC} °C, min ${s.minC} °C). Review them at reception before analysis.`,
+          safeMessage: `A transport box (${run.boxLabel}) had a temperature excursion — review its samples in the Ayuva Partner Portal.`,
+          route: '/partner/lab/cold-chain',
+          data: {
+            runId: run.id,
+            vials: run.vials.length,
+            minutesOut: s.minutesOut,
+          },
+          excludeUserId: actor.userId,
+        });
+    }
+    if (s.verdict === 'excursion' && !run.excursionAlertedAt) {
+      run.excursionAlertedAt = now;
+      await run.save();
     }
     return this.view(run);
   }
@@ -320,6 +404,14 @@ export class PartnerColdChainService {
       closedByName: r.closedByName ?? null,
       status: r.status as 'open' | 'closed',
       verdict: s.verdict,
+      excursion: r.excursionAlertedAt
+        ? {
+            alertedAt: r.excursionAlertedAt.toISOString(),
+            acknowledgedAt: r.excursionAckAt?.toISOString() ?? null,
+            acknowledgedByName: r.excursionAckByName ?? null,
+            note: r.excursionAckNote ?? null,
+          }
+        : null,
       summary: {
         readings: s.readings,
         minC: s.minC,

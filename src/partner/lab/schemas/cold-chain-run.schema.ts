@@ -63,6 +63,13 @@ export class ColdChainRun {
   @Prop() verdict?: string;
   @Prop() minutesOut?: number;
 
+  /** When a reading first went out of range (in transit or at handover) and the lab was alerted. */
+  @Prop() excursionAlertedAt?: Date;
+  /** A supervisor has seen the excursion flag on the dashboard and said what was done. */
+  @Prop() excursionAckAt?: Date;
+  @Prop() excursionAckByName?: string;
+  @Prop() excursionAckNote?: string;
+
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -106,4 +106,23 @@ export class PartnerColdChainController {
   close(@PartnerCtx() a: PartnerActor, @Param('id') id: string) {
     return this.coldChain.close(a, id);
   }
+
+  @Post(':id/acknowledge')
+  @HttpCode(200)
+  @RequirePerm(Perm.LAB_REPORTS_RELEASE)
+  @ApiOperation({
+    summary:
+      "A supervisor clears the dashboard's excursion flag, saying what was done",
+  })
+  acknowledge(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body('note') note?: string,
+  ) {
+    return this.coldChain.acknowledge(
+      a,
+      id,
+      typeof note === 'string' ? note.slice(0, 300) : undefined,
+    );
+  }
 }
