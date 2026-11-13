@@ -13,7 +13,8 @@ export type LiveTopic =
   | 'referrals'
   | 'notes'
   | 'billing'
-  | 'telemetry';
+  | 'telemetry'
+  | 'er';
 
 export interface LiveEvent {
   providerId: string;

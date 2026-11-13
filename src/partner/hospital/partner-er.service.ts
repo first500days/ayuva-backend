@@ -8,6 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
+import { LiveBus } from '../../common/live/live-bus.service';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import { Perm, StaffRole } from '../rbac/partner-permissions';
 import { PartnerNotifierService } from '../notify/partner-notifier.service';
@@ -61,6 +62,7 @@ export class PartnerErService {
     private readonly admissionModel: Model<AdmissionDocument>,
     private readonly notifier: PartnerNotifierService,
     private readonly audit: AuditLogService,
+    private readonly live: LiveBus,
   ) {}
 
   async board(actor: PartnerActor, q: ErBoardQueryDto) {
@@ -459,11 +461,13 @@ export class PartnerErService {
     };
   }
 
+  /** Every change to a visit comes through here, so the board refreshes on every open screen. */
   private record(
     actor: PartnerActor,
     visit: ErVisitDocument,
     metadata: Record<string, unknown>,
   ) {
+    this.live.publish(actor.provider._id, 'er');
     return this.audit.record({
       actorId: actor.userId,
       action: AuditAction.PARTNER_ER_UPDATE,
