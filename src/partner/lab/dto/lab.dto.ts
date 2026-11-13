@@ -452,6 +452,25 @@ export class ImagingMeasurementDto {
   value?: string;
 }
 
+export class SynthesisMeasurementDto {
+  @ApiProperty({ example: 'Length' }) @IsString() @MaxLength(60) tool: string;
+  @ApiProperty({ example: '23.4 mm' })
+  @IsString()
+  @MaxLength(120)
+  value: string;
+}
+
+/** Measurements currently drawn on the study, to read alongside the lab results. */
+export class ImagingSynthesisDto {
+  @ApiPropertyOptional({ type: [SynthesisMeasurementDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => SynthesisMeasurementDto)
+  measurements?: SynthesisMeasurementDto[];
+}
+
 /** Imaging files to take off an order together (e.g. a whole series). */
 export class RemoveImagingDto {
   @ApiProperty({ type: [String], description: 'Imaging file ids to remove' })

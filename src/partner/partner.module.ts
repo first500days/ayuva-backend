@@ -205,6 +205,7 @@ import { PartnerStowService } from './lab/stow/partner-stow.service';
 import { StowController } from './lab/stow/stow.controller';
 import { TrendLink, TrendLinkSchema } from './lab/schemas/trend-link.schema';
 import { PartnerTrendLinksService } from './lab/partner-trend-links.service';
+import { PartnerImagingSynthesisService } from './lab/partner-imaging-synthesis.service';
 import { PublicTrendsController } from './lab/public-trends.controller';
 import {
   LisIngestController,
@@ -359,6 +360,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerFhirService,
     PartnerStowService,
     PartnerTrendLinksService,
+    PartnerImagingSynthesisService,
     PartnerWardsService,
     PartnerClaimsService,
     PartnerAnalyticsService,

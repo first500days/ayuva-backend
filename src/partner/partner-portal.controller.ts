@@ -84,6 +84,7 @@ import { PartnerLabOrdersService } from './lab/partner-lab-orders.service';
 import { PartnerLabResultsService } from './lab/partner-lab-results.service';
 import { PartnerLabCriticalService } from './lab/partner-lab-critical.service';
 import { PartnerTrendLinksService } from './lab/partner-trend-links.service';
+import { PartnerImagingSynthesisService } from './lab/partner-imaging-synthesis.service';
 import { LabOrderStatus } from './lab/schemas/lab-order.schema';
 import {
   AdjustStockDto,
@@ -94,6 +95,7 @@ import {
   CreateLabOrderDto,
   CriticalCalloutDto,
   ImagingMeasurementDto,
+  ImagingSynthesisDto,
   LabOrdersQueryDto,
   PrintLabelsDto,
   ReleaseResultDto,
@@ -746,6 +748,7 @@ export class PartnerLabController {
     private readonly results: PartnerLabResultsService,
     private readonly critical: PartnerLabCriticalService,
     private readonly trendLinks: PartnerTrendLinksService,
+    private readonly synthesis: PartnerImagingSynthesisService,
   ) {}
 
   @Post('orders/:id/trend-link')
@@ -1127,6 +1130,21 @@ export class PartnerLabController {
     @Body() dto: ImagingMeasurementDto,
   ) {
     return this.orders.recordMeasurement(a, id, dto);
+  }
+
+  @Post('orders/:id/imaging/synthesis')
+  @HttpCode(200)
+  @RequirePerm(Perm.IMAGING_VIEW)
+  @ApiOperation({
+    summary:
+      "Imaging + lab support alerts for the viewer: the study beside the patient's results from around the same time and the measurements drawn on it",
+  })
+  imagingSynthesis(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: ImagingSynthesisDto,
+  ) {
+    return this.synthesis.forOrder(a, id, dto.measurements ?? []);
   }
 
   @Get('orders/:id/imaging/:fileId')
