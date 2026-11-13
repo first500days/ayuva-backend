@@ -87,6 +87,45 @@ export function rosteredCount(staff: { dutySchedule: DutyBlock[] }[]) {
   return out;
 }
 
+const minutesOf = (time: string) =>
+  hourOf(time) * 60 + Number.parseInt(time.slice(3, 5) || '0', 10);
+
+/** Rostered hours across the week, for spreading extra shifts fairly. */
+export function weeklyHours(schedule: DutyBlock[]): number {
+  return schedule.reduce(
+    (n, b) => n + Math.max(0, minutesOf(b.end) - minutesOf(b.start)) / 60,
+    0,
+  );
+}
+
+/**
+ * Who to add for a busy window: staff not already on the roster at any point
+ * in it, lightest weekly load first. The person allocating still confirms.
+ */
+export function pickForShift<T extends { dutySchedule: DutyBlock[] }>(
+  staff: T[],
+  weekday: number,
+  start: string,
+  end: string,
+  count: number,
+): T[] {
+  const day = DAY_CODES[weekday];
+  const from = minutesOf(start);
+  const to = minutesOf(end);
+  return staff
+    .filter(
+      (s) =>
+        !s.dutySchedule.some(
+          (b) =>
+            b.day === day && minutesOf(b.start) < to && minutesOf(b.end) > from,
+        ),
+    )
+    .sort((a, b) => weeklyHours(a.dutySchedule) - weeklyHours(b.dutySchedule))
+    .slice(0, Math.max(0, count));
+}
+
+export const dayCode = (weekday: number) => DAY_CODES[weekday];
+
 const clock = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
 const oneDecimal = (v: number) => Math.round(v * 10) / 10;
 

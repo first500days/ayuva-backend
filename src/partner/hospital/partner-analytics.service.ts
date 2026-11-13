@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -56,10 +56,20 @@ import { CREDIT_METHODS } from './schemas/bill-payment.schema';
 import {
   FORECAST_WEEKS,
   VISITS_PER_CLINICIAN_HOUR,
+  WEEKDAY_NAMES,
+  dayCode,
   expectedDemand,
+  pickForShift,
   rosteredCount,
   suggestShifts,
 } from './staffing-forecast';
+import { wallClock } from './clock';
+import { AppNotificationsService } from '../../notifications/app-notifications.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
+
+/** wallClock's weekday codes in forecast order (Monday first). */
+const WALL_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 const DAY = 86_400_000;
 const round2 = (v: number) => Math.round(v * 100) / 100;
@@ -104,6 +114,8 @@ export class PartnerAnalyticsService {
     private readonly claims: PartnerClaimsService,
     private readonly billPayments: PartnerBillPaymentsService,
     private readonly config: ConfigService,
+    private readonly notifications: AppNotificationsService,
+    private readonly audit: AuditLogService,
   ) {}
 
   /** Suggested extra shifts, from the last eight weeks of bookings and the roster. */
@@ -147,14 +159,105 @@ export class PartnerAnalyticsService {
         },
       ];
     });
+    // A diagnostic centre's load is its lab orders as much as its bookings.
+    if (actor.orgType === OrgType.DIAGNOSTIC) {
+      const orders = await this.labOrderModel
+        .find({
+          providerId,
+          createdAt: { $gte: since, $lt: now },
+          status: { $ne: LabOrderStatus.CANCELLED },
+        })
+        .select('createdAt')
+        .lean()
+        .exec();
+      for (const o of orders) {
+        const at = (o as { createdAt?: Date }).createdAt;
+        if (!at) continue;
+        const wc = wallClock(at);
+        visits.push({
+          weekday: WALL_DAYS.indexOf(wc.weekday),
+          hour: Math.floor(wc.minutes / 60),
+          weeksAgo: Math.floor((now.getTime() - at.getTime()) / (7 * DAY)),
+        });
+      }
+    }
+    const demand = expectedDemand(visits);
+    const rostered = rosteredCount(members);
     return {
       weeks: FORECAST_WEEKS,
       visitsPerClinicianHour: VISITS_PER_CLINICIAN_HOUR,
       visitsConsidered: visits.length,
-      suggestions: suggestShifts(
-        expectedDemand(visits),
-        rosteredCount(members),
-      ),
+      suggestions: suggestShifts(demand, rostered),
+      // Per weekday (Monday first) and hour, for the Busy hours hover.
+      demand: demand.map((row) => row.map((v) => round2(v))),
+      rostered,
+    };
+  }
+
+  /**
+   * One click from a busy window: adds that many people (technicians in a lab,
+   * doctors elsewhere) to the duty roster for it — those not already on at the
+   * time, lightest weekly load first — and tells each of them.
+   */
+  async allocate(
+    actor: PartnerActor,
+    dto: { weekday: number; start: string; end: string; count: number },
+  ) {
+    if (dto.start >= dto.end)
+      throw new BadRequestException('The shift must end after it starts');
+    const roles =
+      actor.orgType === OrgType.DIAGNOSTIC
+        ? [StaffRole.TECHNICIAN]
+        : CLINICIANS[actor.orgType];
+    const staff = await this.memberModel
+      .find({
+        providerId: actor.provider._id,
+        status: MemberStatus.ACTIVE,
+        role: { $in: roles },
+      })
+      .exec();
+    const picked = pickForShift(
+      staff,
+      dto.weekday,
+      dto.start,
+      dto.end,
+      dto.count,
+    );
+    const day = dayCode(dto.weekday);
+    const label = `${WEEKDAY_NAMES[dto.weekday]} ${dto.start}–${dto.end}`;
+    for (const m of picked) {
+      m.dutySchedule.push({ day, start: dto.start, end: dto.end } as never);
+      m.markModified('dutySchedule');
+      await m.save();
+      if (m.userId.toString() !== actor.userId)
+        await this.notifications
+          .create(m.userId.toString(), {
+            trigger: 'partner_roster_change',
+            category: 'general',
+            title: 'Added to the roster',
+            message: `${actor.member.fullName} added you to the duty roster for ${label} (expected busy hours).`,
+            lockScreenText: 'Roster update',
+            actionLabel: 'Open',
+            actionRoute: '/partner/staff',
+          })
+          .catch(() => undefined);
+    }
+    await this.audit.record({
+      actorId: actor.userId,
+      action: AuditAction.PARTNER_STAFF_DUTY,
+      targetType: 'Provider',
+      targetId: actor.provider.id,
+      metadata: {
+        providerId: actor.provider.id,
+        label: `Roster: ${picked.length} added for ${label}${picked.length ? ` (${picked.map((m) => m.fullName).join(', ')})` : ''}`,
+        requested: dto.count,
+      },
+      ipAddress: actor.ip,
+    });
+    return {
+      allocated: picked.map((m) => ({ id: m.id, name: m.fullName })),
+      shortBy: dto.count - picked.length,
+      window: label,
     };
   }
 

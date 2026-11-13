@@ -118,6 +118,7 @@ import {
   AddBedsDto,
   AdmissionsQueryDto,
   AdmitDto,
+  AllocateShiftDto,
   AnalyticsQueryDto,
   ClaimsQueryDto,
   ClaimStatusDto,
@@ -1339,6 +1340,17 @@ export class PartnerHospitalController {
   })
   staffingForecast(@PartnerCtx() a: PartnerActor) {
     return this.analytics.staffingForecast(a);
+  }
+
+  @Post('analytics/allocate')
+  @HttpCode(200)
+  @RequirePerm(Perm.STAFF_MANAGE)
+  @ApiOperation({
+    summary:
+      'Add staff to the duty roster for a busy window (technicians in a lab), lightest load first',
+  })
+  allocateShift(@PartnerCtx() a: PartnerActor, @Body() dto: AllocateShiftDto) {
+    return this.analytics.allocate(a, dto);
   }
 
   @Get('billing')

@@ -13,6 +13,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -454,6 +455,31 @@ export class VoidBillPaymentDto {
   @MinLength(5)
   @MaxLength(300)
   reason: string;
+}
+
+/** Extra staff for a busy window picked from Busy hours or a shift suggestion. */
+export class AllocateShiftDto {
+  @ApiProperty({ description: '0 is Monday' })
+  @IsInt()
+  @Min(0)
+  @Max(6)
+  weekday: number;
+
+  @ApiProperty({ example: '09:00' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'start must be HH:mm' })
+  start: string;
+
+  @ApiProperty({ example: '12:00' })
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$|^24:00$/, {
+    message: 'end must be HH:mm',
+  })
+  end: string;
+
+  @ApiProperty({ minimum: 1, maximum: 10 })
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  count: number;
 }
 
 export class AnalyticsQueryDto {
