@@ -31,6 +31,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { RecordsService } from './records.service';
 import { LabTrendsService } from './lab-trends.service';
+import { ScanExplainService } from './scan-explain.service';
 import { UploadRecordDto } from './dto/upload-record.dto';
 import { QueryRecordsDto } from './dto/query-records.dto';
 import { UpdateRecordDto } from './dto/update-record.dto';
@@ -54,6 +55,7 @@ export class RecordsController {
   constructor(
     private readonly recordsService: RecordsService,
     private readonly labTrends: LabTrendsService,
+    private readonly scanExplain: ScanExplainService,
   ) {}
 
   @Post()
@@ -161,6 +163,16 @@ export class RecordsController {
     @Param('id') id: string,
   ): Promise<void> {
     return this.recordsService.remove(user.sub, id);
+  }
+
+  @Post(':id/explain-scan')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '"Explain My Scan": the imaging report\'s conclusion in its own words, its terms in plain language, sizes mentioned, the doctor\'s signed note and questions to ask. Rule-based; always carries the clinical-validation disclaimer.',
+  })
+  explainScanFor(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.scanExplain.explain(user.sub, id);
   }
 
   @Post('ask')

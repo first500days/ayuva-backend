@@ -12,6 +12,8 @@ export enum AiService {
   SCRIBE = 'scribe',
   // Insurance coding assistant — ICD-11 codes the note's own words name, as a provisional draft.
   CODING = 'coding',
+  // Explain My Scan — a rule-based companion to an imaging report, for the patient.
+  SCAN_EXPLAINER = 'scanExplainer',
 }
 
 export enum AiReviewStatus {

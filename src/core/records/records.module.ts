@@ -16,6 +16,12 @@ import { User, UserSchema } from '../users/schemas/user.schema';
 import { RecordsController } from './records.controller';
 import { RecordsService } from './records.service';
 import { LabTrendsService } from './lab-trends.service';
+import { ScanExplainService } from './scan-explain.service';
+import {
+  ConsultationNote,
+  ConsultationNoteSchema,
+} from '../../partner/clinical/schemas/consultation-note.schema';
+import { AiInteractionLogModule } from '../../ai/ai-interaction-log/ai-interaction-log.module';
 import {
   LabResult,
   LabResultSchema,
@@ -39,10 +45,12 @@ import { NotificationsModule } from '../../notifications/notifications.module';
       { name: User.name, schema: UserSchema },
       { name: LabResult.name, schema: LabResultSchema },
       { name: Provider.name, schema: ProviderSchema },
+      { name: ConsultationNote.name, schema: ConsultationNoteSchema },
     ]),
+    AiInteractionLogModule,
   ],
   controllers: [RecordsController],
-  providers: [RecordsService, LabTrendsService],
+  providers: [RecordsService, LabTrendsService, ScanExplainService],
   exports: [MongooseModule, RecordsService],
 })
 export class RecordsModule {}
