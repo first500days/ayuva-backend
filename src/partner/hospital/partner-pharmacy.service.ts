@@ -9,6 +9,7 @@ import { QueryFilter, Model, Types } from 'mongoose';
 import { randomBytes } from 'node:crypto';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
+import { LiveBus } from '../../common/live/live-bus.service';
 import { buildSafeRegex } from '../../common/utils/regex.util';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import {
@@ -51,6 +52,7 @@ export class PartnerPharmacyService {
     private readonly itemModel: Model<StockItemDocument>,
     private readonly stock: PartnerStockService,
     private readonly audit: AuditLogService,
+    private readonly live: LiveBus,
   ) {}
 
   async queue(actor: PartnerActor, q: PharmacyQueueQueryDto) {
@@ -248,6 +250,7 @@ export class PartnerPharmacyService {
       },
       ipAddress: actor.ip,
     });
+    this.live.publish(actor.provider._id, 'pharmacy');
     return this.row(
       rx,
       [...before, created],

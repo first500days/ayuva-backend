@@ -12,6 +12,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -33,6 +34,11 @@ import type { StockReason } from '../schemas/stock-move.schema';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
+
+/** Empty (to clear), or a phone number: +country code, or 10 Indian digits; spaces and dashes allowed. */
+export const SUPPLIER_PHONE = /^$|^\+?[\d\s-]{10,18}$/;
+export const SUPPLIER_PHONE_MESSAGE =
+  "Enter the supplier's WhatsApp number with country code, e.g. +91 98123 45678";
 
 export class StockItemsQueryDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(80) q?: string;
@@ -103,6 +109,17 @@ export class CreateStockItemDto {
   @IsString()
   @MaxLength(60)
   location?: string;
+  @ApiPropertyOptional({ example: 'Medline Distributors' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  supplierName?: string;
+  @ApiPropertyOptional({ example: '+919812345678' })
+  @IsOptional()
+  @Transform(trim)
+  @Matches(SUPPLIER_PHONE, { message: SUPPLIER_PHONE_MESSAGE })
+  supplierWhatsapp?: string;
 }
 
 export class UpdateStockItemDto {
@@ -164,7 +181,28 @@ export class UpdateStockItemDto {
   @IsString()
   @MaxLength(60)
   location?: string;
+  @ApiPropertyOptional({ description: '"" clears it' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  supplierName?: string;
+  @ApiPropertyOptional({ description: '"" clears it' })
+  @IsOptional()
+  @Transform(trim)
+  @Matches(SUPPLIER_PHONE, { message: SUPPLIER_PHONE_MESSAGE })
+  supplierWhatsapp?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
+}
+
+/** One click on a low-stock row: quantity defaults to bringing stock back to twice the reorder level. */
+export class ReorderStockDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1_000_000)
+  quantity?: number;
 }
 
 export class ReceiveStockDto {

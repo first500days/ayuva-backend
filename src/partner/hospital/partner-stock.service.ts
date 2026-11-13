@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,8 +9,18 @@ import { InjectModel } from '@nestjs/mongoose';
 import { QueryFilter, Model, Types } from 'mongoose';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
+import { LiveBus } from '../../common/live/live-bus.service';
 import { buildSafeRegex } from '../../common/utils/regex.util';
+import { WHATSAPP_SENDER } from '../../notifications/sms/whatsapp-sender';
+import type { WhatsAppSender } from '../../notifications/sms/whatsapp-sender';
 import { PartnerActor } from '../rbac/partner-perm.guard';
+import {
+  reorderMessage,
+  reorderRef,
+  suggestedReorder,
+  whatsAppLink,
+  whatsAppNumber,
+} from './supplier-reorder';
 import {
   StockBatch,
   StockItem,
@@ -27,6 +38,7 @@ import {
   CreateStockItemDto,
   IssueStockDto,
   ReceiveStockDto,
+  ReorderStockDto,
   StockItemsQueryDto,
   StockMovesQueryDto,
   UpdateStockItemDto,
@@ -74,6 +86,8 @@ export class PartnerStockService {
     @InjectModel(StockMove.name)
     private readonly moveModel: Model<StockMoveDocument>,
     private readonly audit: AuditLogService,
+    private readonly live: LiveBus,
+    @Inject(WHATSAPP_SENDER) private readonly whatsapp: WhatsAppSender,
   ) {}
 
   // ── Items ─────────────────────────────────────────────────────────────────
@@ -127,6 +141,8 @@ export class PartnerStockService {
       unit: dto.unit || 'units',
       reorderLevel: dto.reorderLevel ?? 0,
       location: dto.location || undefined,
+      supplierName: dto.supplierName || undefined,
+      supplierWhatsapp: supplierPhone(dto.supplierWhatsapp),
     });
     await this.record(actor, item, { change: 'item_added' });
     return this.toResponse(item, new Date());
@@ -145,7 +161,8 @@ export class PartnerStockService {
       if (v === undefined) continue;
       if (pharmacy && k === 'category') continue;
       if (!pharmacy && (k === 'schedule' || k === 'genericName')) continue;
-      item.set(k, typeof v === 'string' && v === '' ? undefined : v);
+      if (k === 'supplierWhatsapp') item.set(k, supplierPhone(v as string));
+      else item.set(k, typeof v === 'string' && v === '' ? undefined : v);
       changed.push(k);
     }
     await item.save();
@@ -155,6 +172,67 @@ export class PartnerStockService {
         fields: changed,
       });
     return this.toResponse(item, new Date());
+  }
+
+  /**
+   * One click on a low-stock row: asks the item's usual supplier for more over
+   * WhatsApp. With the WhatsApp Business API configured it goes straight out;
+   * without it the response carries a wa.me link with the message filled in,
+   * which the browser opens for staff to send from their own WhatsApp.
+   */
+  async reorder(
+    actor: PartnerActor,
+    store: StoreKind,
+    id: string,
+    dto: ReorderStockDto,
+  ) {
+    const item = await this.load(actor, store, id);
+    const to = whatsAppNumber(item.supplierWhatsapp);
+    if (!to)
+      throw new BadRequestException(
+        `Add the supplier's WhatsApp number to ${item.name} first (Edit item)`,
+      );
+    const today = new Date();
+    const usable = usableQuantity(item.batches.map(asBatch), today);
+    const quantity =
+      dto.quantity ?? suggestedReorder(usable, item.reorderLevel);
+    const ref = reorderRef(today);
+    const label = [item.name, item.strength, item.form]
+      .filter(Boolean)
+      .join(' ');
+    const message = reorderMessage({
+      orgName: actor.provider.name,
+      item: label,
+      quantity,
+      unit: item.unit,
+      ref,
+    });
+    const sent = this.whatsapp.live && (await this.whatsapp.send(to, message));
+    item.lastReorder = {
+      at: today,
+      quantity,
+      ref,
+      byName: actor.member.fullName,
+      sent,
+    };
+    await item.save();
+    await this.record(actor, item, {
+      change: 'reorder_requested',
+      quantity,
+      ref,
+      supplier: item.supplierName ?? null,
+      via: sent ? 'whatsapp_api' : 'whatsapp_link',
+    });
+    return {
+      sent,
+      ref,
+      quantity,
+      message,
+      supplier: item.supplierName ?? null,
+      // Always included: if the API is down the pharmacist can still send it by hand.
+      link: whatsAppLink(to, message),
+      item: this.toResponse(item, today),
+    };
   }
 
   // ── Receipts & corrections ────────────────────────────────────────────────
@@ -631,6 +709,17 @@ export class PartnerStockService {
       unit: i.unit,
       reorderLevel: i.reorderLevel,
       location: i.location ?? null,
+      supplierName: i.supplierName ?? null,
+      supplierWhatsapp: i.supplierWhatsapp ?? null,
+      lastReorder: i.lastReorder
+        ? {
+            at: i.lastReorder.at.toISOString(),
+            quantity: i.lastReorder.quantity,
+            ref: i.lastReorder.ref,
+            byName: i.lastReorder.byName ?? null,
+            sent: i.lastReorder.sent,
+          }
+        : null,
       active: i.active,
       quantity: i.quantity,
       usable,
@@ -665,6 +754,9 @@ export class PartnerStockService {
     item: StockItemDocument,
     metadata: Record<string, unknown>,
   ) {
+    // Pharmacy stock decides what the dispensing queue can supply, so its screens refresh too.
+    if (item.store === StoreKind.PHARMACY)
+      this.live.publish(actor.provider._id, 'pharmacy');
     return this.audit.record({
       actorId: actor.userId,
       action: AuditAction.PARTNER_STOCK_UPDATE,
@@ -689,6 +781,17 @@ function asBatch(b: StockBatch): BatchLike {
     quantity: b.quantity,
     receivedAt: b.receivedAt,
   };
+}
+
+/** "" or nothing clears the number; anything else must make a valid WhatsApp number. */
+function supplierPhone(raw: string | undefined): string | undefined {
+  if (!raw?.trim()) return undefined;
+  const e164 = whatsAppNumber(raw);
+  if (!e164)
+    throw new BadRequestException(
+      "Enter the supplier's WhatsApp number with country code, e.g. +91 98123 45678",
+    );
+  return e164;
 }
 
 /** A YYYY-MM-DD date as local midnight (expiry is a calendar date). */

@@ -35,6 +35,7 @@ import {
   DispenseDto,
   PharmacyQueueQueryDto,
   ReceiveStockDto,
+  ReorderStockDto,
   StockItemsQueryDto,
   StockMovesQueryDto,
   StockSearchQueryDto,
@@ -103,6 +104,21 @@ export class PartnerPharmacyController {
     @Body() dto: AdjustStockDto,
   ) {
     return this.stock.adjust(a, StoreKind.PHARMACY, id, dto);
+  }
+
+  @Post('items/:id/reorder')
+  @HttpCode(200)
+  @RequirePerm(Perm.PHARMACY_STOCK)
+  @ApiOperation({
+    summary:
+      "Ask the item's supplier for more over WhatsApp (or get a wa.me link to send it)",
+  })
+  reorder(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: ReorderStockDto,
+  ) {
+    return this.stock.reorder(a, StoreKind.PHARMACY, id, dto);
   }
 
   @Get('moves')
@@ -220,6 +236,17 @@ export class PartnerSupplyController {
     @Body() dto: IssueStockDto,
   ) {
     return this.stock.issue(a, StoreKind.CENTRAL, id, dto);
+  }
+
+  @Post('items/:id/reorder')
+  @HttpCode(200)
+  @RequirePerm(Perm.SUPPLY_MANAGE)
+  reorder(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: ReorderStockDto,
+  ) {
+    return this.stock.reorder(a, StoreKind.CENTRAL, id, dto);
   }
 
   @Get('moves')

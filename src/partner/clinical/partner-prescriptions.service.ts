@@ -46,6 +46,7 @@ import type { SmsSender } from '../../notifications/sms/sms-sender';
 import { WHATSAPP_SENDER } from '../../notifications/sms/whatsapp-sender';
 import type { WhatsAppSender } from '../../notifications/sms/whatsapp-sender';
 import { OrgType } from '../rbac/partner-permissions';
+import { LiveBus } from '../../common/live/live-bus.service';
 import { blocksSigning } from './rx-safety';
 import { resolveDiagnosisCodes } from './diagnosis-codes';
 import {
@@ -76,6 +77,7 @@ export class PartnerPrescriptionsService {
     @Inject(WHATSAPP_SENDER) private readonly whatsapp: WhatsAppSender,
     private readonly config: ConfigService,
     private readonly reminders: ReminderQueueService,
+    private readonly live: LiveBus,
   ) {}
 
   async list(actor: PartnerActor, q: PrescriptionsQueryDto) {
@@ -294,6 +296,9 @@ export class PartnerPrescriptionsService {
       ...(await this.notifyPatient(rx, targets)),
     };
     await rx.save();
+    // Lands in the pharmacy's "Pending dispensation" list on every open screen.
+    if (targets.has('internal_pharmacy'))
+      this.live.publish(actor.provider._id, 'pharmacy');
     if (toVault && rx.followUpDate) {
       // Not awaited: a slow or absent Redis must never hold up a signature.
       void this.reminders
@@ -304,7 +309,10 @@ export class PartnerPrescriptionsService {
           followUpDate: rx.followUpDate,
         })
         .catch((err: unknown) =>
-          this.logger.error(`Follow-up reminder failed for ${rx.id}`, err as Error),
+          this.logger.error(
+            `Follow-up reminder failed for ${rx.id}`,
+            err as Error,
+          ),
         );
     }
     await this.record(actor, AuditAction.PARTNER_RX_SIGN, rx, {
@@ -347,10 +355,15 @@ export class PartnerPrescriptionsService {
     rx.cancelledAt = new Date();
     rx.cancelReason = reason;
     await rx.save();
+    // A cancelled slip must drop out of the dispensing queue at once.
+    this.live.publish(actor.provider._id, 'pharmacy');
     void this.reminders
       .cancelCareFollowUp(rx.id)
       .catch((err: unknown) =>
-        this.logger.error(`Could not remove follow-up reminder for ${rx.id}`, err as Error),
+        this.logger.error(
+          `Could not remove follow-up reminder for ${rx.id}`,
+          err as Error,
+        ),
       );
     await this.documents.tagVaultRecord(rx.vaultRecordId, 'cancelled');
     await this.notifications

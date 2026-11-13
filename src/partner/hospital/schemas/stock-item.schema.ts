@@ -38,6 +38,19 @@ export class StockBatch {
 }
 export const StockBatchSchema = SchemaFactory.createForClass(StockBatch);
 
+/** The latest reorder request sent to the supplier (stores and the lab inventory). */
+@Schema({ _id: false })
+export class SupplierReorder {
+  @Prop({ required: true }) at: Date;
+  @Prop({ required: true, min: 1 }) quantity: number;
+  @Prop({ required: true }) ref: string;
+  @Prop() byName?: string;
+  /** True when the WhatsApp Business API sent it; false when staff were handed a WhatsApp link to send. */
+  @Prop({ default: false }) sent: boolean;
+}
+export const SupplierReorderSchema =
+  SchemaFactory.createForClass(SupplierReorder);
+
 export type StockItemDocument = HydratedDocument<StockItem>;
 
 /**
@@ -81,6 +94,13 @@ export class StockItem {
 
   @Prop({ type: [StockBatchSchema], default: [] })
   batches: StockBatch[];
+
+  // Usual supplier, for one-click reorders over WhatsApp.
+  @Prop({ trim: true }) supplierName?: string;
+  /** E.164. */
+  @Prop({ trim: true }) supplierWhatsapp?: string;
+  @Prop({ type: SupplierReorderSchema, default: undefined })
+  lastReorder?: SupplierReorder;
 
   @Prop({ default: true }) active: boolean;
 
