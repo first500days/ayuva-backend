@@ -43,6 +43,16 @@ import {
 export class PartnerQcController {
   constructor(private readonly qc: PartnerQcService) {}
 
+  @Get('state')
+  @RequirePerm(Perm.LAB_ORDERS_VIEW)
+  @ApiOperation({
+    summary:
+      'Whether any analyte is on QC hold (unreviewed rejected control, no passing repeat) — the QC tab turns red',
+  })
+  state(@PartnerCtx() a: PartnerActor) {
+    return this.qc.state(a);
+  }
+
   @Get('materials')
   @RequirePerm(Perm.LAB_REPORTS_DRAFT)
   materials(@PartnerCtx() a: PartnerActor) {

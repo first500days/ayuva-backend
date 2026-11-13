@@ -27,6 +27,7 @@ import {
   LabAnalyserDocument,
 } from './schemas/analyser.schema';
 import { PartnerLabResultsService } from './partner-lab-results.service';
+import { PartnerQcService } from './partner-qc.service';
 import {
   InstrumentSpecimen,
   hl7Ack,
@@ -63,6 +64,7 @@ export class PartnerAnalysersService {
     private readonly providerModel: Model<ProviderDocument>,
     private readonly results: PartnerLabResultsService,
     private readonly audit: AuditLogService,
+    private readonly qc: PartnerQcService,
   ) {}
 
   async list(actor: PartnerActor) {
@@ -262,7 +264,27 @@ export class PartnerAnalysersService {
       applied: 0,
       unchanged: 0,
       skipped: [] as string[],
+      qc: undefined as
+        | { analyte: string; status: string; rules: string[] }[]
+        | undefined,
     };
+    // A control sample, not a patient vial: its values are QC runs, checked
+    // against the Westgard rules at once. A rejection holds patient reports
+    // for that analyte and turns the QC tab red on every lab screen.
+    const control = await this.qc.ingestControl(
+      actor,
+      sp.barcode,
+      sp.results.map((r) => ({
+        parameter: codeMap.get(r.code.toUpperCase()) ?? r.name ?? r.code,
+        value: r.value,
+      })),
+    );
+    if (control) {
+      item.qc = control.runs;
+      item.applied = control.runs.length;
+      item.skipped.push(...control.skipped);
+      return item;
+    }
     const order = await this.findOrder(actor, barcode, sp.orderNumbers);
     if (!order) {
       item.skipped.push('no order has this vial or order number');

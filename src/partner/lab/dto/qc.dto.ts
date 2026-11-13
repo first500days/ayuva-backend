@@ -50,6 +50,16 @@ export class CreateQcMaterialDto {
   @MaxLength(60)
   instrument?: string;
 
+  @ApiPropertyOptional({
+    example: 'QC-GLU-L1',
+    description:
+      'The sample ID the analyser sends for this control, so its runs are checked automatically',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  controlId?: string;
+
   @ApiProperty({ example: 100 })
   @Type(() => Number)
   @IsNumber()

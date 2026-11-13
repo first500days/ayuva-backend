@@ -21,6 +21,8 @@ export class QcMaterial {
   @Prop({ required: true, trim: true }) lot: string;
   @Prop() lotExpiry?: Date;
   @Prop({ trim: true }) instrument?: string;
+  /** The sample ID an analyser reports for this control (the control vial's barcode), upper case. */
+  @Prop({ trim: true, uppercase: true }) controlId?: string;
   @Prop({ required: true }) targetMean: number;
   @Prop({ required: true }) targetSd: number;
   @Prop({ default: true }) active: boolean;
@@ -29,6 +31,7 @@ export class QcMaterial {
   updatedAt?: Date;
 }
 export const QcMaterialSchema = SchemaFactory.createForClass(QcMaterial);
+QcMaterialSchema.index({ providerId: 1, controlId: 1 });
 
 export type QcRunDocument = HydratedDocument<QcRun>;
 

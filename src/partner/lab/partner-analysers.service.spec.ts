@@ -20,6 +20,8 @@ function build(
     order?: Record<string, unknown> | null;
     comments?: string;
     status?: string;
+    /** A sample ID registered as a QC control. */
+    control?: string;
   } = {},
 ) {
   const order =
@@ -62,6 +64,17 @@ function build(
   };
   const audit = { record: jest.fn(async () => undefined) };
   const messages = { create: jest.fn(async () => undefined) };
+  const qc = {
+    ingestControl: jest.fn(async (_a: unknown, sampleId: string) =>
+      overrides.control && sampleId === overrides.control
+        ? {
+            controlId: sampleId,
+            runs: [{ analyte: 'Glucose', status: 'reject', rules: ['1-3s'] }],
+            skipped: [],
+          }
+        : null,
+    ),
+  };
   const service = new PartnerAnalysersService(
     { findOne: () => exec(analyser) } as never,
     messages as never,
@@ -69,8 +82,9 @@ function build(
     { findById: () => exec({ _id: PROVIDER, id: 'p1' }) } as never,
     results as never,
     audit as never,
+    qc as never,
   );
-  return { service, results, findOrder, messages, audit, analyser };
+  return { service, results, findOrder, messages, audit, analyser, qc };
 }
 
 describe('PartnerAnalysersService, hospital reports', () => {
@@ -177,5 +191,23 @@ describe('PartnerAnalysersService, hospital reports', () => {
     );
     expect(results.save).not.toHaveBeenCalled();
     expect(out.items[0].skipped).toEqual(['the report is already released']);
+  });
+
+  it('treats a registered control sample as a QC run, never as a patient result', async () => {
+    const msg = RIS_MESSAGE(['OBX|1|NM|GLU^Glucose||148|mg/dL']);
+    const probe = build();
+    await probe.service.ingest(KEY, msg);
+    const sampleId = probe.qc.ingestControl.mock.calls[0][1];
+
+    const { service, results, qc } = build({ control: sampleId });
+    const out = await service.ingest(KEY, msg);
+    expect(qc.ingestControl).toHaveBeenCalledWith(expect.anything(), sampleId, [
+      { parameter: 'Glucose', value: '148' },
+    ]);
+    expect(results.save).not.toHaveBeenCalled();
+    expect(out.items[0].qc).toEqual([
+      { analyte: 'Glucose', status: 'reject', rules: ['1-3s'] },
+    ]);
+    expect(out.status).toBe('applied');
   });
 });

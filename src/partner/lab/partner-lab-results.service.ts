@@ -23,7 +23,7 @@ import {
 } from './schemas/lab-catalog-item.schema';
 import { LabOrderDocument, LabOrderStatus } from './schemas/lab-order.schema';
 import { LabResult, LabResultDocument } from './schemas/lab-result.schema';
-import { QcMaterial, QcMaterialDocument, QcRun, QcRunDocument } from './schemas/qc.schema';
+import { PartnerQcService } from './partner-qc.service';
 import { User, UserDocument } from '../../core/users/schemas/user.schema';
 import { computeFlag, isCriticalFlag } from './lab-flags';
 import {
@@ -79,6 +79,13 @@ interface ResultTestInput {
 /** Delta checks look back this far (the longest rule window). */
 const HISTORY_DAYS = 60;
 
+/** Every test and parameter name on a report, for matching it against QC holds. */
+function parameterNames(
+  tests: { name: string; values: { name: string }[] }[],
+): string[] {
+  return tests.flatMap((t) => [t.name, ...t.values.map((v) => v.name)]);
+}
+
 const checkEntry = (c: ResultCheck) => ({
   kind: c.kind,
   code: c.code,
@@ -100,10 +107,6 @@ export class PartnerLabResultsService {
     private readonly resultModel: Model<LabResultDocument>,
     @InjectModel(LabCatalogItem.name)
     private readonly catalogModel: Model<LabCatalogItemDocument>,
-    @InjectModel(QcRun.name)
-    private readonly qcRunModel: Model<QcRunDocument>,
-    @InjectModel(QcMaterial.name)
-    private readonly qcMaterialModel: Model<QcMaterialDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
     private readonly orders: PartnerLabOrdersService,
@@ -115,6 +118,7 @@ export class PartnerLabResultsService {
     private readonly audit: AuditLogService,
     private readonly reportDispatch: ReportDispatchService,
     private readonly live: LiveBus,
+    private readonly qc: PartnerQcService,
   ) {}
 
   /** The saved draft/released result, or a blank template built from the catalogue's parameters. */
@@ -123,7 +127,12 @@ export class PartnerLabResultsService {
     const result = await this.resultModel
       .findOne({ orderId: order._id })
       .exec();
-    const qcHold = await this.qcHold(actor);
+    const template = result ? null : await this.template(order);
+    // Only a hold on an analyte this report contains locks its sign-off.
+    const qcHold = await this.qcHold(
+      actor,
+      parameterNames(result ? result.tests : (template ?? [])),
+    );
     if (result) return { ...this.toResponse(result, order), qcHold };
     return {
       qcHold,
@@ -131,7 +140,7 @@ export class PartnerLabResultsService {
       status: 'new' as const,
       critical: false,
       comments: '',
-      tests: await this.template(order),
+      tests: template ?? [],
       draftedByName: null,
       releasedByName: null,
       releasedAt: null,
@@ -265,7 +274,7 @@ export class PartnerLabResultsService {
     }
     // A rejected control run (Westgard) that nobody has reviewed blocks release unless a
     // signer gives a written rationale and re-confirms their identity.
-    const hold = await this.qcHold(actor);
+    const hold = await this.qcHold(actor, parameterNames(result.tests));
     if (hold) await this.assertHoldOverride(actor, dto, hold);
     // Flagged delta / contamination checks need a person to look before sign-off.
     const checks = result.checks ?? [];
@@ -696,33 +705,26 @@ export class PartnerLabResultsService {
     });
   }
 
-  /** Control runs rejected in the last day and not yet reviewed: patient results are on hold. */
-  async qcHold(actor: PartnerActor) {
-    const since = new Date(Date.now() - 24 * 3_600_000);
-    const runs = await this.qcRunModel
-      .find({
-        providerId: actor.provider._id,
-        status: 'reject',
-        reviewedAt: { $exists: false },
-        at: { $gte: since },
-      })
-      .sort({ at: -1 })
-      .limit(10)
-      .lean()
-      .exec();
-    if (!runs.length) return null;
-    const mats = await this.qcMaterialModel
-      .find({ _id: { $in: runs.map((r) => r.materialId) } })
-      .select('analyte')
-      .lean()
-      .exec();
-    const name = new Map(mats.map((m) => [m._id.toString(), m.analyte]));
+  /**
+   * Patient results held by quality control: an unreviewed rejected control
+   * run (typed or pushed by an analyser) with no passing repeat holds reports
+   * that contain the same analyte — not every report in the lab — until it's
+   * reviewed or a repeat control passes. Without `parameters`, any hold counts.
+   */
+  async qcHold(actor: PartnerActor, parameters?: string[]) {
+    const holds = await this.qc.holds(actor.provider._id);
+    const relevant = parameters
+      ? holds.filter((h) =>
+          parameters.some((p) => this.qc.analyteMatches(h.analyte, p)),
+        )
+      : holds;
+    if (!relevant.length) return null;
     return {
       message:
         'Automated flags detected. To release this report to the patient, input a manual clinical rationale validation string.',
-      runs: runs.map((r) => ({
-        id: r._id.toString(),
-        analyte: name.get(r.materialId.toString()) ?? 'Control',
+      runs: relevant.map((r) => ({
+        id: r.id,
+        analyte: r.analyte,
         rules: r.rules,
         at: r.at,
       })),

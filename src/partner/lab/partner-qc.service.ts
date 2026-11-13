@@ -30,6 +30,17 @@ import {
 /** Earlier runs the multi-rules look back over. */
 const RULE_HISTORY = 9;
 
+const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** A control's analyte and a report parameter name the same test: equal, or one contains the other. */
+export function sameAnalyte(analyte: string, parameter: string): boolean {
+  const a = normName(analyte);
+  const p = normName(parameter);
+  if (!a || !p) return false;
+  if (a === p) return true;
+  return Math.min(a.length, p.length) >= 3 && (a.includes(p) || p.includes(a));
+}
+
 /**
  * Laboratory quality control: control materials with their targets, daily
  * control runs evaluated by the Westgard rules, Levey-Jennings data, and a
@@ -95,6 +106,7 @@ export class PartnerQcService {
       lot: dto.lot.trim(),
       lotExpiry: dto.lotExpiry ? new Date(dto.lotExpiry) : undefined,
       instrument: dto.instrument?.trim() || undefined,
+      controlId: dto.controlId?.trim() || undefined,
       targetMean: dto.targetMean,
       targetSd: dto.targetSd,
     });
@@ -120,6 +132,8 @@ export class PartnerQcService {
     if (dto.lotExpiry !== undefined) m.lotExpiry = new Date(dto.lotExpiry);
     if (dto.instrument !== undefined)
       m.instrument = dto.instrument.trim() || undefined;
+    if (dto.controlId !== undefined)
+      m.controlId = dto.controlId.trim() || undefined;
     if (dto.targetMean !== undefined) m.targetMean = dto.targetMean;
     if (dto.targetSd !== undefined) m.targetSd = dto.targetSd;
     if (dto.active !== undefined) m.active = dto.active;
@@ -162,6 +176,114 @@ export class PartnerQcService {
     const at = dto.at ? new Date(dto.at) : new Date();
     if (at.getTime() > Date.now() + 5 * 60_000)
       throw new BadRequestException('A control run can’t be in the future');
+    return this.runView(
+      await this.evaluateAndStore(actor, m, dto.value, at, dto.note),
+    );
+  }
+
+  /**
+   * A control sample run on an analyser and pushed through the LIS bridge:
+   * each value for a registered control (matched by its control ID, else its
+   * lot) is a QC run, through the same Westgard rules as a typed one. Returns
+   * null when the sample isn't a control, so it's handled as a patient vial.
+   */
+  async ingestControl(
+    actor: PartnerActor,
+    sampleId: string,
+    values: { parameter: string; value: string }[],
+  ) {
+    const id = sampleId.trim().toUpperCase();
+    if (!id) return null;
+    const mats = await this.materialModel
+      .find({
+        providerId: actor.provider._id,
+        active: true,
+        $or: [{ controlId: id }, { lot: sampleId.trim() }],
+      })
+      .exec();
+    if (!mats.length) return null;
+    const runs: { analyte: string; status: string; rules: string[] }[] = [];
+    const skipped: string[] = [];
+    for (const v of values) {
+      const value = Number(v.value);
+      const m = mats.find((x) => sameAnalyte(x.analyte, v.parameter));
+      if (!m || !Number.isFinite(value)) {
+        skipped.push(`${v.parameter}: not a registered control on ${id}`);
+        continue;
+      }
+      const run = await this.evaluateAndStore(actor, m, value, new Date());
+      runs.push({ analyte: m.analyte, status: run.status, rules: run.rules });
+    }
+    return { controlId: id, runs, skipped };
+  }
+
+  /**
+   * Rejected control runs nobody has reviewed and no later run has passed:
+   * patient results for those analytes are held. Unlike a time window, a hold
+   * only ends with a corrective-action review or a passing repeat control.
+   */
+  async holds(providerId: Types.ObjectId) {
+    const since = new Date(Date.now() - 30 * 86_400_000);
+    const rejects = await this.runModel
+      .find({
+        providerId,
+        status: 'reject',
+        reviewedAt: { $exists: false },
+        at: { $gte: since },
+      })
+      .sort({ at: -1 })
+      .limit(50)
+      .lean()
+      .exec();
+    const open: typeof rejects = [];
+    for (const r of rejects) {
+      const passedSince = await this.runModel.exists({
+        providerId,
+        materialId: r.materialId,
+        at: { $gt: r.at },
+        status: { $ne: 'reject' },
+      });
+      if (!passedSince) open.push(r);
+    }
+    if (!open.length) return [];
+    const mats = await this.materialModel
+      .find({ _id: { $in: open.map((r) => r.materialId) } })
+      .select('analyte level instrument')
+      .lean()
+      .exec();
+    const byId = new Map(mats.map((m) => [m._id.toString(), m]));
+    return open.map((r) => {
+      const m = byId.get(r.materialId.toString());
+      return {
+        id: r._id.toString(),
+        materialId: r.materialId.toString(),
+        analyte: m?.analyte ?? 'Control',
+        level: m?.level ?? null,
+        instrument: m?.instrument ?? null,
+        rules: r.rules,
+        at: r.at,
+      };
+    });
+  }
+
+  /** For the QC tab's red flag on every lab screen. */
+  async state(actor: PartnerActor) {
+    const holds = await this.holds(actor.provider._id);
+    return {
+      held: holds.length > 0,
+      analytes: [...new Set(holds.map((h) => h.analyte))],
+      runs: holds.map((h) => ({ ...h, at: h.at.toISOString() })),
+    };
+  }
+
+  private async evaluateAndStore(
+    actor: PartnerActor,
+    m: QcMaterialDocument,
+    value: number,
+    at: Date,
+    note?: string,
+  ) {
+    const dto = { value, note };
     // Earlier runs on the current target that weren't rejected feed the multi-rules.
     const earlier = await this.runModel
       .find({
@@ -210,7 +332,7 @@ export class PartnerQcService {
         data: { materialId: m.id, analyte: m.analyte, rules: evaluation.rules },
         excludeUserId: actor.userId,
       });
-    return this.runView(run);
+    return run;
   }
 
   async review(actor: PartnerActor, runId: string, dto: ReviewQcRunDto) {
@@ -257,6 +379,11 @@ export class PartnerQcService {
     });
   }
 
+  /** True when the material's analyte names this parameter ("Glucose" ~ "Glucose, fasting"). */
+  analyteMatches(analyte: string, parameter: string) {
+    return sameAnalyte(analyte, parameter);
+  }
+
   private materialView(m: QcMaterialDocument) {
     return {
       id: m.id,
@@ -266,6 +393,7 @@ export class PartnerQcService {
       lot: m.lot,
       lotExpiry: m.lotExpiry?.toISOString() ?? null,
       instrument: m.instrument ?? null,
+      controlId: m.controlId ?? null,
       targetMean: m.targetMean,
       targetSd: m.targetSd,
       active: m.active,
