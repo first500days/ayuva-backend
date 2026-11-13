@@ -402,6 +402,15 @@ export class PartnerTelemetryService {
     };
   }
 
+  /** Latest early-warning level per admission id (null when nothing was charted in the window). */
+  async warningLevels(
+    providerId: Types.ObjectId,
+    admissions: AdmissionDocument[],
+  ): Promise<Map<string, EarlyWarning['level'] | null>> {
+    const rows = await this.boardFor(providerId, admissions);
+    return new Map(rows.map((r) => [r.admissionId, r.warning?.level ?? null]));
+  }
+
   private async boardFor(
     providerId: Types.ObjectId,
     admissions: AdmissionDocument[],

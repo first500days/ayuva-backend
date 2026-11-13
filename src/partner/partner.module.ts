@@ -149,6 +149,7 @@ import {
 } from './hospital/schemas/asset.schema';
 import { PartnerAssetsService } from './hospital/partner-assets.service';
 import { PartnerAssetTrackingService } from './hospital/partner-asset-tracking.service';
+import { PartnerDischargeReadinessService } from './hospital/partner-discharge-readiness.service';
 import { ErVisit, ErVisitSchema } from './hospital/schemas/er-visit.schema';
 import { PartnerErService } from './hospital/partner-er.service';
 import { PartnerErController } from './hospital/partner-er.controller';
@@ -390,6 +391,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerLiveGateway,
     PartnerDicomwebService,
     PartnerTelemetryService,
+    PartnerDischargeReadinessService,
     TelemetryIngestGateway,
   ],
 })

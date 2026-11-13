@@ -87,6 +87,7 @@ import { PartnerLabCriticalService } from './lab/partner-lab-critical.service';
 import { PartnerTrendLinksService } from './lab/partner-trend-links.service';
 import { PartnerImagingSynthesisService } from './lab/partner-imaging-synthesis.service';
 import { ReorderStockDto } from './hospital/dto/stores.dto';
+import { PartnerDischargeReadinessService } from './hospital/partner-discharge-readiness.service';
 import { LabOrderStatus } from './lab/schemas/lab-order.schema';
 import {
   AdjustStockDto,
@@ -1215,6 +1216,7 @@ export class PartnerHospitalController {
     private readonly claims: PartnerClaimsService,
     private readonly analytics: PartnerAnalyticsService,
     private readonly billPayments: PartnerBillPaymentsService,
+    private readonly readinessSvc: PartnerDischargeReadinessService,
   ) {}
 
   @Get('wards')
@@ -1288,6 +1290,16 @@ export class PartnerHospitalController {
   @RequirePerm(Perm.WARDS_VIEW)
   admissions(@PartnerCtx() a: PartnerActor, @Query() q: AdmissionsQueryDto) {
     return this.wards.listAdmissions(a, q);
+  }
+
+  @Get('admissions/readiness')
+  @RequirePerm(Perm.WARDS_VIEW)
+  @ApiOperation({
+    summary:
+      'Rule-based "% discharge ready" per admitted patient (stay, observations, pending labs, billing) — a cue; discharge always needs approval',
+  })
+  readiness(@PartnerCtx() a: PartnerActor) {
+    return this.readinessSvc.forProvider(a);
   }
 
   @Post('admissions')
