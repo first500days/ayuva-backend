@@ -26,7 +26,7 @@ export interface LiveEvent {
 
 export interface SessionEnd {
   userId: string;
-  reason: 'session_replaced' | 'frozen' | 'signed_out';
+  reason: 'session_replaced' | 'frozen' | 'signed_out' | 'tokens_revoked';
 }
 
 /** A slice of bedside telemetry. Carries numbers and waveform only, never a name. */
@@ -53,6 +53,16 @@ export interface VitalsFrame {
 @Injectable()
 export class LiveBus {
   private readonly emitter = new EventEmitter().setMaxListeners(0);
+  private readonly socketCounts = new Map<string, number>();
+
+  /** How many signed-in sockets a gateway holds, for the Admin Panel's system graph. */
+  countSockets(gateway: string, n: number): void {
+    this.socketCounts.set(gateway, n);
+  }
+
+  socketCount(gateway: string): number {
+    return this.socketCounts.get(gateway) ?? 0;
+  }
 
   /** Never throws: a dropped live update must not fail the write that caused it. */
   publish(

@@ -240,7 +240,6 @@ import {
 import { PartnerTelemetryService } from './hospital/partner-telemetry.service';
 import { PartnerTelemetryController } from './hospital/partner-telemetry.controller';
 import { TelemetryIngestGateway } from './hospital/telemetry-ingest.gateway';
-import { WsUpgradeRouter } from './live/ws-upgrade-router.service';
 import { PartnerLiveGateway } from './live/partner-live.gateway';
 
 /**
@@ -387,7 +386,6 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerSafetyService,
     PartnerBriefService,
     PartnerDiscussionService,
-    WsUpgradeRouter,
     PartnerLiveGateway,
     PartnerDicomwebService,
     PartnerTelemetryService,

@@ -214,6 +214,7 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
       conn.person = { id: ctx.member.id, name: ctx.member.fullName };
       this.index(this.byProvider, conn.providerId, conn);
       this.index(this.byUser, conn.userId, conn);
+      this.bus.countSockets('partner', this.signedIn());
       // The token's lifetime is the connection's: the portal refreshes and reconnects.
       if (payload.exp) {
         conn.expiryTimer = setTimeout(
@@ -276,6 +277,13 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
     this.warRooms.leave(conn);
     if (conn.providerId) this.unindex(this.byProvider, conn.providerId, conn);
     if (conn.userId) this.unindex(this.byUser, conn.userId, conn);
+    this.bus.countSockets('partner', this.signedIn());
+  }
+
+  private signedIn(): number {
+    let n = 0;
+    for (const set of this.byUser.values()) n += set.size;
+    return n;
   }
 
   private index(map: Map<string, Set<Conn>>, key: string, conn: Conn): void {

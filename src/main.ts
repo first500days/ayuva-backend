@@ -10,6 +10,7 @@ import { AppModule } from './app.module';
 import { AppLogger } from './common/logger/app-logger.service';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { requestContextMiddleware } from './common/request-context/client-ip';
+import { requestMetricsMiddleware } from './common/observability/request-metrics';
 import { scalarCustomCss } from './docs/scalar-theme';
 
 const API_PREFIX = 'api/v1';
@@ -25,6 +26,8 @@ async function bootstrap() {
   app.set('trust proxy', Number(config.get<string>('TRUST_PROXY_HOPS') ?? 1));
 
   app.use(requestContextMiddleware);
+  // Rolling traffic numbers for the Admin Panel's live system graph.
+  app.use(requestMetricsMiddleware);
 
   // Security headers. The portal on another origin reads files from this API,
   // and the /docs page runs its own scripts.
