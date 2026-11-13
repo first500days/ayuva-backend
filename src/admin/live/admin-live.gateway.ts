@@ -12,6 +12,7 @@ import { canUseAdminModule } from '../../common/admin-modules';
 import { LiveBus } from '../../common/live/live-bus.service';
 import { logTap, type TappedLine } from '../../common/observability/log-tap';
 import { UserRole } from '../../core/users/schemas/user.schema';
+import { TokenRevocationService } from '../../auth/services/token-revocation.service';
 import { WsUpgradeRouter } from '../../partner/live/ws-upgrade-router.service';
 import { NODE_LOG_CONTEXTS } from './system-pulse';
 import { SystemPulseService } from './system-pulse.service';
@@ -74,6 +75,7 @@ export class AdminLiveGateway implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly pulse: SystemPulseService,
     private readonly bus: LiveBus,
+    private readonly revocation: TokenRevocationService,
   ) {}
 
   onModuleInit(): void {
@@ -132,6 +134,15 @@ export class AdminLiveGateway implements OnModuleInit, OnModuleDestroy {
       );
       if (payload.role !== UserRole.ADMIN || payload.mfa !== true)
         throw new Error('not an admin');
+      if (
+        await this.revocation.isRevoked(
+          payload.sub,
+          (payload as { iat?: number }).iat,
+        )
+      ) {
+        conn.ws.close(ADMIN_LIVE_CLOSE.REVOKED, 'tokens_revoked');
+        return;
+      }
       if (conn.ws.readyState !== WebSocket.OPEN) return;
       if (conn.authTimer) clearTimeout(conn.authTimer);
       conn.userId = payload.sub;

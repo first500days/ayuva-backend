@@ -201,6 +201,10 @@ export class User {
   @Prop()
   partnerSessionId?: string;
 
+  // "Terminate web tokens": access and refresh tokens issued before this are refused.
+  @Prop()
+  tokensValidAfter?: Date;
+
   // Populated by the timestamps:true schema option — declared for typed access (Admin User Management, FR-12.1).
   createdAt?: Date;
 }

@@ -6,6 +6,8 @@ import { makeAppendOnly } from '../append-only';
 export enum AuditAction {
   LOGIN = 'login',
   LOGIN_FAILED = 'login_failed',
+  // An administrator ended every session (all web/app tokens) of a login.
+  SESSIONS_TERMINATED = 'sessions_terminated',
   REGISTER = 'register',
   RECORD_UPLOAD = 'record_upload',
   RECORD_VIEW = 'record_view',

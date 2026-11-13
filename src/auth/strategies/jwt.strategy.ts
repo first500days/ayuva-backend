@@ -19,6 +19,10 @@ import {
   UserRole,
   UserStatus,
 } from '../../core/users/schemas/user.schema';
+import {
+  SESSION_REVOKED,
+  TokenRevocationService,
+} from '../services/token-revocation.service';
 
 /** Header the app sends while a guardian is viewing a family member's profile. */
 export const PROFILE_HEADER = 'x-ayuva-profile';
@@ -36,6 +40,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     config: ConfigService,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    private readonly revocation: TokenRevocationService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -45,7 +50,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(req: Request, payload: JwtPayload): Promise<JwtPayload> {
+  async validate(
+    req: Request,
+    payload: JwtPayload & { iat?: number },
+  ): Promise<JwtPayload> {
+    if (await this.revocation.isRevoked(payload.sub, payload.iat))
+      throw new UnauthorizedException(
+        `${SESSION_REVOKED}: an administrator ended this session — please sign in again`,
+      );
     // MFA is mandatory for admins: a token minted without the second factor
     // (e.g. before MFA existed) is refused everywhere, which signs them out.
     if (payload.role === UserRole.ADMIN && payload.mfa !== true) {

@@ -23,6 +23,7 @@ import {
 } from '../../core/users/schemas/user.schema';
 import { PartnerContextService } from '../partner-context.service';
 import { WsUpgradeRouter } from './ws-upgrade-router.service';
+import { TokenRevocationService } from '../../auth/services/token-revocation.service';
 import { validRoomId, WarRooms } from './war-room';
 
 export const LIVE_PATH = '/api/v1/partner/live';
@@ -99,6 +100,7 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly context: PartnerContextService,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    private readonly revocation: TokenRevocationService,
   ) {}
 
   onModuleInit(): void {
@@ -194,6 +196,15 @@ export class PartnerLiveGateway implements OnModuleInit, OnModuleDestroy {
         { secret: this.config.get<string>('jwt.accessSecret') },
       );
       if (payload.role !== UserRole.PARTNER) throw new Error('not a partner');
+      if (
+        await this.revocation.isRevoked(
+          payload.sub,
+          (payload as { iat?: number }).iat,
+        )
+      ) {
+        conn.ws.close(LIVE_CLOSE.FROZEN, 'tokens_revoked');
+        return;
+      }
       const user = await this.userModel
         .findById(payload.sub)
         .select('partnerSessionId')

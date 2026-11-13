@@ -536,6 +536,17 @@ export class AuthService {
     if (!user || user.status === UserStatus.INACTIVE) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+    // Ended by an administrator ("Terminate web tokens").
+    const iat = (payload as JwtPayload & { iat?: number }).iat;
+    if (
+      user.tokensValidAfter &&
+      iat &&
+      iat * 1000 < user.tokensValidAfter.getTime()
+    ) {
+      throw new UnauthorizedException(
+        'SESSION_REVOKED: an administrator ended this session — please sign in again',
+      );
+    }
 
     // An admin refresh token from before MFA can't be traded in, and role
     // changes take effect at the next refresh.

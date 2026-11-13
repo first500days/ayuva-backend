@@ -1,3 +1,4 @@
+import { TokenRevocationService } from './services/token-revocation.service';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
@@ -65,8 +66,10 @@ import { MailModule } from '../mail/mail.module';
     GoogleAuthService,
     TotpService,
     AdminAccessService,
+    TokenRevocationService,
   ],
   exports: [
+    TokenRevocationService,
     JwtModule,
     PassportModule,
     JwtAuthGuard,
