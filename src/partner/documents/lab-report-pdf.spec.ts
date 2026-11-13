@@ -62,4 +62,10 @@ describe('lab report PDF', () => {
     const text = docs.labReportPdf(order, result, provider).toString('latin1');
     expect(text).not.toContain('YOUR RESULTS OVER TIME');
   });
+  it('ends with the clinician-validation disclaimer', () => {
+    const text = docs.labReportPdf(order, result, provider).toString('latin1');
+    // Wrapped across lines; check its distinctive words.
+    expect(text).toMatch(/operational support gateway/);
+    expect(text).toMatch(/human clinician validation/);
+  });
 });

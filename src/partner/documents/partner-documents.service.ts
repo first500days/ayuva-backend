@@ -59,6 +59,10 @@ export interface VaultDelivery {
   };
 }
 
+/** The client's regulatory wording, printed on every clinical PDF (and shown in the portal and app). */
+export const AI_SUPPORT_DISCLAIMER =
+  'Ayuva AI acts strictly as an operational support gateway. All clinical diagnostics, drug selections, and verification signatures represent supportive insights and require direct human clinician validation before release.';
+
 const fmtDate = (d?: Date | null) =>
   d
     ? d.toLocaleDateString('en-GB', {
@@ -579,7 +583,18 @@ export class PartnerDocumentsService {
     });
   }
 
+  /**
+   * Every clinical document ends with the same light-grey statement that
+   * automated drafts are supportive and a clinician validated what was
+   * released (the client's regulatory wording), then the organisation's own
+   * footer line.
+   */
   private foot(pdf: PdfBuilder, provider: ProviderDocument): PdfBuilder {
+    pdf.text(AI_SUPPORT_DISCLAIMER, {
+      size: 7.5,
+      color: [0.45, 0.47, 0.5],
+      lineHeight: 10,
+    });
     const note = provider.letterhead?.footerNote?.trim();
     return note ? pdf.footerLine(note) : pdf;
   }
