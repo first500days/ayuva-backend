@@ -14,6 +14,7 @@ import {
   IsString,
   IsUrl,
   Matches,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -27,6 +28,10 @@ const toBool = ({ value }: { value: unknown }) =>
     : value === true || value === 'true' || value === '1';
 
 import { SAMPLE_STAGES, STATION_STAGES } from '../sample-tracking';
+import {
+  SUPPLIER_PHONE,
+  SUPPLIER_PHONE_MESSAGE,
+} from '../../hospital/dto/stores.dto';
 
 export class LabParameterDto {
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(80) name: string;
@@ -96,7 +101,25 @@ export class CreateCatalogItemDto {
   @Type(() => LabParameterDto)
   parameters?: LabParameterDto[];
 
+  @ApiPropertyOptional({ type: () => [TestConsumptionDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => TestConsumptionDto)
+  consumes?: TestConsumptionDto[];
+
   @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
+}
+
+/** Reagent / consumable used per run of a test. */
+export class TestConsumptionDto {
+  @ApiProperty() @IsMongoId() itemId: string;
+  @ApiProperty({ example: 1 })
+  @IsNumber()
+  @Min(0.001)
+  @Max(1000)
+  quantity: number;
 }
 
 export class UpdateCatalogItemDto {
@@ -149,6 +172,14 @@ export class UpdateCatalogItemDto {
   @Type(() => LabParameterDto)
   parameters?: LabParameterDto[];
 
+  @ApiPropertyOptional({ type: () => [TestConsumptionDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => TestConsumptionDto)
+  consumes?: TestConsumptionDto[];
+
   @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
 }
 
@@ -196,6 +227,10 @@ export class CreateInventoryItemDto {
   @IsString()
   @MaxLength(120)
   supplier?: string;
+  @ApiPropertyOptional({ example: '+919812345678' })
+  @IsOptional()
+  @Matches(SUPPLIER_PHONE, { message: SUPPLIER_PHONE_MESSAGE })
+  supplierWhatsapp?: string;
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -237,6 +272,10 @@ export class UpdateInventoryItemDto {
   @IsString()
   @MaxLength(120)
   supplier?: string;
+  @ApiPropertyOptional({ description: '"" clears it' })
+  @IsOptional()
+  @Matches(SUPPLIER_PHONE, { message: SUPPLIER_PHONE_MESSAGE })
+  supplierWhatsapp?: string;
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

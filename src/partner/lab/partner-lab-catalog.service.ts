@@ -266,6 +266,11 @@ export class PartnerLabCatalogService {
         criticalLow: p.criticalLow ?? null,
         criticalHigh: p.criticalHigh ?? null,
       })),
+      // Reagents and consumables one run of this test uses up.
+      consumes: (i.consumes ?? []).map((c) => ({
+        itemId: c.itemId.toString(),
+        quantity: c.quantity,
+      })),
       active: i.active,
       updatedAt: (i.updatedAt ?? new Date()).toISOString(),
     };

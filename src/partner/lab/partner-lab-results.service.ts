@@ -24,6 +24,7 @@ import {
 import { LabOrderDocument, LabOrderStatus } from './schemas/lab-order.schema';
 import { LabResult, LabResultDocument } from './schemas/lab-result.schema';
 import { PartnerQcService } from './partner-qc.service';
+import { PartnerLabInventoryService } from './partner-lab-inventory.service';
 import { User, UserDocument } from '../../core/users/schemas/user.schema';
 import { computeFlag, isCriticalFlag } from './lab-flags';
 import {
@@ -119,6 +120,7 @@ export class PartnerLabResultsService {
     private readonly reportDispatch: ReportDispatchService,
     private readonly live: LiveBus,
     private readonly qc: PartnerQcService,
+    private readonly inventory: PartnerLabInventoryService,
   ) {}
 
   /** The saved draft/released result, or a blank template built from the catalogue's parameters. */
@@ -227,6 +229,26 @@ export class PartnerLabResultsService {
           },
         );
       }
+    }
+
+    // Reagents and consumables for tests whose results are now complete come
+    // off the lab inventory automatically — once per order and test.
+    const finished = [
+      ...new Set(
+        tests
+          .filter(
+            (t) =>
+              t.testId &&
+              t.values.length > 0 &&
+              t.values.every((v) => v.value.trim()),
+          )
+          .map((t) => t.testId!.toString()),
+      ),
+    ].filter((id) => !(order.stockDeducted ?? []).includes(id));
+    if (finished.length) {
+      await this.inventory.consumeForTests(actor, order.orderNo, finished);
+      order.stockDeducted = [...(order.stockDeducted ?? []), ...finished];
+      await order.save();
     }
 
     // A complete draft is waiting for sign-off; a partial one is still in processing.

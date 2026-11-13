@@ -240,6 +240,10 @@ export class PartnerLabOrder {
   @Prop({ type: [CriticalCalloutSchema], default: [] })
   criticalCallouts: CriticalCallout[];
 
+  /** Catalogue test ids whose reagents were already taken from inventory (once per order). */
+  @Prop({ type: [String], default: [] })
+  stockDeducted: string[];
+
   // When the report is due, from the slowest test's turnaround.
   @Prop()
   dueAt?: Date;

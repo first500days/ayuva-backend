@@ -85,6 +85,7 @@ import { PartnerLabResultsService } from './lab/partner-lab-results.service';
 import { PartnerLabCriticalService } from './lab/partner-lab-critical.service';
 import { PartnerTrendLinksService } from './lab/partner-trend-links.service';
 import { PartnerImagingSynthesisService } from './lab/partner-imaging-synthesis.service';
+import { ReorderStockDto } from './hospital/dto/stores.dto';
 import { LabOrderStatus } from './lab/schemas/lab-order.schema';
 import {
   AdjustStockDto,
@@ -860,6 +861,21 @@ export class PartnerLabController {
     @Body() dto: AdjustStockDto,
   ) {
     return this.inventory.adjust(a, id, dto);
+  }
+
+  @Post('inventory/:id/reorder')
+  @HttpCode(200)
+  @RequirePerm(Perm.LAB_INVENTORY)
+  @ApiOperation({
+    summary:
+      "Ask the item's supplier for more on WhatsApp (or get a wa.me link to send it)",
+  })
+  reorderInventory(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: ReorderStockDto,
+  ) {
+    return this.inventory.reorder(a, id, dto.quantity);
   }
 
   @Delete('inventory/:id')

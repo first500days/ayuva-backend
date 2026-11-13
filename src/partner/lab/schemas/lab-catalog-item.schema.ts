@@ -15,6 +15,16 @@ export class LabParameter {
 }
 export const LabParameterSchema = SchemaFactory.createForClass(LabParameter);
 
+/** How much of an inventory item (reagent, cartridge, tube…) one run of a test uses. */
+@Schema({ _id: false })
+export class TestConsumption {
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'LabInventoryItem', required: true })
+  itemId: Types.ObjectId;
+  @Prop({ required: true, min: 0 }) quantity: number;
+}
+export const TestConsumptionSchema =
+  SchemaFactory.createForClass(TestConsumption);
+
 export type LabCatalogItemDocument = HydratedDocument<LabCatalogItem>;
 
 /** A test or package a diagnostic centre offers: price, turnaround, sample and report parameters. */
@@ -70,6 +80,10 @@ export class LabCatalogItem {
 
   @Prop({ type: [LabParameterSchema], default: [] })
   parameters: LabParameter[];
+
+  /** Inventory used per test run, deducted automatically when the results are complete. */
+  @Prop({ type: [TestConsumptionSchema], default: [] })
+  consumes: TestConsumption[];
 
   @Prop({ default: true, index: true })
   active: boolean;

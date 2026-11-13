@@ -1,5 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
+import {
+  SupplierReorder,
+  SupplierReorderSchema,
+} from '../../hospital/schemas/stock-item.schema';
 
 @Schema({ _id: false })
 export class StockMovement {
@@ -53,6 +57,13 @@ export class LabInventoryItem {
 
   @Prop({ trim: true })
   supplier?: string;
+
+  /** E.164, for one-click reorders over WhatsApp. */
+  @Prop({ trim: true })
+  supplierWhatsapp?: string;
+
+  @Prop({ type: SupplierReorderSchema, default: undefined })
+  lastReorder?: SupplierReorder;
 
   @Prop({ trim: true })
   location?: string;
