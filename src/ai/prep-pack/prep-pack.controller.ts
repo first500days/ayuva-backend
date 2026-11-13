@@ -1,11 +1,11 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ConsentGuard } from '../../auth/guards/consent.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { PrepPackService } from './prep-pack.service';
-import { PrepPackResponseDto } from './dto/prep-pack.dto';
+import { PrepPackResponseDto, UpdatePrepPackDto } from './dto/prep-pack.dto';
 
 // MOCK implementation (TRD §6, docs/AI_INTEGRATION_CONTRACT.md)
 @ApiTags('AI - Prep Pack')
@@ -23,5 +23,19 @@ export class PrepPackController {
     @Param('appointmentId') appointmentId: string,
   ): Promise<PrepPackResponseDto> {
     return this.prepPackService.get(user.sub, appointmentId);
+  }
+
+  @Put(':appointmentId')
+  @ApiOperation({
+    summary:
+      'Save symptom notes and what to include; the pack (with its preparation ticks) comes back',
+  })
+  @ApiOkResponse({ type: PrepPackResponseDto })
+  update(
+    @CurrentUser() user: JwtPayload,
+    @Param('appointmentId') appointmentId: string,
+    @Body() dto: UpdatePrepPackDto,
+  ): Promise<PrepPackResponseDto> {
+    return this.prepPackService.update(user.sub, appointmentId, dto);
   }
 }
