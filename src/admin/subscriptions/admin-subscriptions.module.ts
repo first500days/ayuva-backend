@@ -11,11 +11,13 @@ import {
 } from './schemas/subscription.schema';
 import { AdminSubscriptionsController } from './admin-subscriptions.controller';
 import { AdminSubscriptionsService } from './admin-subscriptions.service';
+import { MyPlanModule } from '../../core/plans/my-plan.module';
 
 @Module({
   imports: [
     AuthModule,
     AuditLogModule,
+    MyPlanModule,
     MongooseModule.forFeature([
       { name: Plan.name, schema: PlanSchema },
       { name: Subscription.name, schema: SubscriptionSchema },

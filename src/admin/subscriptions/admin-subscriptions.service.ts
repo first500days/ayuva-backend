@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -10,6 +10,7 @@ import {
   SubscriptionStatus,
 } from './schemas/subscription.schema';
 import { User, UserDocument } from '../../core/users/schemas/user.schema';
+import { PlanUpdatesService } from '../../core/plans/plan-updates.service';
 import {
   AssignSubscriptionDto,
   CreatePlanDto,
@@ -47,6 +48,8 @@ export class AdminSubscriptionsService {
     @InjectModel(Plan.name) private readonly planModel: Model<PlanDocument>,
     @InjectModel(Subscription.name) private readonly subModel: Model<SubscriptionDocument>,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    // Optional for hand-built test modules.
+    @Optional() private readonly planUpdates?: PlanUpdatesService,
   ) {}
 
   async listPlans() {
@@ -78,6 +81,8 @@ export class AdminSubscriptionsService {
     const plan = await this.getPlanOrThrow(id);
     Object.assign(plan, dto);
     await plan.save();
+    // Subscribers' apps pick up the new features and limits straight away.
+    await this.planUpdates?.announce({ planId: plan.id });
     return this.toPlan(plan);
   }
 
@@ -127,6 +132,7 @@ export class AdminSubscriptionsService {
       startedAt: now,
       renewsAt: plan.priceMonthly > 0 ? new Date(now.getTime() + 30 * 86_400_000) : undefined,
     });
+    await this.planUpdates?.announce({ userIds: [dto.userId] });
     return { id: sub.id, planName: plan.name, status: sub.status };
   }
 
@@ -142,6 +148,7 @@ export class AdminSubscriptionsService {
       sub.cancelledAt = undefined;
     }
     await sub.save();
+    await this.planUpdates?.announce({ userIds: [sub.userId.toString()] });
     return { id: sub.id, status: sub.status };
   }
 

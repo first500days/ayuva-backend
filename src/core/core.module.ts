@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { UsersModule } from './users/users.module';
 import { HealthProfileModule } from './health-profile/health-profile.module';
 import { ProfileModule } from './profile/profile.module';
+import { MyPlanModule } from './plans/my-plan.module';
 import { MedicationsModule } from './medications/medications.module';
 import { ProvidersModule } from './providers/providers.module';
 import { AppointmentsModule } from './appointments/appointments.module';
@@ -28,6 +29,7 @@ import { FamilyModule } from './family/family.module';
     UsersModule,
     HealthProfileModule,
     ProfileModule,
+    MyPlanModule,
     MedicationsModule,
     ProvidersModule,
     AppointmentsModule,
