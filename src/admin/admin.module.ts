@@ -25,6 +25,7 @@ import { AdminDiagnosticTestsModule } from './diagnostic-tests/admin-diagnostic-
 import { AdminLabDeliveriesModule } from './lab-deliveries/admin-lab-deliveries.module';
 import { AdminSubscriptionsModule } from './subscriptions/admin-subscriptions.module';
 import { AdminLiveModule } from './live/admin-live.module';
+import { AdminSessionsModule } from './sessions/admin-sessions.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { AdminLiveModule } from './live/admin-live.module';
     AdminLabDeliveriesModule,
     AdminSubscriptionsModule,
     AdminLiveModule,
+    AdminSessionsModule,
   ],
 })
 export class AdminModule {}
