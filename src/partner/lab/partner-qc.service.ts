@@ -6,6 +6,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { LiveBus } from '../../common/live/live-bus.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import { PartnerNotifierService } from '../notify/partner-notifier.service';
@@ -43,6 +44,7 @@ export class PartnerQcService {
     private readonly runModel: Model<QcRunDocument>,
     private readonly notifier: PartnerNotifierService,
     private readonly audit: AuditLogService,
+    private readonly live: LiveBus,
   ) {}
 
   /** Materials with today's status: run or not, and the latest outcome. */
@@ -243,6 +245,8 @@ export class PartnerQcService {
   }
 
   private record(actor: PartnerActor, targetId: string, label: string) {
+    // QC state gates report release and colours the QC tab: refresh every lab screen.
+    this.live.publish(actor.provider._id, 'lab');
     return this.audit.record({
       actorId: actor.userId,
       action: AuditAction.PARTNER_LAB_QC,

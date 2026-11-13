@@ -6,6 +6,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { LiveBus } from '../../common/live/live-bus.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import { PartnerNotifierService } from '../notify/partner-notifier.service';
@@ -56,6 +57,7 @@ export class PartnerColdChainService {
     private readonly orderModel: Model<LabOrderDocument>,
     private readonly notifier: PartnerNotifierService,
     private readonly audit: AuditLogService,
+    private readonly live: LiveBus,
   ) {}
 
   async list(actor: PartnerActor, q: ColdChainQueryDto) {
@@ -292,6 +294,7 @@ export class PartnerColdChainService {
     run: ColdChainRunDocument,
     label: string,
   ) {
+    this.live.publish(actor.provider._id, 'lab');
     return this.audit.record({
       actorId: actor.userId,
       action: AuditAction.PARTNER_COLD_CHAIN,

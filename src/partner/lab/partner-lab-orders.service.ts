@@ -19,6 +19,7 @@ import { AppNotificationsService } from '../../notifications/app-notifications.s
 import { StorageService } from '../../storage/storage.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { recentPast } from '../../common/utils/recent-past';
+import { LiveBus } from '../../common/live/live-bus.service';
 import {
   AuditAction,
   AuditLog,
@@ -156,6 +157,7 @@ export class PartnerLabOrdersService {
     private readonly coldChain: PartnerColdChainService,
     @InjectModel(AuditLog.name)
     private readonly auditModel: Model<AuditLogDocument>,
+    private readonly live: LiveBus,
   ) {}
 
   async list(actor: PartnerActor, q: LabOrdersQueryDto) {
@@ -791,6 +793,7 @@ export class PartnerLabOrdersService {
       note: `Critical value called out to ${dto.notifiedName.trim()}${how ? ` ${how}` : ''}${dto.readBack ? ' (read back)' : ''}`,
     });
     await order.save();
+    this.live.publish(actor.provider._id, 'lab');
     await this.audit.record({
       actorId: actor.userId,
       action: AuditAction.PARTNER_LAB_CRITICAL_CALLOUT,
@@ -1269,6 +1272,7 @@ export class PartnerLabOrdersService {
     barcode: string,
     metadata: Record<string, unknown>,
   ) {
+    this.live.publish(actor.provider._id, 'lab');
     return this.audit.record({
       actorId: actor.userId,
       action,
@@ -1322,11 +1326,13 @@ export class PartnerLabOrdersService {
     throw new Error('Could not allocate an order number');
   }
 
+  /** Every order change comes through here, so lab dashboards and queues refresh live. */
   private record(
     actor: PartnerActor,
     order: LabOrderDocument,
     metadata: Record<string, unknown>,
   ) {
+    this.live.publish(actor.provider._id, 'lab');
     return this.audit.record({
       actorId: actor.userId,
       action: AuditAction.PARTNER_LAB_ORDER_UPDATE,

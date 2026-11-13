@@ -9,6 +9,7 @@ import { Model, Types } from 'mongoose';
 import { MedicalRecordType } from '../../core/records/schemas/medical-record.schema';
 import { ALLOWED_RECORD_MIME_TYPES } from '../../core/records/records.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { LiveBus } from '../../common/live/live-bus.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import { PartnerNotifierService } from '../notify/partner-notifier.service';
@@ -113,6 +114,7 @@ export class PartnerLabResultsService {
     private readonly notifySettings: PartnerNotifySettingsService,
     private readonly audit: AuditLogService,
     private readonly reportDispatch: ReportDispatchService,
+    private readonly live: LiveBus,
   ) {}
 
   /** The saved draft/released result, or a blank template built from the catalogue's parameters. */
@@ -240,6 +242,8 @@ export class PartnerLabResultsService {
       });
       await order.save();
     }
+    // Critical counts, the pipeline and the Report Builder list move on every lab screen.
+    this.live.publish(actor.provider._id, 'lab');
     return this.toResponse(result, order);
   }
 
@@ -319,6 +323,7 @@ export class PartnerLabResultsService {
         }),
       },
     );
+    this.live.publish(actor.provider._id, 'lab');
     return { ...this.toResponse(result, order), trendLink, dispatch };
   }
 
@@ -371,6 +376,7 @@ export class PartnerLabResultsService {
       record._id,
       critical,
     );
+    this.live.publish(actor.provider._id, 'lab');
     return { ...this.toResponse(result, order), dispatch };
   }
 
