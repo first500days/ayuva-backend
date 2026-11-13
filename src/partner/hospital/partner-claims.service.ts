@@ -8,6 +8,7 @@ import { Model, Types } from 'mongoose';
 import { randomBytes } from 'node:crypto';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
+import { LiveBus } from '../../common/live/live-bus.service';
 import { buildSafeRegex } from '../../common/utils/regex.util';
 import { PartnerActor } from '../rbac/partner-perm.guard';
 import { PartnerPatientsService } from '../clinical/partner-patients.service';
@@ -59,6 +60,7 @@ export class PartnerClaimsService {
     private readonly admissionModel: Model<AdmissionDocument>,
     private readonly patients: PartnerPatientsService,
     private readonly audit: AuditLogService,
+    private readonly live: LiveBus,
   ) {}
 
   async list(actor: PartnerActor, q: ClaimsQueryDto) {
@@ -129,6 +131,7 @@ export class PartnerClaimsService {
       change: 'created',
       amount: claim.amountClaimed,
     });
+    this.live.publish(actor.provider._id, 'billing');
     return this.toResponse(claim);
   }
 
@@ -147,6 +150,7 @@ export class PartnerClaimsService {
     for (const [k, v] of Object.entries(dto))
       if (v !== undefined) claim.set(k, v);
     await claim.save();
+    this.live.publish(actor.provider._id, 'billing');
     return this.toResponse(claim);
   }
 
@@ -201,6 +205,8 @@ export class PartnerClaimsService {
       amountApproved: claim.amountApproved,
       amountSettled: claim.amountSettled,
     });
+    // Approvals and settlements move the earnings split on every open Billing screen.
+    this.live.publish(actor.provider._id, 'billing');
     return this.toResponse(claim);
   }
 
