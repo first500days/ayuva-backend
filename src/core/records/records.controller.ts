@@ -30,6 +30,7 @@ import { ConsentGuard } from '../../auth/guards/consent.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { RecordsService } from './records.service';
+import { LabTrendsService } from './lab-trends.service';
 import { UploadRecordDto } from './dto/upload-record.dto';
 import { QueryRecordsDto } from './dto/query-records.dto';
 import { UpdateRecordDto } from './dto/update-record.dto';
@@ -50,7 +51,10 @@ const MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // 15MB
 @UseGuards(JwtAuthGuard, ConsentGuard)
 @Controller('records')
 export class RecordsController {
-  constructor(private readonly recordsService: RecordsService) {}
+  constructor(
+    private readonly recordsService: RecordsService,
+    private readonly labTrends: LabTrendsService,
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -99,6 +103,16 @@ export class RecordsController {
     @Query() query: QueryRecordsDto,
   ): Promise<MedicalRecordResponseDto[]> {
     return this.recordsService.findAll(user.sub, query);
+  }
+
+  // Declared before ':id' so the path isn't read as a record id.
+  @Get('lab-trends')
+  @ApiOperation({
+    summary:
+      'Lab values over time per test from released partner lab reports, with where the latest sits against the reference range and a plain, rule-based description',
+  })
+  labTrendsList(@CurrentUser() user: JwtPayload) {
+    return this.labTrends.forPatient(user.sub);
   }
 
   @Get(':id/file')

@@ -15,6 +15,12 @@ import {
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { RecordsController } from './records.controller';
 import { RecordsService } from './records.service';
+import { LabTrendsService } from './lab-trends.service';
+import {
+  LabResult,
+  LabResultSchema,
+} from '../../partner/lab/schemas/lab-result.schema';
+import { Provider, ProviderSchema } from '../providers/schemas/provider.schema';
 import { AuthModule } from '../../auth/auth.module';
 import { StorageModule } from '../../storage/storage.module';
 import { AuditLogModule } from '../../audit-log/audit-log.module';
@@ -31,10 +37,12 @@ import { NotificationsModule } from '../../notifications/notifications.module';
       { name: Appointment.name, schema: AppointmentSchema },
       { name: ReportInterpretation.name, schema: ReportInterpretationSchema },
       { name: User.name, schema: UserSchema },
+      { name: LabResult.name, schema: LabResultSchema },
+      { name: Provider.name, schema: ProviderSchema },
     ]),
   ],
   controllers: [RecordsController],
-  providers: [RecordsService],
+  providers: [RecordsService, LabTrendsService],
   exports: [MongooseModule, RecordsService],
 })
 export class RecordsModule {}
