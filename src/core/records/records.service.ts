@@ -37,6 +37,7 @@ import {
   FILENAME_TYPE_PATTERNS,
   type DocumentDetection,
 } from './document-detect';
+import { autoTags } from './auto-tags';
 import { readDocumentText } from './document-text';
 import { simplifyDocument, type PlainLanguageGuide } from './plain-language';
 import { parseQuestion } from './ask-records';
@@ -182,7 +183,17 @@ export class RecordsService {
       mimeType: file.mimetype,
       type,
       kind,
-      tags: options.tags ?? [],
+      // A patient's own document is tagged from what was read off it, so nothing needs typing.
+      tags:
+        kind === MedicalRecordKind.ORIGINAL
+          ? autoTags({
+              existing: options.tags,
+              providerName,
+              attendingPhysician: detected?.attendingPhysician?.value,
+              procedureType: detected?.procedureType?.value,
+              recordDate,
+            })
+          : (options.tags ?? []),
       ...(source && { derivedFromRecordId: source._id }),
       ...(options.appointmentId && {
         attachedAppointmentId: new Types.ObjectId(options.appointmentId),
