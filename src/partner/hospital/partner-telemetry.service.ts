@@ -8,6 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { createHash, randomBytes } from 'node:crypto';
 import { Model, Types } from 'mongoose';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { recentPast } from '../../common/utils/recent-past';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { LiveBus } from '../../common/live/live-bus.service';
 import { buildPanel, type LabPoint } from '../clinical/lab-panel';
@@ -330,14 +331,17 @@ export class PartnerTelemetryService {
   // ── Patients ──────────────────────────────────────────────────────────────
 
   async recordVitals(actor: PartnerActor, id: string, dto: RecordVitalsDto) {
-    if (!Object.values(dto).some((v) => v !== undefined))
+    const { takenAt, ...readings } = dto;
+    if (!Object.values(readings).some((v) => v !== undefined))
       throw new BadRequestException('Enter at least one reading');
+    // Charted while the ward was offline: keep when they were really taken.
+    const at = recentPast(takenAt) ?? new Date();
     const a = await this.loadAdmitted(actor, id);
     await this.vitalModel.create({
-      ...dto,
+      ...readings,
       providerId: actor.provider._id,
       admissionId: a._id,
-      at: new Date(),
+      at,
       source: 'manual',
       byName: actor.member.fullName,
     });

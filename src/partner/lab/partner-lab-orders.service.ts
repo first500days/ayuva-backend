@@ -18,6 +18,7 @@ import {
 import { AppNotificationsService } from '../../notifications/app-notifications.service';
 import { StorageService } from '../../storage/storage.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { recentPast } from '../../common/utils/recent-past';
 import {
   AuditAction,
   AuditLog,
@@ -582,7 +583,8 @@ export class PartnerLabOrdersService {
     if (sample.stage === stage)
       return { outcome: 'already' as const, barcode, ...view() };
 
-    const now = new Date();
+    // A scan made while the station was offline keeps the time it happened.
+    const now = recentPast(dto.at) ?? new Date();
     const by = actor.member.fullName;
     sample.stage = stage;
     sample.events.push({ at: now, stage, byName: by, ...(note && { note }) });

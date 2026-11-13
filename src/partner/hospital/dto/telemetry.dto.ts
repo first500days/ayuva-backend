@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsIn,
+  IsISO8601,
   IsMongoId,
   IsNumber,
   IsOptional,
@@ -79,4 +80,11 @@ export class RecordVitalsDto {
   @IsIn(['A', 'C', 'V', 'P', 'U'])
   avpu?: 'A' | 'C' | 'V' | 'P' | 'U';
   @ApiPropertyOptional() @IsOptional() @IsBoolean() onOxygen?: boolean;
+  @ApiPropertyOptional({
+    description:
+      'When the readings were taken, for entries saved on the device while offline (within 12 hours)',
+  })
+  @IsOptional()
+  @IsISO8601()
+  takenAt?: string;
 }

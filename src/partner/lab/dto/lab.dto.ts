@@ -588,6 +588,14 @@ export class TrackScanDto {
   @IsString()
   @MaxLength(200)
   note?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'When the scan happened, for scans saved on the device while offline (within 12 hours)',
+  })
+  @IsOptional()
+  @IsISO8601()
+  at?: string;
 }
 
 export class PrintLabelsDto {
