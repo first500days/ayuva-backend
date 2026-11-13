@@ -20,6 +20,7 @@ import {
   UpdateAssetDto,
 } from './dto/stores.dto';
 import { dueState, nextDue } from './asset-schedule';
+import { normaliseTag } from './asset-tracking';
 
 const DAY = 24 * 60 * 60 * 1000;
 const STATUS_ORDER: Record<AssetStatus, number> = {
@@ -92,12 +93,15 @@ export class PartnerAssetsService {
         calibrationIntervalDays: dto.calibrationIntervalDays || undefined,
         lastCalibratedAt: lastCal,
         nextCalibrationDue: nextDue(lastCal, dto.calibrationIntervalDays),
+        trackerTag: normaliseTag(dto.trackerTag) ?? undefined,
       });
       await this.record(actor, asset, { change: 'asset_added' });
       return this.toResponse(asset, new Date());
     } catch (err) {
       if ((err as { code?: number }).code === 11000)
-        throw new ConflictException(`Asset tag ${dto.tag} is already in use`);
+        throw new ConflictException(
+          `Asset tag ${dto.tag} or tracker tag ${dto.trackerTag ?? ''} is already in use`,
+        );
       throw err;
     }
   }
@@ -111,6 +115,11 @@ export class PartnerAssetsService {
       let value: unknown = v === '' ? undefined : v;
       if ((DATE_FIELDS as readonly string[]).includes(k))
         value = typeof v === 'string' && v ? new Date(v) : undefined;
+      if (k === 'trackerTag') {
+        value = normaliseTag(v) ?? undefined;
+        // A new tag means the old location no longer describes this machine.
+        if (value !== asset.trackerTag) asset.set('lastSeen', undefined);
+      }
       asset.set(k, value);
       changed.push(k);
     }
@@ -137,7 +146,15 @@ export class PartnerAssetsService {
         dto.status === AssetStatus.CONDEMNED ? 'condemned' : 'restored',
       );
     }
-    await asset.save();
+    try {
+      await asset.save();
+    } catch (err) {
+      if ((err as { code?: number }).code === 11000)
+        throw new ConflictException(
+          `Tracker tag ${dto.trackerTag ?? ''} is already on another machine`,
+        );
+      throw err;
+    }
     if (changed.length)
       await this.record(actor, asset, {
         change: 'asset_updated',
@@ -242,6 +259,14 @@ export class PartnerAssetsService {
           ? 'none'
           : dueState(a.nextCalibrationDue, today),
       status: a.status,
+      trackerTag: a.trackerTag ?? null,
+      lastSeen: a.lastSeen
+        ? {
+            at: a.lastSeen.at.toISOString(),
+            zone: a.lastSeen.zone,
+            rssi: a.lastSeen.rssi ?? null,
+          }
+        : null,
       downtimeHours90d: logs
         .filter((l) => l.at.getTime() >= since)
         .reduce((n, l) => n + (l.downtimeHours ?? 0), 0),

@@ -35,6 +35,11 @@ import type { StockReason } from '../schemas/stock-move.schema';
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 
+/** Empty (to clear), or a beacon MAC / iBeacon id / RFID EPC. */
+export const TRACKER_TAG = /^$|^[A-Za-z0-9:_.-]{4,64}$/;
+export const TRACKER_TAG_MESSAGE =
+  'The tracker tag is the beacon MAC or RFID code: 4–64 letters, digits or : . _ -';
+
 /** Empty (to clear), or a phone number: +country code, or 10 Indian digits; spaces and dashes allowed. */
 export const SUPPLIER_PHONE = /^$|^\+?[\d\s-]{10,18}$/;
 export const SUPPLIER_PHONE_MESSAGE =
@@ -506,6 +511,14 @@ export class CreateAssetDto {
   @Max(3650)
   calibrationIntervalDays?: number;
   @ApiPropertyOptional() @IsOptional() @IsISO8601() lastCalibratedAt?: string;
+  @ApiPropertyOptional({
+    description: 'BLE beacon id / MAC or RFID EPC on the machine',
+    example: 'AC:23:3F:A1:02:9B',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @Matches(TRACKER_TAG, { message: TRACKER_TAG_MESSAGE })
+  trackerTag?: string;
 }
 
 export class UpdateAssetDto {
@@ -577,6 +590,75 @@ export class UpdateAssetDto {
   @IsOptional()
   @IsIn([AssetStatus.CONDEMNED, AssetStatus.OPERATIONAL])
   status?: AssetStatus;
+  @ApiPropertyOptional({ description: '"" removes the tracker tag' })
+  @IsOptional()
+  @Transform(trim)
+  @Matches(TRACKER_TAG, { message: TRACKER_TAG_MESSAGE })
+  trackerTag?: string;
+}
+
+/** A BLE / RFID reader fixed in a room or area. */
+export class CreateTrackingGatewayDto {
+  @ApiProperty({ example: 'ICU reader 1' })
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  name: string;
+  @ApiProperty({
+    example: 'ICU bay 2',
+    description: 'The room or area it covers',
+  })
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  zone: string;
+}
+
+export class UpdateTrackingGatewayDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  name?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  zone?: string;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
+}
+
+export class AssetPingDto {
+  @ApiProperty({ example: 'AC:23:3F:A1:02:9B' })
+  @IsString()
+  @MaxLength(64)
+  tag: string;
+  @ApiPropertyOptional({ example: -61, description: 'Signal strength, dBm' })
+  @IsOptional()
+  @IsNumber()
+  @Min(-127)
+  @Max(20)
+  rssi?: number;
+  @ApiPropertyOptional({ description: 'When it was heard (defaults to now)' })
+  @IsOptional()
+  @IsISO8601()
+  at?: string;
+}
+
+/** What one gateway heard since its last post. */
+export class AssetPingsDto {
+  @ApiProperty({ type: [AssetPingDto] })
+  @IsArray()
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => AssetPingDto)
+  pings: AssetPingDto[];
 }
 
 export class LogMaintenanceDto {

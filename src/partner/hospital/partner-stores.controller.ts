@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   Param,
   Patch,
@@ -9,7 +10,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiHeader,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -25,9 +31,13 @@ import { StoreKind } from './schemas/stock-item.schema';
 import { PartnerStockService } from './partner-stock.service';
 import { PartnerPharmacyService } from './partner-pharmacy.service';
 import { PartnerAssetsService } from './partner-assets.service';
+import { PartnerAssetTrackingService } from './partner-asset-tracking.service';
 import {
   AdjustStockDto,
+  AssetPingsDto,
   CreateAssetDto,
+  CreateTrackingGatewayDto,
+  UpdateTrackingGatewayDto,
   CreateStockItemDto,
   IssueStockDto,
   LogMaintenanceDto,
@@ -175,6 +185,7 @@ export class PartnerSupplyController {
   constructor(
     private readonly stock: PartnerStockService,
     private readonly assets: PartnerAssetsService,
+    private readonly tracking: PartnerAssetTrackingService,
   ) {}
 
   @Get('items')
@@ -264,6 +275,40 @@ export class PartnerSupplyController {
     return this.assets.list(a);
   }
 
+  @Get('assets/gateways')
+  @RequirePerm(Perm.SUPPLY_VIEW)
+  @ApiOperation({ summary: 'BLE / RFID readers and the rooms they cover' })
+  listGateways(@PartnerCtx() a: PartnerActor) {
+    return this.tracking.listGateways(a);
+  }
+
+  @Post('assets/gateways')
+  @RequirePerm(Perm.SUPPLY_MANAGE)
+  @ApiOperation({ summary: 'Add a reader; its key is returned once' })
+  createGateway(
+    @PartnerCtx() a: PartnerActor,
+    @Body() dto: CreateTrackingGatewayDto,
+  ) {
+    return this.tracking.createGateway(a, dto);
+  }
+
+  @Patch('assets/gateways/:id')
+  @RequirePerm(Perm.SUPPLY_MANAGE)
+  updateGateway(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: UpdateTrackingGatewayDto,
+  ) {
+    return this.tracking.updateGateway(a, id, dto);
+  }
+
+  @Post('assets/gateways/:id/rotate-key')
+  @HttpCode(200)
+  @RequirePerm(Perm.SUPPLY_MANAGE)
+  rotateGatewayKey(@PartnerCtx() a: PartnerActor, @Param('id') id: string) {
+    return this.tracking.rotateKey(a, id);
+  }
+
   @Post('assets')
   @RequirePerm(Perm.SUPPLY_MANAGE)
   createAsset(@PartnerCtx() a: PartnerActor, @Body() dto: CreateAssetDto) {
@@ -289,5 +334,26 @@ export class PartnerSupplyController {
     @Body() dto: LogMaintenanceDto,
   ) {
     return this.assets.log(a, id, dto);
+  }
+}
+
+/** Machine endpoint for BLE / RFID gateways (no user session; the gateway key identifies it). */
+@ApiTags('Asset tracking')
+@Controller('asset-tracking')
+export class AssetTrackingIngestController {
+  constructor(private readonly tracking: PartnerAssetTrackingService) {}
+
+  @Post('pings')
+  @HttpCode(200)
+  @ApiHeader({ name: 'x-gateway-key', required: true })
+  @ApiOperation({
+    summary:
+      'Tags a gateway heard (beacon MAC / RFID EPC, optional RSSI); moves each tagged machine to the gateway’s room',
+  })
+  pings(
+    @Headers('x-gateway-key') key: string | undefined,
+    @Body() dto: AssetPingsDto,
+  ) {
+    return this.tracking.ingest(key, dto);
   }
 }

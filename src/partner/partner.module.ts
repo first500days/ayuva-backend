@@ -137,14 +137,18 @@ import { Dispense, DispenseSchema } from './hospital/schemas/dispense.schema';
 import { PartnerStockService } from './hospital/partner-stock.service';
 import { PartnerPharmacyService } from './hospital/partner-pharmacy.service';
 import {
+  AssetTrackingIngestController,
   PartnerPharmacyController,
   PartnerSupplyController,
 } from './hospital/partner-stores.controller';
 import {
   PartnerAsset,
   PartnerAssetSchema,
+  PartnerTrackingGateway,
+  PartnerTrackingGatewaySchema,
 } from './hospital/schemas/asset.schema';
 import { PartnerAssetsService } from './hospital/partner-assets.service';
+import { PartnerAssetTrackingService } from './hospital/partner-asset-tracking.service';
 import { ErVisit, ErVisitSchema } from './hospital/schemas/er-visit.schema';
 import { PartnerErService } from './hospital/partner-er.service';
 import { PartnerErController } from './hospital/partner-er.controller';
@@ -281,6 +285,10 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
       { name: StockMove.name, schema: StockMoveSchema },
       { name: Dispense.name, schema: DispenseSchema },
       { name: PartnerAsset.name, schema: PartnerAssetSchema },
+      {
+        name: PartnerTrackingGateway.name,
+        schema: PartnerTrackingGatewaySchema,
+      },
       { name: ErVisit.name, schema: ErVisitSchema },
       { name: OtRoom.name, schema: OtRoomSchema },
       { name: OtCase.name, schema: OtCaseSchema },
@@ -314,6 +322,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerHospitalController,
     PartnerPharmacyController,
     PartnerSupplyController,
+    AssetTrackingIngestController,
     PartnerErController,
     PartnerOtController,
     PartnerLisController,
@@ -369,6 +378,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerStockService,
     PartnerPharmacyService,
     PartnerAssetsService,
+    PartnerAssetTrackingService,
     PartnerErService,
     PartnerOtService,
     PartnerLisService,
