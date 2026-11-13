@@ -85,6 +85,12 @@ import { PartnerPrescriptionsService } from './clinical/partner-prescriptions.se
 import { Referral, ReferralSchema } from './referrals/schemas/referral.schema';
 import { PartnerReferralsService } from './referrals/partner-referrals.service';
 import {
+  PriorAuth,
+  PriorAuthSchema,
+} from './referrals/schemas/prior-auth.schema';
+import { PartnerPriorAuthService } from './referrals/partner-prior-auth.service';
+import { PartnerPriorAuthController } from './referrals/partner-prior-auth.controller';
+import {
   LabCatalogItem,
   LabCatalogItemSchema,
 } from './lab/schemas/lab-catalog-item.schema';
@@ -261,6 +267,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
       { name: ConsultationNote.name, schema: ConsultationNoteSchema },
       { name: Prescription.name, schema: PrescriptionSchema },
       { name: Referral.name, schema: ReferralSchema },
+      { name: PriorAuth.name, schema: PriorAuthSchema },
       { name: LabCatalogItem.name, schema: LabCatalogItemSchema },
       { name: LabInventoryItem.name, schema: LabInventoryItemSchema },
       { name: PartnerLabOrder.name, schema: PartnerLabOrderSchema },
@@ -301,6 +308,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerLetterheadController,
     PartnerClinicalController,
     PartnerReferralsController,
+    PartnerPriorAuthController,
     PartnerLabController,
     PartnerHospitalController,
     PartnerPharmacyController,
@@ -338,6 +346,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerNotesService,
     PartnerPrescriptionsService,
     PartnerReferralsService,
+    PartnerPriorAuthService,
     PartnerLabCatalogService,
     PartnerLabInventoryService,
     PartnerLabOrdersService,

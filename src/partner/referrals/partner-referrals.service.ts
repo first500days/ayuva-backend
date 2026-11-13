@@ -39,6 +39,7 @@ import {
   DirectoryQueryDto,
   ReferralsQueryDto,
 } from './dto/referral.dto';
+import { PartnerPriorAuthService } from './partner-prior-auth.service';
 
 const LIVE = [ProviderStatus.ACTIVE, ProviderStatus.VERIFIED];
 const TYPE_LABEL: Record<ReferralType, string> = {
@@ -66,6 +67,7 @@ export class PartnerReferralsService {
     private readonly labOrders: PartnerLabOrdersService,
     private readonly audit: AuditLogService,
     private readonly live: LiveBus,
+    private readonly priorAuth: PartnerPriorAuthService,
   ) {}
 
   /** Verified Ayuva organisations a patient can be referred to. */
@@ -301,6 +303,20 @@ export class PartnerReferralsService {
       change: referral.status,
       ...(orderNote && { orderNote }),
     });
+    // A hospital accepting an admission gets its cashless pre-auth drafted in the
+    // background — a provisional draft only; the insurance desk approves before anything is sent.
+    if (
+      decision === 'accept' &&
+      actor.orgType === OrgType.HOSPITAL &&
+      referral.type === ReferralType.ADMISSION
+    )
+      void this.priorAuth
+        .draftForReferral(actor, referral.id, { auto: true })
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `Pre-auth draft for ${referral.referralNo} failed: ${String(err)}`,
+          ),
+        );
     return {
       ...this.toResponse(referral, actor),
       orderNote: orderNote ?? null,
