@@ -15,6 +15,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   Min,
   MinLength,
   ValidateNested,
@@ -162,6 +163,24 @@ export class PartnerFollowUpDto {
   @ApiProperty({ description: 'An OPEN slot belonging to this provider' })
   @IsString()
   slotId: string;
+}
+
+/** Front desk books a patient already linked to the organisation (referral, booking, share…) into a slot. */
+export class PartnerBookDto {
+  @ApiProperty() @IsMongoId() patientId: string;
+
+  @ApiProperty({ description: 'An OPEN slot belonging to this provider' })
+  @IsMongoId()
+  slotId: string;
+
+  @ApiPropertyOptional({ description: 'The incoming referral this booking answers' })
+  @IsOptional()
+  @IsMongoId()
+  referralId?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsMongoId() memberId?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(80) department?: string;
 }
 
 export class PartnerSlotsQueryDto {

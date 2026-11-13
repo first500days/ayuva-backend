@@ -60,6 +60,7 @@ import {
   AssignAppointmentDto,
   PartnerAppointmentsQueryDto,
   PartnerBlockSlotDto,
+  PartnerBookDto,
   PartnerDaySlotsQueryDto,
   PartnerFollowUpDto,
   PartnerPaymentsQueryDto,
@@ -348,6 +349,17 @@ export class PartnerController {
     @Query() q: PartnerAppointmentsQueryDto,
   ) {
     return this.appointments.list(u.sub, q);
+  }
+
+  @Post('appointments')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Book a linked patient into an open slot (inline scheduler in the referral / dashboard drawers)',
+  })
+  book(@PartnerCtx() actor: PartnerActor, @Body() dto: PartnerBookDto) {
+    return this.appointments.book(actor, dto);
   }
 
   @Post('appointments/:id/assign')
