@@ -1,10 +1,10 @@
+import { ClientIp } from '../common/request-context/client-ip.decorator';
 import {
   Body,
   Controller,
   Delete,
   HttpCode,
   HttpStatus,
-  Ip,
   Post,
   Put,
   UseGuards,
@@ -57,7 +57,7 @@ export class AuthController {
   @ApiOkResponse({ type: AuthTokensResponseDto })
   login(
     @Body() dto: LoginDto,
-    @Ip() ip: string,
+    @ClientIp() ip: string | undefined,
   ): Promise<AuthTokensResponseDto | AdminMfaChallengeDto> {
     return this.authService.login(dto, ip);
   }

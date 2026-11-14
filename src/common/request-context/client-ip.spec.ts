@@ -1,4 +1,4 @@
-import { clientIp, isLocalIp, normaliseIp } from './client-ip';
+import { clientIp, isLocalIp, normaliseIp, isLoopbackIp, displayIp } from './client-ip';
 
 describe('clientIp', () => {
   it('unwraps IPv4-mapped IPv6 and ports', () => {
@@ -23,5 +23,23 @@ describe('clientIp', () => {
   });
   it('returns the loopback when nothing better exists', () => {
     expect(clientIp({ ip: '::1', headers: {} })).toBe('::1');
+  });
+});
+
+describe('loopback addresses are never shown or stored as the caller', () => {
+  it('recognises 127.x, ::1 and ::', () => {
+    expect(isLoopbackIp('127.0.0.1')).toBe(true);
+    expect(isLoopbackIp('127.0.1.1')).toBe(true);
+    expect(isLoopbackIp('::1')).toBe(true);
+    expect(isLoopbackIp('::')).toBe(true);
+    expect(isLoopbackIp('49.36.10.2')).toBe(false);
+    expect(isLoopbackIp('10.0.0.4')).toBe(false);
+  });
+
+  it('displays nothing for a loopback string, the address otherwise', () => {
+    expect(displayIp('::ffff:127.0.0.1')).toBeUndefined();
+    expect(displayIp('::1')).toBeUndefined();
+    expect(displayIp('::ffff:49.36.10.2')).toBe('49.36.10.2');
+    expect(displayIp(undefined)).toBeUndefined();
   });
 });

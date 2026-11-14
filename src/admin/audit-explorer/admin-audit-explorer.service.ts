@@ -1,3 +1,4 @@
+import { displayIp } from '../../common/request-context/client-ip';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -37,6 +38,9 @@ const CRITICAL_ACTIONS: AuditAction[] = [
   AuditAction.ACCOUNT_DELETED,
   AuditAction.RECORD_DELETE,
 ];
+
+/** Loopback strings written before addresses were read through the proxy. */
+const LOOPBACK = ['127.0.0.1', '::1', '::ffff:127.0.0.1', '::'];
 
 @Injectable()
 export class AdminAuditExplorerService {
@@ -89,7 +93,7 @@ export class AdminAuditExplorerService {
     return {
       items: logs.map((l) => {
         const actorId = String((l.actorId as any)?._id ?? l.actorId ?? '');
-        const network = networkOf(l.ipAddress);
+        const network = networkOf(displayIp(l.ipAddress));
         const at: Date = (l as any).createdAt ?? new Date();
         return {
           id: l._id.toString(),
@@ -105,7 +109,7 @@ export class AdminAuditExplorerService {
           targetId: l.targetId?.toString() || '',
           timestamp: at.toISOString(),
           metadata: l.metadata || {},
-          ipAddress: l.ipAddress || 'Not recorded',
+          ipAddress: displayIp(l.ipAddress) ?? 'Not recorded',
           network,
           unrecognisedNetwork: isUnrecognised(
             at,
@@ -142,7 +146,7 @@ export class AdminAuditExplorerService {
         {
           $match: {
             actorId: { $in: ids.map((id) => new Types.ObjectId(id)) },
-            ipAddress: { $nin: [null, ''] },
+            ipAddress: { $nin: [null, '', ...LOOPBACK] },
             createdAt: {
               $gte: new Date(Date.now() - NETWORK_MEMORY_DAYS * DAY),
             },
@@ -215,7 +219,10 @@ export class AdminAuditExplorerService {
         ])
         .exec(),
       this.auditModel
-        .find({ createdAt: { $gte: since }, ipAddress: { $nin: [null, ''] } })
+        .find({
+          createdAt: { $gte: since },
+          ipAddress: { $nin: [null, '', ...LOOPBACK] },
+        })
         .select('actorId ipAddress createdAt')
         .sort({ createdAt: -1 })
         .limit(2000)

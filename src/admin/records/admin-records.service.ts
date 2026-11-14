@@ -14,6 +14,11 @@ import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { QueryAdminRecordsDto } from './dto/query-admin-records.dto';
 import { AdminRecordResponseDto } from './dto/admin-record-response.dto';
 import { buildSafeRegex } from '../../common/utils/regex.util';
+import { displayIp } from '../../common/request-context/client-ip';
+import {
+  AccessLog,
+  AccessLogDocument,
+} from '../../core/sharing/schemas/access-log.schema';
 
 @Injectable()
 export class AdminRecordsService {
@@ -22,6 +27,8 @@ export class AdminRecordsService {
     private readonly medicalRecordModel: Model<MedicalRecordDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @InjectModel(AccessLog.name)
+    private readonly accessLogModel: Model<AccessLogDocument>,
     private readonly auditLogService: AuditLogService,
   ) {}
 
@@ -167,45 +174,44 @@ export class AdminRecordsService {
     ];
   }
 
+  /**
+   * Record access audit: partner staff opening, downloading or being granted a
+   * patient's records, newest first, with the viewer's public address (rows
+   * written before addresses were captured show "Not recorded").
+   */
   async getAccessLogs() {
-    return [
-      {
-        id: 'ACC-4001',
-        recordId: 'rec_ecg_01',
-        recordName: 'Resting_12_Lead_ECG.pdf',
-        patientName: 'Rahul Sharma',
-        accessorName: 'Dr. Arvind Menon',
-        accessorRole: 'Consulting Cardiologist',
-        purpose: 'Pre-appointment diagnostic evaluation',
-        ipAddress: '103.21.244.12',
-        accessedAt: '2026-08-20T09:14:22Z',
-        authStatus: 'authorized',
-      },
-      {
-        id: 'ACC-4002',
-        recordId: 'rec_thy_02',
-        recordName: 'Thyroid_Profile_Report.pdf',
-        patientName: 'Ananya Iyer',
-        accessorName: 'Dr. Priya Desai',
-        accessorRole: 'Treating Physician',
-        purpose: 'Dosage adjustment consultation',
-        ipAddress: '115.112.89.54',
-        accessedAt: '2026-08-19T16:02:10Z',
-        authStatus: 'authorized',
-      },
-      {
-        id: 'ACC-4003',
-        recordId: 'rec_mri_03',
-        recordName: 'Lumbar_Spine_MRI.dcm',
-        patientName: 'Sanjay Dutt',
-        accessorName: 'Unverified External Portal IP',
-        accessorRole: 'Third-party API Client',
-        purpose: 'Direct API request without active consent token',
-        ipAddress: '185.220.101.5',
-        accessedAt: '2026-08-19T02:11:45Z',
-        authStatus: 'blocked',
-      },
-    ];
+    const rows = await this.accessLogModel
+      .find({ action: { $in: ['viewed', 'downloaded', 'granted', 'revoked', 'expired'] } })
+      .sort({ occurredAt: -1 })
+      .limit(200)
+      .lean()
+      .exec();
+    const patientIds = [...new Set(rows.map((r) => String(r.userId)))];
+    const patients = await this.userModel
+      .find({ _id: { $in: patientIds.map((id) => new Types.ObjectId(id)) } })
+      .select('fullName')
+      .lean()
+      .exec();
+    const nameOf = new Map(patients.map((u) => [String(u._id), u.fullName ?? 'Patient']));
+    const ACTION: Record<string, string> = {
+      viewed: 'Opened under the patient’s share',
+      downloaded: 'Downloaded under the patient’s share',
+      granted: 'Share granted by the patient',
+      revoked: 'Share revoked by the patient',
+      expired: 'Share expired',
+    };
+    return rows.map((r) => ({
+      id: String(r._id),
+      recordId: r.grantId,
+      recordName: r.recordTitle,
+      patientName: nameOf.get(String(r.userId)) ?? 'Patient',
+      accessorName: r.viewerName ?? r.organisationName,
+      accessorRole: r.organisationName,
+      purpose: ACTION[r.action] ?? r.action,
+      ipAddress: displayIp(r.ipAddress) ?? 'Not recorded',
+      accessedAt: r.occurredAt ? new Date(r.occurredAt).toISOString() : null,
+      authStatus: 'authorized',
+    }));
   }
 
   async archive(id: string) {

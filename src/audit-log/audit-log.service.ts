@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { currentIp, isLocalIp, normaliseIp } from '../common/request-context/client-ip';
+import {
+  currentIp,
+  isLocalIp,
+  isLoopbackIp,
+  normaliseIp,
+} from '../common/request-context/client-ip';
 import { AuditAction, AuditLog, AuditLogDocument } from './schemas/audit-log.schema';
 
 export interface RecordAuditEventParams {
@@ -23,7 +28,9 @@ export class AuditLogService {
   /** A caller-supplied loopback or private address is replaced by the real one seen on the request. */
   private resolveIp(given?: string): string | undefined {
     const ip = normaliseIp(given);
-    return ip && !isLocalIp(ip) ? ip : (currentIp() ?? ip);
+    const resolved = ip && !isLocalIp(ip) ? ip : (currentIp() ?? ip);
+    // 127.0.0.1 / ::1 is this server, not the person: record nothing rather than that.
+    return resolved && !isLoopbackIp(resolved) ? resolved : undefined;
   }
 
   async record(params: RecordAuditEventParams): Promise<void> {

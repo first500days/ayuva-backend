@@ -1,10 +1,10 @@
+import { ClientIp } from '../../common/request-context/client-ip.decorator';
 import {
   Body,
   Controller,
   Get,
   Headers,
   HttpCode,
-  Ip,
   Param,
   Patch,
   Post,
@@ -113,7 +113,7 @@ export class LisIngestController {
   ingest(
     @Headers('x-analyser-key') key: string | undefined,
     @Body() dto: IngestMessageDto,
-    @Ip() ip: string,
+    @ClientIp() ip: string | undefined,
   ) {
     return this.analysers.ingest(key, dto.message, ip);
   }

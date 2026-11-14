@@ -1,3 +1,4 @@
+import { displayIp } from '../../common/request-context/client-ip';
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -395,7 +396,7 @@ export class PartnerSecurityService {
           patientId: pid,
           patientName: pid ? (patientName.get(pid) ?? 'Patient') : null,
           target: this.describeTarget(r),
-          ip: r.ipAddress ?? null,
+          ip: displayIp(r.ipAddress) ?? null,
         };
       }),
     ];

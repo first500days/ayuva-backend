@@ -1,3 +1,4 @@
+import { clientIp } from '../../common/request-context/client-ip';
 import {
   Body,
   Controller,
@@ -70,7 +71,7 @@ export class PublicReportLinksController {
     @Body() dto: VerifyReportCodeDto,
     @Req() req: Request,
   ) {
-    return this.links.verifyCode(token, dto.code.trim(), req.ip);
+    return this.links.verifyCode(token, dto.code.trim(), clientIp(req));
   }
 
   @Post(':token/renew')

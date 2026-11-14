@@ -1,7 +1,7 @@
+import { ClientIp } from '../../../common/request-context/client-ip.decorator';
 import {
   Controller,
   Headers,
-  Ip,
   Param,
   PayloadTooLargeException,
   Post,
@@ -62,7 +62,7 @@ export class StowController {
     @Headers('x-analyser-key') keyHeader: string | undefined,
     @Headers('authorization') authorization: string | undefined,
     @Headers('content-type') contentType: string | undefined,
-    @Ip() ip: string,
+    @ClientIp() ip: string | undefined,
     @Param('study') _study?: string,
   ) {
     const key = keyHeader ?? /^Bearer\s+(\S+)$/i.exec(authorization ?? '')?.[1];

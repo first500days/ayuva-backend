@@ -14,6 +14,18 @@ export function normaliseIp(raw: string | undefined | null): string | undefined 
   return ip;
 }
 
+/** 127.x, ::1 and ::: this machine, never the caller. Never stored in audit records. */
+export function isLoopbackIp(ip: string | undefined): boolean {
+  const v = (ip ?? '').toLowerCase();
+  return v === '::1' || v === '::' || v.startsWith('127.') || v === 'localhost';
+}
+
+/** For display: a stored address, or nothing when it was only ever a loopback string. */
+export function displayIp(raw: string | undefined | null): string | undefined {
+  const ip = normaliseIp(raw);
+  return ip && !isLoopbackIp(ip) ? ip : undefined;
+}
+
 /** Loopback and private ranges: never a real device address. */
 export function isLocalIp(ip: string | undefined): boolean {
   if (!ip) return true;
