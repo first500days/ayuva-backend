@@ -1,3 +1,5 @@
+import { parseCv } from './cv-parse';
+import { readDocumentText } from '../core/records/document-text';
 import { PartnerDigestService } from './clinical/partner-digest.service';
 import { RecordViewKeysService } from './record-view-keys.service';
 import { PartnerPreVisitService } from './clinical/partner-pre-visit.service';
@@ -6,6 +8,7 @@ import {
   Controller,
   Delete,
   Get,
+  BadRequestException,
   HttpCode,
   Param,
   Patch,
@@ -178,6 +181,29 @@ export class PartnerController {
       file,
       dto.docType ?? CredentialDocType.MEDICAL_LICENSE,
     );
+  }
+
+  @Post('profile/parse-cv')
+  @HttpCode(200)
+  @ApiConsumes('multipart/form-data')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.ORG_SETTINGS)
+  @ApiOperation({
+    summary:
+      'Read a CV or credential (PDF or text) and suggest qualifications, specialties, experience, registration number and languages for the profile form. Nothing is saved.',
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_CREDENTIAL_BYTES },
+    }),
+  )
+  async parseCv(@UploadedFile() file: Express.Multer.File | undefined) {
+    if (!file) throw new BadRequestException('Attach a CV or credential');
+    const text = await readDocumentText(file.buffer, file.mimetype).catch(
+      () => '',
+    );
+    return parseCv(text);
   }
 
   @Patch('profile')
