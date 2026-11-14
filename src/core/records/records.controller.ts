@@ -32,6 +32,7 @@ import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { RecordsService } from './records.service';
 import { LabTrendsService } from './lab-trends.service';
 import { ScanExplainService } from './scan-explain.service';
+import { ScanViewKeysService } from './scan-view-keys.service';
 import { UploadRecordDto } from './dto/upload-record.dto';
 import { QueryRecordsDto } from './dto/query-records.dto';
 import { UpdateRecordDto } from './dto/update-record.dto';
@@ -56,6 +57,7 @@ export class RecordsController {
     private readonly recordsService: RecordsService,
     private readonly labTrends: LabTrendsService,
     private readonly scanExplain: ScanExplainService,
+    private readonly scanKeys: ScanViewKeysService,
   ) {}
 
   @Post()
@@ -173,6 +175,16 @@ export class RecordsController {
   })
   explainScanFor(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.scanExplain.explain(user.sub, id);
+  }
+
+  @Post(':id/view-key')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'A single-use, 60-second link (GET /scan-view?key=) for the in-app scan viewer; imaging studies only',
+  })
+  scanViewKey(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.scanKeys.issue(user.sub, id);
   }
 
   @Post('ask')

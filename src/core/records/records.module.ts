@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import {
   MedicalRecord,
@@ -17,6 +18,8 @@ import { RecordsController } from './records.controller';
 import { RecordsService } from './records.service';
 import { LabTrendsService } from './lab-trends.service';
 import { ScanExplainService } from './scan-explain.service';
+import { ScanViewKeysService } from './scan-view-keys.service';
+import { ScanViewController } from './scan-view.controller';
 import {
   ConsultationNote,
   ConsultationNoteSchema,
@@ -48,9 +51,15 @@ import { NotificationsModule } from '../../notifications/notifications.module';
       { name: ConsultationNote.name, schema: ConsultationNoteSchema },
     ]),
     AiInteractionLogModule,
+    JwtModule.register({}),
   ],
-  controllers: [RecordsController],
-  providers: [RecordsService, LabTrendsService, ScanExplainService],
+  controllers: [RecordsController, ScanViewController],
+  providers: [
+    RecordsService,
+    LabTrendsService,
+    ScanExplainService,
+    ScanViewKeysService,
+  ],
   exports: [MongooseModule, RecordsService],
 })
 export class RecordsModule {}
