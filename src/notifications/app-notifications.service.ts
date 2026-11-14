@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { CASCADE_TRIGGERS } from './alert-cascade';
+import { UserPushService } from './user-push.service';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -40,6 +42,8 @@ export class AppNotificationsService {
     private readonly notificationModel: Model<AppNotificationDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    // Pushes alerts that start the cascade. Optional for hand-built test modules.
+    @Optional() private readonly push?: UserPushService,
   ) {}
 
   /** U11 feed; `category` is the filter tab (omit for All). */
@@ -114,12 +118,44 @@ export class AppNotificationsService {
       actionParams?: Record<string, string>;
     },
   ): Promise<void> {
-    await this.notificationModel.create({
+    const n = await this.notificationModel.create({
       userId: new Types.ObjectId(userId),
       ...data,
       category: data.category ?? 'general',
       actionLabel: data.actionLabel ?? 'View',
     });
+    // Alerts with no delivery of their own: push now, WhatsApp then SMS if unread.
+    if (CASCADE_TRIGGERS.has(data.trigger)) await this.startCascade(n, data);
+  }
+
+  private async startCascade(
+    n: AppNotificationDocument,
+    data: { title: string; lockScreenText: string; actionRoute: string; actionParams?: Record<string, string> },
+  ): Promise<void> {
+    try {
+      const user = await this.userModel.findById(n.userId).select('notificationPrefs').lean().exec();
+      const prefs = withDefaults(user?.notificationPrefs);
+      let devices = 0;
+      if (prefs.push && this.push) {
+        const res = await this.push.send(n.userId.toString(), {
+          // The lock screen shows only the neutral line unless the person allowed more.
+          title: prefs.hideSensitiveOnLockScreen ? 'AYUVA' : data.title,
+          body: data.lockScreenText,
+          data: {
+            type: 'app_notification',
+            notificationId: n.id,
+            route: data.actionRoute,
+            ...(data.actionParams ?? {}),
+          },
+        });
+        devices = res.devices;
+      }
+      n.delivery = { cascade: true, pushedAt: new Date(), pushDevices: devices };
+      n.markModified('delivery');
+      await n.save();
+    } catch {
+      // The in-app alert is already saved; the cascade is best effort.
+    }
   }
 
   /** Fans one in-app notification out to every active admin (e.g. a partner awaiting verification). */

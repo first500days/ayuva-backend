@@ -59,6 +59,20 @@ export class AppNotification {
   @Prop({ default: false })
   read: boolean;
 
+  // The push → WhatsApp → SMS cascade for alerts that would otherwise only sit
+  // in the app (alert-cascade.ts): when each step went and how many phones the
+  // push reached (0 = no app, so the cascade moves on at once).
+  @Prop({ type: Object })
+  delivery?: {
+    cascade: boolean;
+    pushedAt?: Date;
+    pushDevices?: number;
+    whatsappAt?: Date;
+    whatsappSent?: boolean;
+    smsAt?: Date;
+    smsSent?: boolean;
+  };
+
   occurredAt?: Date;
 }
 

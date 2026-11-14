@@ -1,3 +1,4 @@
+import { AlertCascadeService } from './alert-cascade.service';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { DeviceToken, DeviceTokenSchema } from './schemas/device-token.schema';
@@ -65,6 +66,7 @@ import { PublicReportLinksController } from './report-delivery/public-report-lin
     UserPushService,
     ReportLinksService,
     ReportDispatchService,
+    AlertCascadeService,
   ],
   exports: [
     ReminderQueueService,
