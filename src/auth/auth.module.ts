@@ -1,3 +1,7 @@
+import {
+  FamilyAccess,
+  FamilyAccessSchema,
+} from '../core/family/schemas/family-access.schema';
 import { TokenRevocationService } from './services/token-revocation.service';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -40,6 +44,8 @@ import { MailModule } from '../mail/mail.module';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },
+      // Family profiles shared with a second adult, and their permission level.
+      { name: FamilyAccess.name, schema: FamilyAccessSchema },
       // Admin sign-in resolves the admin's role and permissions.
       { name: AdminUser.name, schema: AdminUserSchema },
       { name: Role.name, schema: RoleSchema },

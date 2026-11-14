@@ -1,7 +1,9 @@
+import { FamilyAccessService } from './family-access.service';
 import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -35,6 +37,8 @@ export class FamilyService {
     @InjectModel(HealthProfile.name)
     private readonly profileModel: Model<HealthProfileDocument>,
     private readonly audit: AuditLogService,
+    // Optional for hand-built test modules.
+    @Optional() private readonly access?: FamilyAccessService,
   ) {}
 
   async list(userId: string) {
@@ -77,6 +81,16 @@ export class FamilyService {
           gender: p?.gender ?? null,
         };
       }),
+      // Profiles another guardian gave this account access to, with the level.
+      ...((await this.access?.sharedWith(userId)) ?? []).map((m) => ({
+        id: m.id,
+        fullName: m.fullName,
+        relation: m.relation,
+        self: false,
+        age: null,
+        gender: null,
+        sharedLevel: m.level,
+      })),
     ];
   }
 

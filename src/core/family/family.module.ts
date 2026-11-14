@@ -9,6 +9,11 @@ import {
 } from '../health-profile/schemas/health-profile.schema';
 import { FamilyController } from './family.controller';
 import { FamilyService } from './family.service';
+import { FamilyAccessService } from './family-access.service';
+import {
+  FamilyAccess,
+  FamilyAccessSchema,
+} from './schemas/family-access.schema';
 
 @Module({
   imports: [
@@ -17,9 +22,10 @@ import { FamilyService } from './family.service';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: HealthProfile.name, schema: HealthProfileSchema },
+      { name: FamilyAccess.name, schema: FamilyAccessSchema },
     ]),
   ],
   controllers: [FamilyController],
-  providers: [FamilyService],
+  providers: [FamilyService, FamilyAccessService],
 })
 export class FamilyModule {}

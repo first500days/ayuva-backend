@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsEmail,
   IsIn,
   IsISO8601,
   IsOptional,
@@ -49,4 +50,20 @@ export class UpdateFamilyMemberDto {
   @IsOptional()
   @IsIn(FAMILY_RELATIONS)
   relation?: string;
+}
+
+export class GrantFamilyAccessDto {
+  @ApiProperty({ description: 'Email of the AYUVA account to give access to' })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ enum: ['view', 'manage'] })
+  @IsIn(['view', 'manage'])
+  level: 'view' | 'manage';
+}
+
+export class UpdateFamilyAccessDto {
+  @ApiProperty({ enum: ['view', 'manage'] })
+  @IsIn(['view', 'manage'])
+  level: 'view' | 'manage';
 }

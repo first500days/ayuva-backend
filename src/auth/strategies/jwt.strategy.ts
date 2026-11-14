@@ -1,6 +1,11 @@
 import {
+  FamilyAccess,
+  FamilyAccessDocument,
+} from '../../core/family/schemas/family-access.schema';
+import {
   ForbiddenException,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -41,6 +46,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     config: ConfigService,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly revocation: TokenRevocationService,
+    @Optional()
+    @InjectModel(FamilyAccess.name)
+    private readonly familyAccessModel?: Model<FamilyAccessDocument>,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -103,8 +111,28 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         managedBy: new Types.ObjectId(payload.sub),
         status: UserStatus.ACTIVE,
       }));
-    if (!manages)
-      throw new ForbiddenException('You don’t manage this family profile');
+    if (!manages) {
+      // Access another guardian gave this account, with its permission level.
+      const shared = Types.ObjectId.isValid(profile)
+        ? await this.familyAccessModel
+            ?.findOne({
+              profileId: new Types.ObjectId(profile),
+              userId: new Types.ObjectId(payload.sub),
+            })
+            .select('level')
+            .lean()
+            .exec()
+        : null;
+      if (!shared)
+        throw new ForbiddenException('You don’t manage this family profile');
+      if (
+        shared.level === 'view' &&
+        !['GET', 'HEAD', 'OPTIONS'].includes(req.method)
+      )
+        throw new ForbiddenException(
+          'You can view this family profile but not make changes for it',
+        );
+    }
     return { ...payload, sub: profile, guardian: payload.sub };
   }
 }
