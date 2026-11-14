@@ -9,6 +9,13 @@ class PlainTermDto {
       'A hormone from the brain that tells your thyroid gland how hard to work.',
   })
   plain: string;
+
+  @ApiProperty({
+    required: false,
+    example: 'Typical adult range: about 0.4–4.0 mIU/L',
+    description: 'Only when the document prints no range of its own for this test',
+  })
+  typicalRange?: string;
 }
 
 class ValueReadingDto {

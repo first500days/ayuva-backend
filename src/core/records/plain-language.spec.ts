@@ -79,3 +79,17 @@ describe('simplifyDocument', () => {
     });
   });
 });
+
+describe('simplifyDocument: shorthand and typical ranges', () => {
+  it('explains report shorthand and gives a typical range only when none is printed', () => {
+    const g = simplifyDocument(
+      'Impression: WNL. S/O mild fatty liver on USG.\nTSH 3.1 uIU/mL\nHaemoglobin 12.4 g/dL 12.0 - 15.0',
+    );
+    const by = (t: string) => g.terms.find((x) => x.term === t);
+    expect(by('WNL')?.plain).toMatch(/within normal limits/);
+    expect(by('S/O')).toBeDefined();
+    expect(by('USG')).toBeDefined();
+    expect(by('TSH')?.typicalRange).toMatch(/^Typical adult range/);
+    expect(by('Haemoglobin')?.typicalRange).toBeUndefined();
+  });
+});

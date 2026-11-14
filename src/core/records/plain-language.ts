@@ -9,6 +9,11 @@
 export interface PlainTerm {
   term: string;
   plain: string;
+  /**
+   * A commonly quoted adult range, given only when the document prints no
+   * range of its own for this test. Labs differ; the report's range wins.
+   */
+  typicalRange?: string;
 }
 
 export interface ValueReading {
@@ -319,16 +324,125 @@ const GLOSSARY: Array<[RegExp, string, string]> = [
   [/\btds\b|\btid\b/i, 'TDS', 'Three times a day.'],
   [/\bod\b/i, 'OD', 'Once a day.'],
   [/\bhs\b/i, 'HS', 'At bedtime.'],
+  [/\bqid\b|\bqds\b/i, 'QID', 'Four times a day.'],
+  [/\bprn\b/i, 'PRN', 'Only when needed.'],
+  [/\bstat\b/i, 'STAT', 'Straight away.'],
+  [/\bb\/f\b|\bbefore food\b/i, 'B/F', 'Before food.'],
+  [/\ba\/f\b|\bafter food\b/i, 'A/F', 'After food.'],
+  [/\bnbm\b|\bnpo\b/i, 'NBM / NPO', 'Nothing to eat or drink.'],
+  // Report shorthand
+  [/\bwnl\b/i, 'WNL', 'Short for "within normal limits".'],
+  [/\bnad\b/i, 'NAD', 'Short for "no abnormality detected".'],
+  [
+    /\bs\/o\b|suggestive of/i,
+    'S/O',
+    'Short for "suggestive of": what the findings point towards. Your doctor confirms it.',
+  ],
+  [
+    /\br\/o\b|rule out/i,
+    'R/O',
+    'Short for "rule out": something the doctor wants to check isn’t there.',
+  ],
+  [/\bdx\b/i, 'Dx', 'Short for "diagnosis".'],
+  [/\bhx\b/i, 'Hx', 'Short for "history".'],
+  [/\brx\b/i, 'Rx', 'Short for "prescription" or "treatment".'],
+  [/\btx\b/i, 'Tx', 'Short for "treatment".'],
+  [/\bsob\b/i, 'SOB', 'Short for "shortness of breath".'],
+  [/\bhtn\b/i, 'HTN', 'Short for "hypertension": high blood pressure.'],
+  [
+    /\bcad\b/i,
+    'CAD',
+    'Short for "coronary artery disease": narrowing of the blood vessels that feed the heart.',
+  ],
+  [
+    /\bcopd\b/i,
+    'COPD',
+    'A long-term lung condition that makes breathing out harder.',
+  ],
+  // Tests and scans by their short names
+  [
+    /\bcbc\b|\bcbp\b|\bh(a)?emogram\b/i,
+    'CBC',
+    'Complete blood count: a set of tests on your red cells, white cells and platelets.',
+  ],
+  [/\blft\b/i, 'LFT', 'Liver function tests: a group of blood tests about the liver.'],
+  [/\bkft\b|\brft\b/i, 'KFT / RFT', 'Kidney function tests: a group of blood tests about the kidneys.'],
+  [/\btft\b/i, 'TFT', 'Thyroid function tests.'],
+  [/\busg\b|\bultrasound\b|\bsonograph/i, 'USG', 'Ultrasound: pictures made with sound waves, no radiation.'],
+  [/\bCT\b/, 'CT', 'A scan that uses X-rays to make detailed pictures in slices.'],
+  [/\bmri\b/i, 'MRI', 'A scan that makes detailed pictures with magnets and radio waves, no X-rays.'],
+  [/\becg\b|\bekg\b/i, 'ECG', 'A recording of the heart’s electrical activity.'],
+  [/\b(2d )?echo(cardiogra(m|phy))?\b/i, 'ECHO', 'An ultrasound scan of the heart.'],
+  [
+    /\blvef\b|\bejection fraction\b/i,
+    'LVEF',
+    'Ejection fraction: how much blood the heart’s main pumping chamber pushes out with each beat.',
+  ],
+  [/\bnsr\b|normal sinus rhythm/i, 'NSR', 'Normal sinus rhythm: a regular heartbeat pattern.'],
+  [/\bspo2\b|\bsp02\b/i, 'SpO₂', 'How much oxygen your blood is carrying.'],
+  [/\bbmi\b/i, 'BMI', 'Body mass index: your weight compared with your height.'],
+  [/\bbp\b/i, 'BP', 'Blood pressure.'],
+  // Units
+  [/\bmg\/dl\b/i, 'mg/dL', 'Milligrams per decilitre: how much of a substance is in a set amount of blood.'],
+  [/\bg\/dl\b/i, 'g/dL', 'Grams per decilitre: how much of a substance is in a set amount of blood.'],
+  [/\bmmol\/l\b/i, 'mmol/L', 'Millimoles per litre: another way of measuring how much is in your blood.'],
+  [/\bu\/l\b|\biu\/l\b/i, 'U/L', 'Units per litre: how active an enzyme is in your blood.'],
+  [
+    /reference (range|interval)|biological reference|\bref\.? range/i,
+    'Reference range',
+    'The span of results this lab usually sees in healthy people. Being just outside it isn’t always a problem.',
+  ],
 ];
 
-const MAX_TERMS = 25;
+/**
+ * Commonly quoted adult ranges, shown only when the document prints none for
+ * that test. Rough guides: labs, methods, age and sex all shift them.
+ */
+const TYPICAL_RANGES: Record<string, string> = {
+  Haemoglobin: 'about 12–15.5 g/dL for women, 13.5–17.5 g/dL for men',
+  'White blood cells (WBC)': 'about 4,000–11,000 per µL',
+  Platelets: 'about 1.5–4.5 lakh per µL',
+  ESR: 'about 0–20 mm in the first hour',
+  CRP: 'usually below 6 mg/L',
+  HbA1c: 'below 5.7%',
+  'Fasting blood sugar': 'about 70–99 mg/dL',
+  'Post-meal blood sugar (PP)': 'below 140 mg/dL',
+  Cholesterol: 'below 200 mg/dL',
+  'LDL cholesterol': 'below 100 mg/dL',
+  'HDL cholesterol': '40 mg/dL or more for men, 50 mg/dL or more for women',
+  Triglycerides: 'below 150 mg/dL',
+  Creatinine: 'about 0.6–1.2 mg/dL',
+  eGFR: '90 or more',
+  'Urea / BUN': 'urea about 15–40 mg/dL (BUN about 7–20 mg/dL)',
+  'Uric acid': 'about 3.5–7.2 mg/dL',
+  'ALT (SGPT)': 'about 7–56 U/L',
+  'AST (SGOT)': 'about 10–40 U/L',
+  'Alkaline phosphatase (ALP)': 'about 44–147 U/L',
+  Bilirubin: 'total about 0.1–1.2 mg/dL',
+  Albumin: 'about 3.5–5.0 g/dL',
+  TSH: 'about 0.4–4.0 mIU/L',
+  T3: 'about 80–200 ng/dL',
+  T4: 'about 5–12 µg/dL',
+  'Vitamin D': 'about 30–100 ng/mL',
+  'Vitamin B12': 'about 200–900 pg/mL',
+  Ferritin: 'about 20–250 ng/mL, lower for women',
+};
 
-function termsIn(text: string): PlainTerm[] {
+const MAX_TERMS = 40;
+
+function termsIn(text: string, values: ValueReading[]): PlainTerm[] {
   const found: PlainTerm[] = [];
   for (const [pattern, term, plain] of GLOSSARY) {
     if (found.length >= MAX_TERMS) break;
-    if (pattern.test(text) && !found.some((t) => t.term === term))
-      found.push({ term, plain });
+    if (!pattern.test(text) || found.some((t) => t.term === term)) continue;
+    const typical = TYPICAL_RANGES[term];
+    // The report's own range, when it prints one, is the one that counts.
+    const printed = values.some((v) => pattern.test(v.name));
+    found.push(
+      typical && !printed
+        ? { term, plain, typicalRange: `Typical adult range: ${typical}` }
+        : { term, plain },
+    );
   }
   return found;
 }
@@ -369,5 +483,6 @@ export function simplifyDocument(text: string): PlainLanguageGuide {
   const clean = text.split(String.fromCharCode(0)).join('');
   const textRead = clean.replace(/\s/g, '').length >= 20;
   if (!textRead) return { textRead, terms: [], values: [] };
-  return { textRead, terms: termsIn(clean), values: valuesIn(clean) };
+  const values = valuesIn(clean);
+  return { textRead, terms: termsIn(clean, values), values };
 }
