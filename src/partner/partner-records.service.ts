@@ -13,6 +13,7 @@ import {
   MedicalRecord,
   MedicalRecordDocument,
   recordSystemFileName,
+  recordTitle,
 } from '../core/records/schemas/medical-record.schema';
 import { User, UserDocument } from '../core/users/schemas/user.schema';
 import {
@@ -96,8 +97,8 @@ export class PartnerRecordsService {
     };
   }
 
-  /** Decrypts and returns one granted record file; logged as a download. */
-  async downloadRecord(userId: string, grantId: string, recordId: string) {
+  /** The record, if it falls inside this login's active share now (for issuing a view key). */
+  async assertRecordInShare(userId: string, grantId: string, recordId: string) {
     const provider = await this.context.requireLive(userId);
     const grant = await this.getActiveGrantOrThrow(provider.id, grantId);
     // The record must fall inside the grant's scope now (rolling windows move, records get deleted).
@@ -107,6 +108,12 @@ export class PartnerRecordsService {
         })
       : null;
     if (!record) throw new ForbiddenException('This record was not shared with you');
+    return { grant, record };
+  }
+
+  /** Decrypts and returns one granted record file; logged as a download. */
+  async downloadRecord(userId: string, grantId: string, recordId: string) {
+    const { grant, record } = await this.assertRecordInShare(userId, grantId, recordId);
     const partner = await this.userModel.findById(userId).select('fullName').exec();
 
     const buffer = await this.storage.read(record.fileRef);
@@ -114,7 +121,7 @@ export class PartnerRecordsService {
       userId: grant.userId,
       grantId: grant.id,
       organisationName: grant.organisationName,
-      recordTitle: record.originalFileName,
+      recordTitle: recordTitle(record),
       action: 'downloaded',
       viewerUserId: new Types.ObjectId(userId),
       viewerName: partner?.fullName,

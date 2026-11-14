@@ -1,3 +1,4 @@
+import { RecordViewKeysService } from './record-view-keys.service';
 import { PartnerPreVisitService } from './clinical/partner-pre-visit.service';
 import {
   Body,
@@ -129,6 +130,7 @@ export class PartnerController {
     private readonly records: PartnerRecordsService,
     private readonly payments: PartnerPaymentsService,
     private readonly preVisitBundles: PartnerPreVisitService,
+    private readonly viewKeys: RecordViewKeysService,
   ) {}
 
   // ── P01/P02 profile, verification status, availability ─────────────────────
@@ -305,6 +307,21 @@ export class PartnerController {
   })
   share(@CurrentUser() u: JwtPayload, @Param('grantId') grantId: string) {
     return this.records.getShare(u.sub, grantId);
+  }
+
+  @Post('shared-records/:grantId/records/:recordId/view-key')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.RECORDS_VIEW)
+  @ApiOperation({
+    summary:
+      'A single-use signed key (60 s) to open one shared record; dies at once if the patient revokes the share',
+  })
+  viewKey(
+    @CurrentUser() u: JwtPayload,
+    @Param('grantId') grantId: string,
+    @Param('recordId') recordId: string,
+  ) {
+    return this.viewKeys.issue(u.sub, grantId, recordId);
   }
 
   @Get('shared-records/:grantId/records/:recordId/file')

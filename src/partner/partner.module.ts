@@ -154,6 +154,8 @@ import { PartnerDischargeReadinessService } from './hospital/partner-discharge-r
 import { PartnerIntakeService } from './clinical/partner-intake.service';
 import { RxRefillService } from './clinical/rx-refill.service';
 import { PartnerPreVisitService } from './clinical/partner-pre-visit.service';
+import { RecordViewKeysService } from './record-view-keys.service';
+import { PartnerRecordViewController } from './record-view.controller';
 import {
   PrepPack,
   PrepPackSchema,
@@ -331,6 +333,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
   controllers: [
     PartnerAuthController,
     PartnerController,
+    PartnerRecordViewController,
     PartnerStaffController,
     PartnerSecurityController,
     PartnerNotifyController,
@@ -413,6 +416,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerIntakeService,
     RxRefillService,
     PartnerPreVisitService,
+    RecordViewKeysService,
     TelemetryIngestGateway,
   ],
 })
