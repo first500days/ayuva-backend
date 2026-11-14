@@ -1,3 +1,4 @@
+import { isEscalated, UNADDRESSED_ISSUE_STATES, waitingMinutes } from '../live/exceptions';
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -346,6 +347,10 @@ export class AdminAnalyticsService {
         name: issue.affectedEntity?.name || 'Unknown' 
       },
       nextAction: this.getNextAction(issue),
+      waitingMin: waitingMinutes((issue as any).createdAt, new Date()),
+      escalated:
+        UNADDRESSED_ISSUE_STATES.includes(String(issue.status).toLowerCase()) &&
+        isEscalated((issue as any).createdAt, new Date()),
     }));
   }
 

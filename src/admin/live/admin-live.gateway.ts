@@ -1,3 +1,4 @@
+import { ExceptionWatchService } from './exception-watch.service';
 import {
   Injectable,
   Logger,
@@ -76,6 +77,7 @@ export class AdminLiveGateway implements OnModuleInit, OnModuleDestroy {
     private readonly pulse: SystemPulseService,
     private readonly bus: LiveBus,
     private readonly revocation: TokenRevocationService,
+    private readonly exceptions: ExceptionWatchService,
   ) {}
 
   onModuleInit(): void {
@@ -83,6 +85,11 @@ export class AdminLiveGateway implements OnModuleInit, OnModuleDestroy {
     this.server.on('connection', (ws: WebSocket) => this.accept(ws));
     this.offs = [
       logTap.onLine((l) => this.forwardLine(l)),
+      // Items unaddressed for 15 minutes become alerts on every open admin screen.
+      this.exceptions.onChange((items, fresh) => {
+        for (const c of this.conns)
+          if (c.userId) this.send(c, { t: 'exceptions', items, fresh });
+      }),
       this.bus.onSessionEnd((e) => {
         for (const c of this.conns)
           if (c.userId === e.userId)
@@ -157,6 +164,10 @@ export class AdminLiveGateway implements OnModuleInit, OnModuleDestroy {
       this.send(conn, { t: 'ready', canLogs: conn.canLogs, everyMs: PULSE_MS });
       this.counted();
       this.send(conn, { t: 'pulse', ...this.pulse.sample() });
+      void this.exceptions
+        .current()
+        .then((items) => this.send(conn, { t: 'exceptions', items, fresh: [] }))
+        .catch(() => undefined);
     } catch {
       conn.ws.close(ADMIN_LIVE_CLOSE.UNAUTHORIZED, 'unauthorized');
     }

@@ -106,4 +106,7 @@ export class AdminProviderResponseDto {
   @ApiPropertyOptional() verifiedAt?: string;
   @ApiPropertyOptional() suspendedAt?: string;
   @ApiPropertyOptional() suspensionReason?: string;
+  /** Verification queue only: minutes since it arrived, and whether it passed 15 minutes unaddressed. */
+  waitingMin?: number;
+  escalated?: boolean;
 }

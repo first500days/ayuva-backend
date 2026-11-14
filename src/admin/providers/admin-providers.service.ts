@@ -1,3 +1,4 @@
+import { isEscalated, waitingMinutes } from '../live/exceptions';
 import {
   BadRequestException,
   Injectable,
@@ -191,7 +192,13 @@ export class AdminProvidersService {
       })
       .sort({ createdAt: 1 })
       .exec();
-    return providers.map((p) => this.toResponse(p));
+    const now = new Date();
+    // Waiting 15 minutes or more turns the row into an alert for the Super-Admin.
+    return providers.map((p) => ({
+      ...this.toResponse(p),
+      waitingMin: waitingMinutes((p as { createdAt?: Date }).createdAt, now),
+      escalated: isEscalated((p as { createdAt?: Date }).createdAt, now),
+    }));
   }
 
   /** Gate before a Partner Portal account goes live: approve -> ACTIVE (patient-visible). */

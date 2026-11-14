@@ -1,3 +1,12 @@
+import { ExceptionWatchService } from './exception-watch.service';
+import {
+  AdminIssue,
+  AdminIssueSchema,
+} from '../operations/schemas/admin-issue.schema';
+import {
+  Provider,
+  ProviderSchema,
+} from '../../core/providers/schemas/provider.schema';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import {
@@ -14,9 +23,11 @@ import { SystemPulseService } from './system-pulse.service';
     AuthModule,
     MongooseModule.forFeature([
       { name: AIInteractionLog.name, schema: AIInteractionLogSchema },
+      { name: AdminIssue.name, schema: AdminIssueSchema },
+      { name: Provider.name, schema: ProviderSchema },
     ]),
   ],
-  providers: [SystemPulseService, AdminLiveGateway],
+  providers: [SystemPulseService, AdminLiveGateway, ExceptionWatchService],
   exports: [SystemPulseService],
 })
 export class AdminLiveModule {}
