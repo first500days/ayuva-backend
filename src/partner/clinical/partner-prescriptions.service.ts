@@ -1,3 +1,4 @@
+import { RxRefillService } from './rx-refill.service';
 import {
   BadRequestException,
   ForbiddenException,
@@ -5,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -78,6 +80,8 @@ export class PartnerPrescriptionsService {
     private readonly config: ConfigService,
     private readonly reminders: ReminderQueueService,
     private readonly live: LiveBus,
+    // Optional for hand-built test modules.
+    @Optional() private readonly refills?: RxRefillService,
   ) {}
 
   async list(actor: PartnerActor, q: PrescriptionsQueryDto) {
@@ -250,6 +254,8 @@ export class PartnerPrescriptionsService {
     rx.status = PrescriptionStatus.SIGNED;
     rx.signatureHash = this.contentHash(rx, actor.userId, signedAt);
     await rx.save();
+    // A push when the course is 85 % done, prompting a follow-up booking.
+    await this.refills?.plan(rx);
 
     const pdf = this.documents.prescriptionPdf(
       rx,
