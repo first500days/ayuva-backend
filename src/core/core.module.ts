@@ -4,6 +4,7 @@ import { HealthProfileModule } from './health-profile/health-profile.module';
 import { ProfileModule } from './profile/profile.module';
 import { MyPlanModule } from './plans/my-plan.module';
 import { WaitlistModule } from './appointments/waitlist/waitlist.module';
+import { PatientLiveModule } from './live/patient-live.module';
 import { MedicationsModule } from './medications/medications.module';
 import { ProvidersModule } from './providers/providers.module';
 import { AppointmentsModule } from './appointments/appointments.module';
@@ -32,6 +33,7 @@ import { FamilyModule } from './family/family.module';
     ProfileModule,
     MyPlanModule,
     WaitlistModule,
+    PatientLiveModule,
     MedicationsModule,
     ProvidersModule,
     AppointmentsModule,

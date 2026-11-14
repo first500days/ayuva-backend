@@ -190,6 +190,34 @@ export class PartnerAppointmentsService {
     return this.one(userId, id, AuditAction.PARTNER_APPOINTMENT_UPDATE, 'rescheduled');
   }
 
+  /**
+   * The desk marks the patient as arrived: the patient's open app updates at
+   * once over its live connection, and a push says they're checked in.
+   */
+  async arrived(userId: string, id: string) {
+    const { appointment } = await this.load(userId, id);
+    if (appointment.status !== AppointmentStatus.CONFIRMED) {
+      throw new BadRequestException('Only a confirmed appointment can be checked in');
+    }
+    if (!appointment.arrivedAt) {
+      appointment.arrivedAt = new Date();
+      await appointment.save();
+    }
+    this.live.toPatient(appointment.patientId.toString(), {
+      t: 'visit',
+      appointmentId: appointment.id,
+      state: 'arrived',
+      at: appointment.arrivedAt.toISOString(),
+    });
+    await this.notify(
+      appointment,
+      'booking_changed',
+      'You’re checked in',
+      'The clinic has marked you as arrived. Please wait to be called.',
+    );
+    return this.one(userId, id, AuditAction.PARTNER_APPOINTMENT_UPDATE, 'arrived');
+  }
+
   async complete(userId: string, id: string) {
     const { appointment } = await this.load(userId, id);
     if (appointment.status !== AppointmentStatus.CONFIRMED) {

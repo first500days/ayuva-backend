@@ -126,6 +126,28 @@ export class LiveBus {
     }
   }
 
+  /** A small status message for one patient's open app (see PatientLiveGateway). Ids and states only. */
+  toPatient(
+    userId: string,
+    message: { t: string } & Record<string, unknown>,
+  ): void {
+    try {
+      this.emitter.emit('patient', { userId, message });
+    } catch {
+      // As above.
+    }
+  }
+
+  onPatient(
+    listener: (e: {
+      userId: string;
+      message: { t: string } & Record<string, unknown>;
+    }) => void,
+  ): () => void {
+    this.emitter.on('patient', listener);
+    return () => this.emitter.off('patient', listener);
+  }
+
   /** A booked slot was released by a cancellation; the waitlist offers it. */
   slotOpened(slotId: string): void {
     try {

@@ -66,6 +66,10 @@ export class Appointment {
   @Prop()
   completedAt?: Date;
 
+  // The clinic checked the patient in ("Arrived") on the day.
+  @Prop()
+  arrivedAt?: Date;
+
   @Prop()
   disputeReason?: string;
 

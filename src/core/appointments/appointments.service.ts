@@ -557,6 +557,7 @@ export class AppointmentsService {
       time: slot?.time ?? '',
       status: appointment.status,
       reminderEnabled: appointment.reminderEnabled,
+      arrivedAt: appointment.arrivedAt?.toISOString() ?? null,
     };
   }
 }

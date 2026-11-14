@@ -385,6 +385,14 @@ export class PartnerController {
     return this.appointments.accept(u.sub, id);
   }
 
+  @Post('appointments/:id/arrived')
+  @HttpCode(200)
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  arrived(@CurrentUser() u: JwtPayload, @Param('id') id: string) {
+    return this.appointments.arrived(u.sub, id);
+  }
+
   @Post('appointments/:id/reject')
   @HttpCode(200)
   @UseGuards(PartnerPermGuard)

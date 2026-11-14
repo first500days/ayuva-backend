@@ -194,6 +194,7 @@ export class PartnerRecordsService {
         assignedMemberId: a.assignedMemberId?.toString() ?? null,
         assignedName: a.assignedName ?? null,
         department: a.department ?? null,
+        arrivedAt: a.arrivedAt?.toISOString() ?? null,
       };
     });
   }
