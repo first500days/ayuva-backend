@@ -539,6 +539,8 @@ export class AuthService {
     if (!user || user.status === UserStatus.INACTIVE) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+    // A locked facility says so, rather than "an administrator ended this session".
+    if (user.role === UserRole.PARTNER) this.assertFacilityOpen(user);
     // Ended by an administrator ("Terminate web tokens").
     const iat = (payload as JwtPayload & { iat?: number }).iat;
     if (

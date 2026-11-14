@@ -66,6 +66,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     req: Request,
     payload: JwtPayload & { iat?: number },
   ): Promise<JwtPayload> {
+    // Partner sessions first, so a locked facility or an idle sign-out says so.
+    if (payload.role === UserRole.PARTNER)
+      await this.assertCurrentSession(payload);
     if (await this.revocation.isRevoked(payload.sub, payload.iat))
       throw new UnauthorizedException(
         `${SESSION_REVOKED}: an administrator ended this session — please sign in again`,
@@ -77,8 +80,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         'Multi-factor authentication is required — please sign in again',
       );
     }
-    if (payload.role === UserRole.PARTNER)
-      await this.assertCurrentSession(payload);
     return this.actingAs(req, payload);
   }
 
