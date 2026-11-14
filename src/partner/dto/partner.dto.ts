@@ -1,3 +1,4 @@
+import { INSURERS } from '../../core/providers/insurance-estimate';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
@@ -16,6 +17,7 @@ import {
   IsString,
   Matches,
   MaxLength,
+  Max,
   Min,
   MinLength,
   ValidateNested,
@@ -82,6 +84,28 @@ class PartnerLocationDto {
 }
 
 /** P02 — editable profile fields. */
+/** One insurer this provider is empanelled with (out-of-pocket estimates in discovery). */
+export class InsurancePanelEntryDto {
+  @ApiProperty({ enum: INSURERS })
+  @IsIn(INSURERS as unknown as string[])
+  insurer: string;
+
+  @ApiProperty({ description: 'The insurer settles directly with the provider' })
+  @IsBoolean()
+  cashless: boolean;
+
+  @ApiProperty({ description: 'Out-patient consultations are covered' })
+  @IsBoolean()
+  opdCovered: boolean;
+
+  @ApiPropertyOptional({ description: 'Patient share, percent of the fee' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  copayPct?: number;
+}
+
 export class UpdatePartnerProfileDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MinLength(2) name?: string;
 
@@ -109,6 +133,14 @@ export class UpdatePartnerProfileDto {
   @ApiPropertyOptional() @IsOptional() @IsString() phone?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() profileImageUrl?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() requiresApproval?: boolean;
+
+  @ApiPropertyOptional({ type: () => [InsurancePanelEntryDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @ValidateNested({ each: true })
+  @Type(() => InsurancePanelEntryDto)
+  insurancePanel?: InsurancePanelEntryDto[];
 
   @ApiPropertyOptional({ type: [PartnerLocationDto] })
   @IsOptional()

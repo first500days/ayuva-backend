@@ -1,3 +1,4 @@
+import { INSURERS } from './insurance-estimate';
 import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -33,14 +34,30 @@ export class ProvidersController {
     return this.providersService.findAll(query, user.sub);
   }
 
+  // Declared before ':id' so the path isn't read as a provider id.
+  @Get('insurers')
+  @ApiOperation({
+    summary: 'Insurers a patient can filter by (out-of-pocket estimates)',
+  })
+  insurers() {
+    return INSURERS;
+  }
+
   @Get(':id')
-  @ApiOperation({ summary: 'Provider profile detail (FR-6.4)' })
+  @ApiOperation({
+    summary:
+      'Provider profile detail (FR-6.4); with ?insurer= also an out-of-pocket estimate',
+  })
   @ApiOkResponse({ type: ProviderResponseDto })
   findOne(
     @Param('id') id: string,
     @CurrentUser() user: JwtPayload,
+    @Query('insurer') insurer?: string,
   ): Promise<ProviderResponseDto> {
-    return this.providersService.findOne(id, user.sub);
+    const known = (INSURERS as readonly string[]).includes(insurer ?? '')
+      ? insurer
+      : undefined;
+    return this.providersService.findOne(id, user.sub, known);
   }
 
   @Post(':id/save')

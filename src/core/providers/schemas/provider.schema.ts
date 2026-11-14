@@ -171,6 +171,15 @@ export class Provider {
   @Prop()
   consultationFee?: number;
 
+  // Insurers this provider is empanelled with, for out-of-pocket estimates in discovery.
+  @Prop({ type: [Object], default: [] })
+  insurancePanel: {
+    insurer: string;
+    cashless: boolean;
+    opdCovered: boolean;
+    copayPct?: number;
+  }[];
+
   @Prop({
     type: String,
     enum: ProviderStatus,

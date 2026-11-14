@@ -56,6 +56,7 @@ const EDITABLE_FIELDS = [
   'requiresApproval',
   'locations',
   'departments',
+  'insurancePanel',
 ] as const;
 
 @Injectable()
@@ -341,6 +342,7 @@ export class PartnerProfileService {
       qualifications: p.qualifications ?? [],
       languages: p.languages,
       experienceYears: p.experienceYears,
+      insurancePanel: p.insurancePanel ?? [],
       consultationFee: p.consultationFee,
       bio: p.bio,
       profileImageUrl: p.profileImageUrl,

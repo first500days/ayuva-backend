@@ -1,3 +1,4 @@
+import { estimateFee } from './insurance-estimate';
 import {
   BadRequestException,
   Injectable,
@@ -62,6 +63,7 @@ export class ProvidersService {
         $or: [{ type: re }, { specialty: re }, ...(await this.taxonomyMatchers(query.specialty))],
       });
     }
+    if (query.insurer) and.push({ 'insurancePanel.insurer': query.insurer });
     if (query.location) {
       const re = buildSafeRegex(query.location);
       and.push({
@@ -79,7 +81,7 @@ export class ProvidersService {
         : { rating: -1 };
 
     const providers = await this.providerModel.find(filter).sort(sort).exec();
-    return providers.map((p) => this.toResponse(p, userId));
+    return providers.map((p) => this.toResponse(p, userId, query.insurer));
   }
 
   /**
@@ -120,9 +122,9 @@ export class ProvidersService {
     return matchers;
   }
 
-  async findOne(id: string, userId: string): Promise<ProviderResponseDto> {
+  async findOne(id: string, userId: string, insurer?: string): Promise<ProviderResponseDto> {
     const provider = await this.getActiveProviderOrThrow(id);
-    return this.toResponse(provider, userId);
+    return this.toResponse(provider, userId, insurer);
   }
 
   async toggleSave(id: string, userId: string): Promise<{ saved: boolean }> {
@@ -201,6 +203,7 @@ export class ProvidersService {
   private toResponse(
     provider: ProviderDocument,
     userId: string,
+    insurer?: string,
   ): ProviderResponseDto {
     return {
       id: provider.id,
@@ -213,6 +216,10 @@ export class ProvidersService {
       avgWaitMinutes: provider.avgWaitMinutes,
       consultationFee: provider.consultationFee,
       saved: provider.savedByUserIds.some((u) => u.toString() === userId),
+      acceptedInsurers: (provider.insurancePanel ?? []).map((p) => p.insurer),
+      ...(insurer && {
+        insuranceEstimate: estimateFee(provider.consultationFee, insurer, provider.insurancePanel ?? []),
+      }),
     };
   }
 }

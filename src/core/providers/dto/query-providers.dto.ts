@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
+import { INSURERS } from '../insurance-estimate';
 
 export enum ProviderSortOption {
   RATING = 'rating',
@@ -38,4 +39,13 @@ export class QueryProvidersDto {
   @IsOptional()
   @IsEnum(ProviderSortOption)
   sort?: ProviderSortOption;
+
+  @ApiPropertyOptional({
+    enum: INSURERS,
+    description:
+      "Only providers on this insurer's panel, each with an estimated out-of-pocket cost",
+  })
+  @IsOptional()
+  @IsIn(INSURERS as unknown as string[])
+  insurer?: string;
 }
