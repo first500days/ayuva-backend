@@ -153,6 +153,11 @@ import { PartnerAssetTrackingService } from './hospital/partner-asset-tracking.s
 import { PartnerDischargeReadinessService } from './hospital/partner-discharge-readiness.service';
 import { PartnerIntakeService } from './clinical/partner-intake.service';
 import { RxRefillService } from './clinical/rx-refill.service';
+import { PartnerPreVisitService } from './clinical/partner-pre-visit.service';
+import {
+  PrepPack,
+  PrepPackSchema,
+} from '../ai/prep-pack/schemas/prep-pack.schema';
 import {
   RxRefillPrompt,
   RxRefillPromptSchema,
@@ -285,6 +290,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
       { name: ConsultationNote.name, schema: ConsultationNoteSchema },
       { name: Prescription.name, schema: PrescriptionSchema },
       { name: RxRefillPrompt.name, schema: RxRefillPromptSchema },
+      { name: PrepPack.name, schema: PrepPackSchema },
       { name: Referral.name, schema: ReferralSchema },
       { name: PriorAuth.name, schema: PriorAuthSchema },
       { name: LabCatalogItem.name, schema: LabCatalogItemSchema },
@@ -406,6 +412,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerDischargeReadinessService,
     PartnerIntakeService,
     RxRefillService,
+    PartnerPreVisitService,
     TelemetryIngestGateway,
   ],
 })

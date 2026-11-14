@@ -1,3 +1,4 @@
+import { LiveBus } from '../../common/live/live-bus.service';
 import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -63,6 +64,7 @@ export class PrepPackService {
     @Optional()
     @InjectModel(DiagnosticTest.name)
     private readonly testModel?: Model<DiagnosticTestDocument>,
+    @Optional() private readonly live?: LiveBus,
   ) {}
 
   async get(userId: string, appointmentId: string): Promise<PrepPackResponseDto> {
@@ -102,6 +104,7 @@ export class PrepPackService {
     });
     if (!pack) throw new NotFoundException('Prep pack not found');
     if (dto.symptomNotes !== undefined) pack.symptomNotes = dto.symptomNotes.trim();
+    if (dto.sendToClinic !== undefined) pack.sendToClinic = dto.sendToClinic;
     if (dto.included) {
       const known = new Set(
         (pack.sections as unknown as PrepPackSectionDto[]).flatMap((s) =>
@@ -115,7 +118,11 @@ export class PrepPackService {
       pack.markModified('included');
     }
     await pack.save();
-    return this.toResponse(pack, await this.ownAppointment(userId, appointmentId));
+    const appointment = await this.ownAppointment(userId, appointmentId);
+    // The clinic's appointment list shows the bundle (or its withdrawal) at once.
+    if (pack.sendToClinic || dto.sendToClinic === false)
+      this.live?.publish(appointment.providerId, 'appointments');
+    return this.toResponse(pack, appointment);
   }
 
   private async ownAppointment(userId: string, appointmentId: string) {
@@ -272,6 +279,7 @@ export class PrepPackService {
       appointmentAt: at?.toISOString(),
       sections,
       symptomNotes: pack.symptomNotes ?? '',
+      sendToClinic: !!pack.sendToClinic,
       preparation: {
         fasting,
         tasks: documentTasks({

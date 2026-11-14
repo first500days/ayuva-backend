@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { PartnerPreVisitService } from './clinical/partner-pre-visit.service';
+import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ShareGrant, ShareGrantDocument } from '../core/sharing/schemas/share-grant.schema';
@@ -39,6 +40,8 @@ export class PartnerRecordsService {
     private readonly storage: StorageService,
     private readonly audit: AuditLogService,
     private readonly context: PartnerContextService,
+    // Optional for hand-built test modules.
+    @Optional() private readonly preVisitSvc?: PartnerPreVisitService,
   ) {}
 
   async listShares(userId: string) {
@@ -170,6 +173,9 @@ export class PartnerRecordsService {
         status: 'active',
       })
       .exec();
+    const preVisit = this.preVisitSvc
+      ? await this.preVisitSvc.submittedIds(appointments.map((a) => a.id))
+      : new Set<string>();
     const sharedByPatient = new Map<string, number>();
     for (const g of grants) {
       if (g.expiresAt && g.expiresAt < new Date()) continue;
@@ -195,6 +201,7 @@ export class PartnerRecordsService {
         assignedName: a.assignedName ?? null,
         department: a.department ?? null,
         arrivedAt: a.arrivedAt?.toISOString() ?? null,
+        preVisit: preVisit.has(a.id),
       };
     });
   }

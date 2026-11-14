@@ -1,3 +1,4 @@
+import { PartnerPreVisitService } from './clinical/partner-pre-visit.service';
 import {
   Body,
   Controller,
@@ -127,6 +128,7 @@ export class PartnerController {
     private readonly appointments: PartnerAppointmentsService,
     private readonly records: PartnerRecordsService,
     private readonly payments: PartnerPaymentsService,
+    private readonly preVisitBundles: PartnerPreVisitService,
   ) {}
 
   // ── P01/P02 profile, verification status, availability ─────────────────────
@@ -383,6 +385,17 @@ export class PartnerController {
   @RequirePerm(Perm.APPOINTMENTS_MANAGE)
   accept(@CurrentUser() u: JwtPayload, @Param('id') id: string) {
     return this.appointments.accept(u.sub, id);
+  }
+
+  @Get('appointments/:id/pre-visit')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_VIEW)
+  @ApiOperation({
+    summary:
+      "The patient's pre-visit bundle (symptom notes, questions, medicines, chosen documents) when they chose to send it",
+  })
+  preVisit(@PartnerCtx() actor: PartnerActor, @Param('id') id: string) {
+    return this.preVisitBundles.forAppointment(actor, id);
   }
 
   @Post('appointments/:id/arrived')

@@ -21,6 +21,11 @@ export class PrepPack {
   // Item id → whether the patient chose to include it (overrides the default).
   @Prop({ type: Object })
   included?: Record<string, boolean>;
+
+  // The patient chose to send their notes, questions and chosen items to the
+  // appointment's clinic before the visit (Partner Portal pre-visit bundle).
+  @Prop({ default: false })
+  sendToClinic: boolean;
 }
 
 export const PrepPackSchema = SchemaFactory.createForClass(PrepPack);

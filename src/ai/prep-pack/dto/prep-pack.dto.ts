@@ -1,4 +1,4 @@
-import { IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import type { FastingWindow, PrepTask } from '../prep-guidelines';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -31,6 +31,7 @@ export class PrepPackResponseDto {
   @ApiProperty({ type: [PrepPackSectionDto] }) sections: PrepPackSectionDto[];
   @ApiPropertyOptional({ description: 'The appointment time (ISO)' }) appointmentAt?: string;
   @ApiProperty({ description: 'What the patient wants the doctor to know' }) symptomNotes: string;
+  @ApiProperty({ description: 'Whether the clinic receives the pre-visit bundle' }) sendToClinic: boolean;
   @ApiProperty({
     description:
       'Before the visit: a fasting countdown when a booked test needs it (hours from the lab), and ticks for the documents being prepared',
@@ -51,4 +52,11 @@ export class UpdatePrepPackDto {
   @IsOptional()
   @IsObject()
   included?: Record<string, boolean>;
+
+  @ApiPropertyOptional({
+    description: "Send the notes, questions and chosen items to the appointment's clinic before the visit",
+  })
+  @IsOptional()
+  @IsBoolean()
+  sendToClinic?: boolean;
 }
