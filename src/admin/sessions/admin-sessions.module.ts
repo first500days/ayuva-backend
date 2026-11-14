@@ -15,6 +15,7 @@ import {
   AdminUserSessionsController,
 } from './admin-sessions.controller';
 import { AdminSessionsService } from './admin-sessions.service';
+import { User, UserSchema } from '../../core/users/schemas/user.schema';
 
 /** Session revocation from the Admin Panel's user and provider grids. */
 @Module({
@@ -24,6 +25,7 @@ import { AdminSessionsService } from './admin-sessions.service';
     MongooseModule.forFeature([
       { name: PartnerMember.name, schema: PartnerMemberSchema },
       { name: Provider.name, schema: ProviderSchema },
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [AdminUserSessionsController, AdminOrgSessionsController],

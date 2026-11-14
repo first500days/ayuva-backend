@@ -60,4 +60,27 @@ export class AdminOrgSessionsController {
   ) {
     return this.sessions.endOrganisation(admin.sub, id, dto.reason);
   }
+
+  @Post(':id/lock')
+  @ApiOperation({
+    summary:
+      'Facility kill-switch: lock this partner organisation. Every staff token stops working now, and no sign-in is allowed until it is unlocked',
+  })
+  lock(
+    @CurrentUser() admin: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: EndSessionsDto,
+  ) {
+    return this.sessions.lockOrganisation(admin.sub, id, dto.reason);
+  }
+
+  @Post(':id/unlock')
+  @ApiOperation({ summary: 'Lift the facility lock; staff can sign in again' })
+  unlock(
+    @CurrentUser() admin: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: EndSessionsDto,
+  ) {
+    return this.sessions.unlockOrganisation(admin.sub, id, dto.reason);
+  }
 }

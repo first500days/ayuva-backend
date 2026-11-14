@@ -92,6 +92,11 @@ export class AdminProviderResponseDto {
   @ApiPropertyOptional() registrationNumber?: string;
   @ApiPropertyOptional({ type: [String] }) qualifications?: string[];
   @ApiPropertyOptional() verificationNotes?: string;
+  @ApiPropertyOptional({
+    description: 'Set while the facility kill-switch is on',
+  })
+  lockedAt?: string;
+  @ApiPropertyOptional() lockReason?: string;
   @ApiPropertyOptional() createdAt?: string;
 
   @ApiPropertyOptional({ type: AdminProviderScheduleResponseDto })

@@ -29,6 +29,7 @@ import {
 } from '../core/health-profile/schemas/health-profile.schema';
 import {
   JwtPayload,
+  FACILITY_LOCKED,
   SESSION_REPLACED,
 } from './interfaces/jwt-payload.interface';
 import { LiveBus } from '../common/live/live-bus.service';
@@ -566,6 +567,7 @@ export class AuthService {
     }
 
     if (user.role === UserRole.PARTNER) {
+      this.assertFacilityOpen(user);
       this.assertCurrentPartnerSession(user, payload.sid);
       return this.signTokenPair(
         user,
@@ -576,6 +578,14 @@ export class AuthService {
     // No `user` in the response here — the client already has it cached and
     // only calls this endpoint transparently on a 401 to mint a new pair.
     return this.signTokenPair(user);
+  }
+
+  /** The facility kill-switch: no partner tokens while Ayuva has locked the organisation. */
+  private assertFacilityOpen(user: UserDocument): void {
+    if (user.facilityLockedAt)
+      throw new UnauthorizedException(
+        `${FACILITY_LOCKED}: Ayuva has locked access for your organisation. Contact Ayuva support.`,
+      );
   }
 
   /** Accounts with no recorded session signed in before this existed, and are left alone. */
@@ -794,6 +804,7 @@ export class AuthService {
     onboardingComplete: boolean,
     adminClaims?: Pick<JwtPayload, 'mfa' | 'perms'>,
   ): Promise<AuthTokensResponseDto> {
+    if (user.role === UserRole.PARTNER) this.assertFacilityOpen(user);
     const sid =
       user.role === UserRole.PARTNER
         ? await this.startPartnerSession(user)

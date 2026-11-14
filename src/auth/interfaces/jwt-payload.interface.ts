@@ -17,3 +17,5 @@ export interface JwtPayload {
 
 /** Starts the 401 message when a newer sign-in has replaced this session. */
 export const SESSION_REPLACED = 'SESSION_REPLACED';
+/** Error prefix while Ayuva has locked the whole partner organisation. */
+export const FACILITY_LOCKED = 'FACILITY_LOCKED';

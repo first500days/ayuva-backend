@@ -72,6 +72,10 @@ export class PartnerContextService {
       throw new NotFoundException(
         'No provider profile is linked to this account',
       );
+    if (provider.lockedAt)
+      throw new ForbiddenException(
+        'FACILITY_LOCKED: Ayuva has locked access for your organisation',
+      );
 
     this.touch(member);
     const orgType = orgTypeOf(provider.type);

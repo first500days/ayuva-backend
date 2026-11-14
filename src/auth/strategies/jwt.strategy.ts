@@ -16,6 +16,7 @@ import { Model, Types } from 'mongoose';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import {
   JwtPayload,
+  FACILITY_LOCKED,
   SESSION_REPLACED,
 } from '../interfaces/jwt-payload.interface';
 import {
@@ -82,9 +83,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   private async assertCurrentSession(payload: JwtPayload): Promise<void> {
     const user = await this.userModel
       .findById(payload.sub)
-      .select('partnerSessionId')
+      .select('partnerSessionId facilityLockedAt')
       .lean()
       .exec();
+    if (user?.facilityLockedAt)
+      throw new UnauthorizedException(
+        `${FACILITY_LOCKED}: Ayuva has locked access for your organisation`,
+      );
     if (user?.partnerSessionId && user.partnerSessionId !== payload.sid)
       throw new UnauthorizedException(
         `${SESSION_REPLACED}: this account signed in somewhere else`,

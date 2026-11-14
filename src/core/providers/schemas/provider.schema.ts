@@ -257,6 +257,13 @@ export class Provider {
   @Prop()
   verifiedAt?: Date;
 
+  // Facility kill-switch: set while Ayuva has locked every staff login of this organisation.
+  @Prop()
+  lockedAt?: Date;
+
+  @Prop()
+  lockReason?: string;
+
   @Prop()
   verificationNotes?: string;
 

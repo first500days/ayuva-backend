@@ -8,6 +8,8 @@ export enum AuditAction {
   LOGIN_FAILED = 'login_failed',
   // An administrator ended every session (all web/app tokens) of a login.
   SESSIONS_TERMINATED = 'sessions_terminated',
+  FACILITY_LOCKED = 'facility_locked',
+  FACILITY_UNLOCKED = 'facility_unlocked',
   REGISTER = 'register',
   RECORD_UPLOAD = 'record_upload',
   RECORD_VIEW = 'record_view',

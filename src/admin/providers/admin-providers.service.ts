@@ -719,6 +719,8 @@ export class AdminProvidersService {
       registrationNumber: provider.registrationNumber,
       qualifications: provider.qualifications,
       verificationNotes: provider.verificationNotes,
+      lockedAt: provider.lockedAt?.toISOString(),
+      lockReason: provider.lockReason,
       createdAt: (provider as { createdAt?: Date }).createdAt?.toISOString(),
       schedule: provider.schedule
         ? {

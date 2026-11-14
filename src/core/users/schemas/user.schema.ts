@@ -201,6 +201,10 @@ export class User {
   @Prop()
   partnerSessionId?: string;
 
+  // Copied from the organisation while Ayuva has locked it: no partner tokens are accepted or issued.
+  @Prop()
+  facilityLockedAt?: Date;
+
   // "Terminate web tokens": access and refresh tokens issued before this are refused.
   @Prop()
   tokensValidAfter?: Date;
