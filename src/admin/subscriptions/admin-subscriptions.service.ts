@@ -169,6 +169,7 @@ export class AdminSubscriptionsService {
       features: p.features,
       limits: p.limits,
       active: p.active,
+      disabledFeatures: p.disabledFeatures ?? [],
     };
   }
 }

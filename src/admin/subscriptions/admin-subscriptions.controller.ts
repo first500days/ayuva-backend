@@ -1,3 +1,4 @@
+import { FEATURE_FLAGS } from '../../common/feature-flags';
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -25,6 +26,12 @@ import {
 @Controller('admin/subscriptions')
 export class AdminSubscriptionsController {
   constructor(private readonly service: AdminSubscriptionsService) {}
+
+  @Get('features')
+  @ApiOperation({ summary: 'Features a tier can switch off (app and Partner Portal)' })
+  features() {
+    return Object.entries(FEATURE_FLAGS).map(([key, f]) => ({ key, ...f }));
+  }
 
   @Get('plans')
   @ApiOperation({ summary: 'Free / Premium / Enterprise plans with subscriber counts (A03)' })

@@ -7,6 +7,7 @@ import {
   AuditLogSchema,
 } from '../audit-log/schemas/audit-log.schema';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { MyPlanModule } from '../core/plans/my-plan.module';
 import { AdminProvidersModule } from '../admin/providers/admin-providers.module';
 import { SharingModule } from '../core/sharing/sharing.module';
 import { AiInteractionLogModule } from '../ai/ai-interaction-log/ai-interaction-log.module';
@@ -258,6 +259,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     AuthModule,
     AuditLogModule,
     NotificationsModule,
+    MyPlanModule,
     AdminProvidersModule,
     SharingModule,
     AiInteractionLogModule,

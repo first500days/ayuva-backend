@@ -18,6 +18,7 @@ import {
   SubscriptionStatus,
 } from '../../admin/subscriptions/schemas/subscription.schema';
 import { REDIS_CLIENT } from '../../database/redis.module';
+import { upgradesFor } from '../../common/feature-flags';
 import { UserPushService } from '../../notifications/user-push.service';
 
 const CHANNEL = 'ayuva:plan-changes';
@@ -33,6 +34,10 @@ export interface MyPlan {
   status: 'active' | 'none';
   renewsAt: string | null;
   updatedAt: string;
+  /** Features this tier switches off; screens show an upgrade prompt instead. */
+  disabledFeatures: string[];
+  /** For each switched-off feature, the cheapest plan that has it. */
+  upgrades: Record<string, { tier: string; name: string }>;
 }
 
 export interface PlanChange {
@@ -100,6 +105,14 @@ export class PlanUpdatesService implements OnModuleInit, OnModuleDestroy {
     const plan = sub
       ? await this.planModel.findById(sub.planId).lean().exec()
       : await this.planModel.findOne({ tier: PlanTier.FREE }).lean().exec();
+    const disabledFeatures = plan?.disabledFeatures ?? [];
+    const all = disabledFeatures.length
+      ? await this.planModel
+          .find()
+          .select('tier name priceMonthly active disabledFeatures')
+          .lean()
+          .exec()
+      : [];
     const out: MyPlan = {
       tier: plan?.tier ?? PlanTier.FREE,
       name: plan?.name ?? 'Free',
@@ -108,6 +121,8 @@ export class PlanUpdatesService implements OnModuleInit, OnModuleDestroy {
       status: sub ? 'active' : 'none',
       renewsAt: sub?.renewsAt?.toISOString() ?? null,
       updatedAt: new Date().toISOString(),
+      disabledFeatures,
+      upgrades: upgradesFor(disabledFeatures, all),
     };
     this.cache.set(userId, { at: Date.now(), plan: out });
     return out;

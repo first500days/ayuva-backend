@@ -54,6 +54,7 @@ import { PartnerNotifySettingsService } from './notify/partner-notify-settings.s
 import { UpdateNotificationSettingsDto } from './notify/dto/notify.dto';
 import { PartnerPatientsService } from './clinical/partner-patients.service';
 import { PartnerIntakeService } from './clinical/partner-intake.service';
+import { PlanUpdatesService } from '../core/plans/plan-updates.service';
 import { IntakeScanDto } from './clinical/dto/intake.dto';
 import { PartnerTimelineService } from './clinical/partner-timeline.service';
 import { PartnerNotesService } from './clinical/partner-notes.service';
@@ -437,6 +438,7 @@ export class PartnerClinicalController {
     private readonly notes: PartnerNotesService,
     private readonly rx: PartnerPrescriptionsService,
     private readonly intakeSvc: PartnerIntakeService,
+    private readonly planUpdates: PlanUpdatesService,
   ) {}
 
   @Get('patients')
@@ -447,6 +449,18 @@ export class PartnerClinicalController {
   })
   listPatients(@PartnerCtx() a: PartnerActor, @Query() q: PatientsQueryDto) {
     return this.patients.list(a, q);
+  }
+
+  @Get('plan')
+  @ApiOperation({
+    summary:
+      "The organisation's subscription tier (its owner's plan) and the features it switches off, for upgrade prompts",
+  })
+  async plan(@PartnerCtx() a: PartnerActor) {
+    const owner = a.provider.ownerUserId?.toString();
+    return owner
+      ? this.planUpdates.myPlan(owner)
+      : { tier: 'free', name: 'Free', disabledFeatures: [], upgrades: {} };
   }
 
   @Post('patients/intake')
