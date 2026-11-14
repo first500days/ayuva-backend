@@ -71,6 +71,18 @@ export class AuthController {
     return this.authService.logout(user);
   }
 
+  @Post('activity')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary:
+      'Partner Portal: someone is at the keyboard (sent at most once a minute). Sessions end after 10 minutes without it',
+  })
+  activity(@CurrentUser() user: JwtPayload): Promise<void> {
+    return this.authService.noteActivity(user);
+  }
+
   @Post('unlock')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)

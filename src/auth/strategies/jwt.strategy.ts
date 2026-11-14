@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import {
   FamilyAccess,
   FamilyAccessDocument,
@@ -17,6 +18,8 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import {
   JwtPayload,
   FACILITY_LOCKED,
+  SESSION_IDLE,
+  partnerIdleExpired,
   SESSION_REPLACED,
 } from '../interfaces/jwt-payload.interface';
 import {
@@ -83,7 +86,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   private async assertCurrentSession(payload: JwtPayload): Promise<void> {
     const user = await this.userModel
       .findById(payload.sub)
-      .select('partnerSessionId facilityLockedAt')
+      .select('partnerSessionId facilityLockedAt partnerActiveAt')
       .lean()
       .exec();
     if (user?.facilityLockedAt)
@@ -94,6 +97,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException(
         `${SESSION_REPLACED}: this account signed in somewhere else`,
       );
+    // Clinical portals: a full sign-out after 10 minutes with nobody at the keyboard.
+    if (partnerIdleExpired(user?.partnerActiveAt)) {
+      await this.userModel.updateOne(
+        { _id: payload.sub, partnerSessionId: payload.sid },
+        { $set: { partnerSessionId: crypto.randomUUID() } },
+      );
+      throw new UnauthorizedException(
+        `${SESSION_IDLE}: signed out after 10 minutes without activity`,
+      );
+    }
   }
 
   /**

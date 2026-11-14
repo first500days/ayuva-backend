@@ -201,6 +201,10 @@ export class User {
   @Prop()
   partnerSessionId?: string;
 
+  // Last keyboard/mouse/touch activity the portal reported for that session (10-minute sign-out).
+  @Prop()
+  partnerActiveAt?: Date;
+
   // Copied from the organisation while Ayuva has locked it: no partner tokens are accepted or issued.
   @Prop()
   facilityLockedAt?: Date;

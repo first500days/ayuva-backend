@@ -30,6 +30,8 @@ import {
 import {
   JwtPayload,
   FACILITY_LOCKED,
+  SESSION_IDLE,
+  partnerIdleExpired,
   SESSION_REPLACED,
 } from './interfaces/jwt-payload.interface';
 import { LiveBus } from '../common/live/live-bus.service';
@@ -569,6 +571,10 @@ export class AuthService {
     if (user.role === UserRole.PARTNER) {
       this.assertFacilityOpen(user);
       this.assertCurrentPartnerSession(user, payload.sid);
+      if (partnerIdleExpired(user.partnerActiveAt))
+        throw new UnauthorizedException(
+          `${SESSION_IDLE}: signed out after 10 minutes without activity`,
+        );
       return this.signTokenPair(
         user,
         payload.sid ? { sid: payload.sid } : undefined,
@@ -602,7 +608,7 @@ export class AuthService {
     const sid = crypto.randomUUID();
     await this.userModel.updateOne(
       { _id: user._id },
-      { $set: { partnerSessionId: sid } },
+      { $set: { partnerSessionId: sid, partnerActiveAt: new Date() } },
     );
     this.live?.endSessions(user.id, 'session_replaced');
     return sid;
@@ -622,6 +628,19 @@ export class AuthService {
   }
 
   /**
+   * Keyboard, mouse or touch activity in the Partner Portal, reported at most
+   * once a minute. Background polling doesn't count, so a session with nobody
+   * at the computer ends after 10 minutes even if its screens keep refreshing.
+   */
+  async noteActivity(payload: JwtPayload): Promise<void> {
+    if (payload.role !== UserRole.PARTNER || !payload.sid) return;
+    await this.userModel.updateOne(
+      { _id: payload.sub, partnerSessionId: payload.sid },
+      { $set: { partnerActiveAt: new Date() } },
+    );
+  }
+
+  /**
    * The idle lock screen's password check. Repeated failures end the session,
    * so someone at an unattended computer can't keep guessing.
    */
@@ -631,6 +650,7 @@ export class AuthService {
     if (!user?.passwordHash) throw new UnauthorizedException();
     if (await bcrypt.compare(password, user.passwordHash)) {
       this.unlockFailures.delete(user.id);
+      await this.noteActivity(payload);
       return;
     }
     const failures = (this.unlockFailures.get(user.id) ?? 0) + 1;

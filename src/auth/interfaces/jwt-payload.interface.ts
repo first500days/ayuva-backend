@@ -17,5 +17,24 @@ export interface JwtPayload {
 
 /** Starts the 401 message when a newer sign-in has replaced this session. */
 export const SESSION_REPLACED = 'SESSION_REPLACED';
+/** Error prefix when a Partner Portal session ended after 10 minutes without activity. */
+export const SESSION_IDLE = 'SESSION_IDLE';
+
+/** Clinical portals sign out after this long with no keyboard, mouse or touch activity. */
+export const PARTNER_IDLE_SIGNOUT_MS = 10 * 60_000;
+/** The portal reports activity at most once a minute; allow for that before refusing. */
+export const PARTNER_IDLE_GRACE_MS = 75_000;
+
+/** True when the session has gone longer than the idle limit without reported activity. */
+export function partnerIdleExpired(
+  activeAt: Date | undefined | null,
+  now = Date.now(),
+): boolean {
+  return (
+    !!activeAt &&
+    now - activeAt.getTime() > PARTNER_IDLE_SIGNOUT_MS + PARTNER_IDLE_GRACE_MS
+  );
+}
+
 /** Error prefix while Ayuva has locked the whole partner organisation. */
 export const FACILITY_LOCKED = 'FACILITY_LOCKED';
