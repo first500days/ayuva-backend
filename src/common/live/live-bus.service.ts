@@ -126,6 +126,20 @@ export class LiveBus {
     }
   }
 
+  /** A booked slot was released by a cancellation; the waitlist offers it. */
+  slotOpened(slotId: string): void {
+    try {
+      this.emitter.emit('slot-opened', slotId);
+    } catch {
+      // As above.
+    }
+  }
+
+  onSlotOpened(listener: (slotId: string) => void): () => void {
+    this.emitter.on('slot-opened', listener);
+    return () => this.emitter.off('slot-opened', listener);
+  }
+
   onShareEnded(listener: (e: ShareEnded) => void): () => void {
     this.emitter.on('share-ended', listener);
     return () => this.emitter.off('share-ended', listener);

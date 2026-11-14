@@ -360,6 +360,7 @@ export class AppointmentsService {
           err as Error,
         ),
       );
+    this.live?.slotOpened(oldSlotId.toString());
 
     const provider = await this.providerModel.findById(appointment.providerId);
 
@@ -402,6 +403,9 @@ export class AppointmentsService {
           err as Error,
         ),
       );
+
+    // People on the waitlist hear about the freed time.
+    this.live?.slotOpened(appointment.slotId.toString());
 
     // A stale job firing for a cancelled appointment is a real bug, not an edge case.
     await this.reminderQueueService.cancelAppointmentReminder(appointment.id);

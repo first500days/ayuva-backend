@@ -148,6 +148,8 @@ export class PartnerAppointmentsService {
     appointment.rejectionReason = reason;
     await appointment.save();
     await this.releaseSlot(appointment.slotId);
+    // People on the waitlist hear about the freed time.
+    this.live.slotOpened(appointment.slotId.toString());
     await this.reminders.cancelAppointmentReminder(appointment.id);
     await this.reminders.cancelFollowUpReminder(appointment.id);
     // "This visit" record access ends with the visit.
@@ -174,6 +176,7 @@ export class PartnerAppointmentsService {
     appointment.slotId = newSlot._id;
     await appointment.save();
     await this.releaseSlot(oldSlotId);
+    this.live.slotOpened(oldSlotId.toString());
     await this.sharing.syncVisitExpiry(appointment.id);
 
     await this.reminders.cancelAppointmentReminder(appointment.id);
