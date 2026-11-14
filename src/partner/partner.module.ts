@@ -155,6 +155,7 @@ import { PartnerIntakeService } from './clinical/partner-intake.service';
 import { RxRefillService } from './clinical/rx-refill.service';
 import { PartnerPreVisitService } from './clinical/partner-pre-visit.service';
 import { RecordViewKeysService } from './record-view-keys.service';
+import { PartnerDigestService } from './clinical/partner-digest.service';
 import { PartnerRecordViewController } from './record-view.controller';
 import {
   PrepPack,
@@ -417,6 +418,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     RxRefillService,
     PartnerPreVisitService,
     RecordViewKeysService,
+    PartnerDigestService,
     TelemetryIngestGateway,
   ],
 })

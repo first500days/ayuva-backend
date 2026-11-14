@@ -1,3 +1,4 @@
+import { PartnerDigestService } from './clinical/partner-digest.service';
 import { RecordViewKeysService } from './record-view-keys.service';
 import { PartnerPreVisitService } from './clinical/partner-pre-visit.service';
 import {
@@ -131,6 +132,7 @@ export class PartnerController {
     private readonly payments: PartnerPaymentsService,
     private readonly preVisitBundles: PartnerPreVisitService,
     private readonly viewKeys: RecordViewKeysService,
+    private readonly digests: PartnerDigestService,
   ) {}
 
   // ── P01/P02 profile, verification status, availability ─────────────────────
@@ -413,6 +415,17 @@ export class PartnerController {
   })
   preVisit(@PartnerCtx() actor: PartnerActor, @Param('id') id: string) {
     return this.preVisitBundles.forAppointment(actor, id);
+  }
+
+  @Get('appointments/:id/digest')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_VIEW)
+  @ApiOperation({
+    summary:
+      'Executive Digest for a confirmed booking: pre-visit notes (if sent), shared documents and latest shared lab values in one view',
+  })
+  digest(@PartnerCtx() actor: PartnerActor, @Param('id') id: string) {
+    return this.digests.forAppointment(actor, id);
   }
 
   @Post('appointments/:id/arrived')
