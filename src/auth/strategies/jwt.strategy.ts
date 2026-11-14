@@ -32,6 +32,7 @@ import {
   SESSION_REVOKED,
   TokenRevocationService,
 } from '../services/token-revocation.service';
+import { assertPortalRole } from '../../common/portal-host';
 
 /** Header the app sends while a guardian is viewing a family member's profile. */
 export const PROFILE_HEADER = 'x-ayuva-profile';
@@ -66,6 +67,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     req: Request,
     payload: JwtPayload & { iat?: number },
   ): Promise<JwtPayload> {
+    // Portal isolation: a token only works on its own portal host.
+    assertPortalRole(req, payload.role);
     // Partner sessions first, so a locked facility or an idle sign-out says so.
     if (payload.role === UserRole.PARTNER)
       await this.assertCurrentSession(payload);

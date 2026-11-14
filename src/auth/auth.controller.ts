@@ -8,6 +8,7 @@ import {
   Post,
   Put,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -30,11 +31,13 @@ import { RefreshTokenResponseDto } from './dto/refresh-token-response.dto';
 import { ConsentStatusResponseDto } from './dto/consent-status-response.dto';
 import { AdminMfaChallengeDto, VerifyMfaDto } from './dto/admin-mfa.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { PortalAuthInterceptor } from '../common/interceptors/portal-auth.interceptor';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from './interfaces/jwt-payload.interface';
 import { CodeLimit, RefreshLimit, SignInLimit } from './auth-throttle';
 
 @ApiTags('Auth')
+@UseInterceptors(PortalAuthInterceptor)
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
