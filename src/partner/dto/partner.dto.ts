@@ -23,6 +23,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ProviderCategory } from '../../core/providers/schemas/provider.schema';
+import { OVERVIEW_RANGES, type OverviewRange } from '../dashboard-overview';
 import { IsStrongPassword } from '../../common/validators/is-strong-password.decorator';
 
 /** P01 — partner sign-up. Creates a login plus a PENDING provider profile awaiting admin verification. */
@@ -169,6 +170,14 @@ export class PartnerAppointmentsQueryDto {
   @Transform(({ value }) => value === true || value === 'true' || value === '1')
   @IsBoolean()
   mine?: boolean;
+}
+
+/** The period the dashboard's overview chart covers. */
+export class DashboardOverviewQueryDto {
+  @ApiPropertyOptional({ enum: OVERVIEW_RANGES, default: 'month' })
+  @IsOptional()
+  @IsIn(OVERVIEW_RANGES as unknown as string[])
+  range?: OverviewRange;
 }
 
 /** Hospital/clinic front desk: who sees this patient, under which department. */

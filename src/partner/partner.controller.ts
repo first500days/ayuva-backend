@@ -3,6 +3,7 @@ import { readDocumentText } from '../core/records/document-text';
 import { PartnerDigestService } from './clinical/partner-digest.service';
 import { RecordViewKeysService } from './record-view-keys.service';
 import { PartnerPreVisitService } from './clinical/partner-pre-visit.service';
+import { PartnerOverviewService } from './partner-overview.service';
 import {
   Body,
   Controller,
@@ -64,6 +65,7 @@ import type { PartnerActor } from './rbac/partner-perm.guard';
 import { Perm } from './rbac/partner-permissions';
 import {
   AssignAppointmentDto,
+  DashboardOverviewQueryDto,
   PartnerAppointmentsQueryDto,
   PartnerBlockSlotDto,
   PartnerBookDto,
@@ -136,6 +138,7 @@ export class PartnerController {
     private readonly preVisitBundles: PartnerPreVisitService,
     private readonly viewKeys: RecordViewKeysService,
     private readonly digests: PartnerDigestService,
+    private readonly overview: PartnerOverviewService,
   ) {}
 
   // ── P01/P02 profile, verification status, availability ─────────────────────
@@ -315,6 +318,20 @@ export class PartnerController {
         ? data.recentSharedReports
         : [],
     };
+  }
+
+  @Get('dashboard/overview')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.DASHBOARD)
+  @ApiOperation({
+    summary:
+      "Dashboard chart: appointments, admissions and revenue per day, limited to what the member's role sees",
+  })
+  dashboardOverview(
+    @PartnerCtx() actor: PartnerActor,
+    @Query() q: DashboardOverviewQueryDto,
+  ) {
+    return this.overview.overview(actor, q.range ?? 'month');
   }
 
   // ── P04 shared records & access log ────────────────────────────────────────
