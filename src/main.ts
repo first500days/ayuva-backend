@@ -12,6 +12,11 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { requestContextMiddleware } from './common/request-context/client-ip';
 import { requestMetricsMiddleware } from './common/observability/request-metrics';
 import { scalarCustomCss } from './docs/scalar-theme';
+import {
+  isOriginAllowed,
+  originGuardMiddleware,
+  parseAllowedOrigins,
+} from './common/security/allowed-origins';
 
 const API_PREFIX = 'api/v1';
 
@@ -52,16 +57,19 @@ async function bootstrap() {
   const nodeEnv = config.get<string>('nodeEnv');
   const corsAllowedOrigins = config.get<string>('corsAllowedOrigins');
   if (nodeEnv === 'production') {
-    const origins = corsAllowedOrigins
-      ?.split(',')
-      .map((o) => o.trim())
-      .filter(Boolean);
-    if (!origins || origins.length === 0) {
+    const origins = parseAllowedOrigins(corsAllowedOrigins);
+    if (origins.length === 0) {
       new Logger('Bootstrap').warn(
         'CORS_ALLOWED_ORIGINS is not set in production — rejecting all cross-origin requests. Set it to a comma-separated list of allowed origins (e.g. the admin portal domain).',
       );
     }
-    app.enableCors({ origin: origins ?? false, credentials: true });
+    // Hard block first (stops the request itself), then CORS for the rest.
+    app.use(originGuardMiddleware(origins));
+    app.enableCors({
+      origin: (origin, cb) =>
+        cb(null, !origin || isOriginAllowed(origin, origins)),
+      credentials: true,
+    });
   } else {
     app.enableCors({ origin: true, credentials: true });
   }

@@ -4,6 +4,10 @@ import { HttpAdapterHost } from '@nestjs/core';
 import type { IncomingMessage, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
 import type { WebSocketServer } from 'ws';
+import {
+  isOriginAllowed,
+  parseAllowedOrigins,
+} from '../../common/security/allowed-origins';
 
 /**
  * Hands WebSocket upgrades on the API's HTTP port to whichever socket server
@@ -43,11 +47,10 @@ export class WsUpgradeRouter implements OnApplicationBootstrap {
     const origin = req.headers.origin;
     if (!origin || this.config.get<string>('nodeEnv') !== 'production')
       return true;
-    const allowed = this.config.get<string>('corsAllowedOrigins') ?? '';
-    return allowed
-      .split(',')
-      .map((o) => o.trim())
-      .includes(origin);
+    return isOriginAllowed(
+      origin,
+      parseAllowedOrigins(this.config.get<string>('corsAllowedOrigins')),
+    );
   }
 
   private refuse(socket: Duplex, status: string): void {
