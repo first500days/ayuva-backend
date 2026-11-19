@@ -46,9 +46,10 @@ export default () => ({
     iosClientId: process.env.GOOGLE_IOS_CLIENT_ID,
   },
   storage: {
-    // Local-disk stand-in for the S3-compatible object store (TRD §2/§6);
-    // swap StorageService's implementation for an S3 client later without
-    // touching callers, since MedicalRecord.fileRef is just an opaque key.
+    // AWS S3 holds every upload when S3_BUCKET is set (production). Unset
+    // means local-disk under UPLOAD_DIR, for development only.
+    s3Bucket: process.env.S3_BUCKET,
+    s3Region: process.env.AWS_REGION ?? 'ap-southeast-2',
     uploadDir: process.env.UPLOAD_DIR ?? './uploads',
     // 32-byte hex key for AES-256-GCM. The dev fallback below is committed to
     // source control, so it must never reach a production encryption op —
@@ -108,7 +109,8 @@ export default () => ({
     accessToken: process.env.WHATSAPP_CLOUD_TOKEN,
     apiVersion: process.env.WHATSAPP_CLOUD_API_VERSION ?? 'v23.0',
     language: process.env.WHATSAPP_TEMPLATE_LANGUAGE ?? 'en',
-    reportTemplate: process.env.WHATSAPP_TEMPLATE_REPORT ?? 'ayuva_report_ready',
+    reportTemplate:
+      process.env.WHATSAPP_TEMPLATE_REPORT ?? 'ayuva_report_ready',
     noticeTemplate: process.env.WHATSAPP_TEMPLATE_NOTICE ?? 'ayuva_notice',
   },
   // Secure links sent by WhatsApp or email (held to 15–30 minutes in code).
