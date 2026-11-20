@@ -69,6 +69,7 @@ import {
   PartnerBookDto,
   PartnerDaySlotsQueryDto,
   PartnerFollowUpDto,
+  PartnerManualAppointmentDto,
   PartnerPaymentsQueryDto,
   PartnerRegisterDto,
   PartnerRescheduleDto,
@@ -407,6 +408,20 @@ export class PartnerController {
   })
   book(@PartnerCtx() actor: PartnerActor, @Body() dto: PartnerBookDto) {
     return this.appointments.book(actor, dto);
+  }
+
+  @Post('appointments/manual')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Create a manual appointment for a patient who does not use Ayuva (walk-in, phone booking)',
+  })
+  manualAppointment(
+    @PartnerCtx() actor: PartnerActor,
+    @Body() dto: PartnerManualAppointmentDto,
+  ) {
+    return this.appointments.createManual(actor, dto);
   }
 
   @Post('appointments/:id/assign')

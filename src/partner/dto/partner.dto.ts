@@ -215,6 +215,89 @@ export class PartnerBookDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(80) department?: string;
 }
 
+export class ManualPatientInfoDto {
+  @ApiProperty({ example: 'Ramesh Kumar' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  name: string;
+
+  @ApiPropertyOptional({ example: '+919876543210' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  phone?: string;
+
+  @ApiPropertyOptional({ example: 'ramesh@example.com' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiPropertyOptional({ example: 'male' })
+  @IsOptional()
+  @IsString()
+  gender?: string;
+
+  @ApiPropertyOptional({ example: 45 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(130)
+  age?: number;
+
+  @ApiPropertyOptional({ example: 'Walk-in / offline patient consultation' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}
+
+export class PartnerManualAppointmentDto {
+  @ApiProperty({ type: ManualPatientInfoDto })
+  @ValidateNested()
+  @Type(() => ManualPatientInfoDto)
+  patient: ManualPatientInfoDto;
+
+  @ApiPropertyOptional({ description: 'An OPEN slot belonging to this provider' })
+  @IsOptional()
+  @IsMongoId()
+  slotId?: string;
+
+  @ApiPropertyOptional({ example: '2026-11-20', description: 'Required if slotId is not provided (YYYY-MM-DD)' })
+  @IsOptional()
+  @IsISO8601()
+  date?: string;
+
+  @ApiPropertyOptional({ example: '10:30', description: 'Required if slotId is not provided (HH:MM)' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'time must be in HH:MM format' })
+  time?: string;
+
+  @ApiPropertyOptional({ example: 15, default: 15 })
+  @IsOptional()
+  @IsInt()
+  @Min(5)
+  @Max(120)
+  durationMin?: number;
+
+  @ApiPropertyOptional({ description: 'Staff member ID assigned to this visit' })
+  @IsOptional()
+  @IsMongoId()
+  memberId?: string;
+
+  @ApiPropertyOptional({ example: 'General Medicine' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  department?: string;
+
+  @ApiPropertyOptional({ enum: ['pending', 'paid'], default: 'pending' })
+  @IsOptional()
+  @IsString()
+  paymentStatus?: string;
+}
+
 export class PartnerSlotsQueryDto {
   @ApiPropertyOptional({ example: '2026-10-01' })
   @IsOptional()

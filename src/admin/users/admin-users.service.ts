@@ -231,6 +231,7 @@ export class AdminUsersService {
 
     const counts = new Map<string, number>();
     for (const a of appointments) {
+      if (!a.patientId) continue;
       const key = a.patientId.toString();
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }

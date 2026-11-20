@@ -171,7 +171,7 @@ export class WaitlistService implements OnModuleInit, OnModuleDestroy {
         })),
         { day, at },
         now,
-        new Set(booked.map((b) => b.patientId.toString())),
+        new Set(booked.map((b) => b.patientId?.toString()).filter((id): id is string => Boolean(id))),
       );
       for (const p of picked) {
         await this.waitModel

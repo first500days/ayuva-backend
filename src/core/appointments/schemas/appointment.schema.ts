@@ -24,10 +24,33 @@ export class Appointment {
   @Prop({
     type: SchemaTypes.ObjectId,
     ref: User.name,
-    required: true,
+    required: false,
     index: true,
   })
-  patientId: Types.ObjectId;
+  patientId?: Types.ObjectId;
+
+  @Prop({ default: false })
+  isManual?: boolean;
+
+  @Prop({
+    type: {
+      name: { type: String, required: true },
+      phone: { type: String },
+      email: { type: String },
+      gender: { type: String },
+      age: { type: Number },
+      notes: { type: String },
+    },
+    _id: false,
+  })
+  manualPatient?: {
+    name: string;
+    phone?: string;
+    email?: string;
+    gender?: string;
+    age?: number;
+    notes?: string;
+  };
 
   @Prop({
     type: SchemaTypes.ObjectId,

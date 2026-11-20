@@ -447,7 +447,7 @@ export class AppointmentsService {
       trigger,
       title,
       message,
-      patientId: appointment.patientId.toString(),
+      patientId: appointment.patientId?.toString() ?? '',
       safeMessage:
         trigger === PartnerTrigger.NEW_BOOKING
           ? `${title}${slot ? ` for ${this.describeSlot(slot)}` : ''}.`
@@ -493,7 +493,7 @@ export class AppointmentsService {
     provider?: ProviderDocument,
     slot?: AppointmentSlotDocument,
   ): Promise<void> {
-    if (!slot) return;
+    if (!slot || !appointment.patientId) return;
     await this.reminderQueueService.scheduleAppointmentReminder({
       id: appointment.id,
       userId: appointment.patientId.toString(),
@@ -508,7 +508,7 @@ export class AppointmentsService {
     provider?: ProviderDocument,
     slot?: AppointmentSlotDocument,
   ): Promise<void> {
-    if (!slot) return;
+    if (!slot || !appointment.patientId) return;
     await this.reminderQueueService.scheduleFollowUpReminder({
       id: appointment.id,
       userId: appointment.patientId.toString(),
@@ -526,7 +526,7 @@ export class AppointmentsService {
       throw new NotFoundException('Appointment not found');
     }
     const appointment = await this.appointmentModel.findById(id);
-    if (!appointment || appointment.patientId.toString() !== userId) {
+    if (!appointment || !appointment.patientId || appointment.patientId.toString() !== userId) {
       throw new NotFoundException('Appointment not found');
     }
     return appointment;

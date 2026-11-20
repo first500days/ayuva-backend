@@ -84,6 +84,31 @@ export class PartnerDigestService {
       };
 
     const pid = appt.patientId;
+    if (!pid) {
+      const slot = appt.slotId
+        ? await this.slotModel.findById(appt.slotId).select('date time').lean().exec()
+        : null;
+      return {
+        appointmentId,
+        ready: true as const,
+        patient: {
+          id: '',
+          name: (appt.manualPatient as any)?.name ?? appt.manualPatientName ?? 'Walk-in Patient',
+          age: (appt.manualPatient as any)?.age ?? null,
+          gender: (appt.manualPatient as any)?.gender ?? null,
+        },
+        visit: {
+          date: slot ? slot.date.toISOString().slice(0, 10) : null,
+          time: slot?.time ?? null,
+          status: appt.status,
+        },
+        preVisit: null,
+        sharedDocuments: [],
+        sharedGrants: [],
+        labs: [],
+        note: 'Walk-in appointment without a linked Ayuva account.',
+      };
+    }
     const [user, profile, slot, grants, labs, bundle] = await Promise.all([
       this.userModel.findById(pid).select('fullName').lean().exec(),
       this.profileModel

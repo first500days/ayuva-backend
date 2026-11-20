@@ -250,6 +250,7 @@ export class PartnerPatientsService {
       { last?: Date; next?: Date; count: number }
     >();
     for (const a of appointments) {
+      if (!a.patientId) continue;
       const key = a.patientId.toString();
       const e = byPatient.get(key) ?? { count: 0 };
       e.count += 1;

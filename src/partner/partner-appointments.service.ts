@@ -18,7 +18,7 @@ import { AuditAction } from '../audit-log/schemas/audit-log.schema';
 import { isSlotInPast } from '../common/utils/slot-time.util';
 import { PartnerContextService } from './partner-context.service';
 import { PartnerRecordsService } from './partner-records.service';
-import { PartnerAppointmentsQueryDto, PartnerBookDto } from './dto/partner.dto';
+import { PartnerAppointmentsQueryDto, PartnerBookDto, PartnerManualAppointmentDto } from './dto/partner.dto';
 import { SharingService } from '../core/sharing/sharing.service';
 import { LiveBus } from '../common/live/live-bus.service';
 import {
@@ -152,14 +152,16 @@ export class PartnerAppointmentsService {
     this.live.slotOpened(appointment.slotId.toString());
     await this.reminders.cancelAppointmentReminder(appointment.id);
     await this.reminders.cancelFollowUpReminder(appointment.id);
-    // "This visit" record access ends with the visit.
-    await this.sharing.revokeForAppointment(appointment.id, 'appointment_rejected_by_partner');
-    await this.notify(
-      appointment,
-      'booking_changed',
-      'Appointment declined',
-      reason ? `Your provider could not take this booking: ${reason}` : 'Your provider could not take this booking.',
-    );
+    if (appointment.patientId) {
+      // "This visit" record access ends with the visit.
+      await this.sharing.revokeForAppointment(appointment.id, 'appointment_rejected_by_partner');
+      await this.notify(
+        appointment,
+        'booking_changed',
+        'Appointment declined',
+        reason ? `Your provider could not take this booking: ${reason}` : 'Your provider could not take this booking.',
+      );
+    }
     return this.one(userId, id, AuditAction.PARTNER_APPOINTMENT_UPDATE, 'rejected');
   }
 
@@ -177,16 +179,18 @@ export class PartnerAppointmentsService {
     await appointment.save();
     await this.releaseSlot(oldSlotId);
     this.live.slotOpened(oldSlotId.toString());
-    await this.sharing.syncVisitExpiry(appointment.id);
 
     await this.reminders.cancelAppointmentReminder(appointment.id);
     await this.reminders.cancelFollowUpReminder(appointment.id);
-    await this.notify(
-      appointment,
-      'booking_changed',
-      'Appointment rescheduled',
-      `Your appointment moved to ${newSlot.date.toISOString().slice(0, 10)} at ${newSlot.time}.`,
-    );
+    if (appointment.patientId) {
+      await this.sharing.syncVisitExpiry(appointment.id);
+      await this.notify(
+        appointment,
+        'booking_changed',
+        'Appointment rescheduled',
+        `Your appointment moved to ${newSlot.date.toISOString().slice(0, 10)} at ${newSlot.time}.`,
+      );
+    }
     return this.one(userId, id, AuditAction.PARTNER_APPOINTMENT_UPDATE, 'rescheduled');
   }
 
@@ -203,18 +207,20 @@ export class PartnerAppointmentsService {
       appointment.arrivedAt = new Date();
       await appointment.save();
     }
-    this.live.toPatient(appointment.patientId.toString(), {
-      t: 'visit',
-      appointmentId: appointment.id,
-      state: 'arrived',
-      at: appointment.arrivedAt.toISOString(),
-    });
-    await this.notify(
-      appointment,
-      'booking_changed',
-      'You’re checked in',
-      'The clinic has marked you as arrived. Please wait to be called.',
-    );
+    if (appointment.patientId) {
+      this.live.toPatient(appointment.patientId.toString(), {
+        t: 'visit',
+        appointmentId: appointment.id,
+        state: 'arrived',
+        at: appointment.arrivedAt.toISOString(),
+      });
+      await this.notify(
+        appointment,
+        'booking_changed',
+        'You’re checked in',
+        'The clinic has marked you as arrived. Please wait to be called.',
+      );
+    }
     return this.one(userId, id, AuditAction.PARTNER_APPOINTMENT_UPDATE, 'arrived');
   }
 
@@ -294,6 +300,92 @@ export class PartnerAppointmentsService {
     );
   }
 
+  /**
+   * Creates a manual appointment for a patient who does not use Ayuva (walk-in, phone booking).
+   */
+  async createManual(actor: PartnerActor, dto: PartnerManualAppointmentDto) {
+    if (!dto.patient?.name?.trim()) {
+      throw new BadRequestException('Patient name is required');
+    }
+
+    let member: PartnerMemberDocument | null = null;
+    if (dto.memberId) {
+      member = await this.memberModel.findOne({
+        _id: dto.memberId,
+        providerId: actor.provider._id,
+        status: MemberStatus.ACTIVE,
+      });
+      if (!member) throw new BadRequestException('That staff member is not active in your organisation');
+    }
+
+    let slot: AppointmentSlotDocument;
+    if (dto.slotId) {
+      slot = await this.claimSlot(actor.provider._id, dto.slotId);
+    } else if (dto.date && dto.time) {
+      const dateObj = new Date(dto.date);
+      dateObj.setUTCHours(0, 0, 0, 0);
+
+      const existing = await this.slotModel.findOne({
+        providerId: actor.provider._id,
+        date: dateObj,
+        time: dto.time,
+      });
+
+      if (existing) {
+        if (existing.status === AppointmentSlotStatus.BOOKED) {
+          throw new ConflictException('That slot time is already booked');
+        }
+        existing.status = AppointmentSlotStatus.BOOKED;
+        await existing.save();
+        slot = existing;
+      } else {
+        slot = await this.slotModel.create({
+          providerId: actor.provider._id,
+          date: dateObj,
+          time: dto.time,
+          durationMin: dto.durationMin ?? 15,
+          status: AppointmentSlotStatus.BOOKED,
+        });
+      }
+    } else {
+      throw new BadRequestException('Either slotId or date and time must be provided');
+    }
+
+    let appointment: AppointmentDocument;
+    try {
+      appointment = await this.appointmentModel.create({
+        isManual: true,
+        manualPatient: {
+          name: dto.patient.name.trim(),
+          phone: dto.patient.phone?.trim() || undefined,
+          email: dto.patient.email?.trim() || undefined,
+          gender: dto.patient.gender?.trim() || undefined,
+          age: dto.patient.age,
+          notes: dto.patient.notes?.trim() || undefined,
+        },
+        providerId: actor.provider._id,
+        slotId: slot._id,
+        status: AppointmentStatus.CONFIRMED,
+        paymentStatus: dto.paymentStatus ?? 'pending',
+        ...(member && { assignedMemberId: member._id, assignedName: member.fullName }),
+        department: dto.department?.trim() || member?.department || undefined,
+        internalNotes: dto.patient.notes?.trim() || undefined,
+      });
+    } catch (err) {
+      if (dto.slotId) {
+        await this.releaseSlot(slot._id);
+      }
+      throw err;
+    }
+
+    return this.one(
+      actor.userId,
+      appointment.id,
+      AuditAction.PARTNER_APPOINTMENT_UPDATE,
+      'manual_booking_created',
+    );
+  }
+
   async scheduleFollowUp(userId: string, id: string, slotId: string) {
     const { appointment, providerId } = await this.load(userId, id);
     if (appointment.status !== AppointmentStatus.COMPLETED) {
@@ -304,6 +396,8 @@ export class PartnerAppointmentsService {
     try {
       followUp = await this.appointmentModel.create({
         patientId: appointment.patientId,
+        isManual: appointment.isManual,
+        manualPatient: appointment.manualPatient,
         providerId: appointment.providerId,
         slotId: slot._id,
         status: AppointmentStatus.CONFIRMED,
@@ -313,12 +407,14 @@ export class PartnerAppointmentsService {
       await this.releaseSlot(slot._id);
       throw err;
     }
-    await this.notify(
-      followUp,
-      'booking_confirmed',
-      'Follow-up scheduled',
-      `Follow-up booked for ${slot.date.toISOString().slice(0, 10)} at ${slot.time}.`,
-    );
+    if (followUp.patientId) {
+      await this.notify(
+        followUp,
+        'booking_confirmed',
+        'Follow-up scheduled',
+        `Follow-up booked for ${slot.date.toISOString().slice(0, 10)} at ${slot.time}.`,
+      );
+    }
     return this.one(userId, followUp.id, AuditAction.PARTNER_APPOINTMENT_UPDATE, 'follow_up_scheduled');
   }
 
@@ -355,6 +451,7 @@ export class PartnerAppointmentsService {
   }
 
   private notify(appointment: AppointmentDocument, trigger: string, title: string, message: string) {
+    if (!appointment.patientId) return Promise.resolve();
     return this.notifications
       .create(appointment.patientId.toString(), {
         trigger,

@@ -166,20 +166,31 @@ export class PartnerRecordsService {
     slotById: Map<string, AppointmentSlotDocument>,
   ) {
     if (appointments.length === 0) return [];
-    const patientIds = [...new Set(appointments.map((a) => a.patientId.toString()))];
+    const patientIds = [
+      ...new Set(
+        appointments
+          .map((a) => a.patientId?.toString())
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
     const providerId = appointments[0].providerId.toString();
     const [patients, orgIds] = await Promise.all([
-      this.userModel.find({ _id: { $in: patientIds } }).select('fullName').exec(),
+      patientIds.length > 0
+        ? this.userModel.find({ _id: { $in: patientIds } }).select('fullName').exec()
+        : Promise.resolve([]),
       this.orgIds(providerId),
     ]);
     const patientById = new Map(patients.map((p) => [p.id, p.fullName]));
-    const grants = await this.grantModel
-      .find({
-        organisationId: { $in: orgIds },
-        userId: { $in: patientIds.map((id) => new Types.ObjectId(id)) },
-        status: 'active',
-      })
-      .exec();
+    const grants =
+      patientIds.length > 0
+        ? await this.grantModel
+            .find({
+              organisationId: { $in: orgIds },
+              userId: { $in: patientIds.map((id) => new Types.ObjectId(id)) },
+              status: 'active',
+            })
+            .exec()
+        : [];
     const preVisit = this.preVisitSvc
       ? await this.preVisitSvc.submittedIds(appointments.map((a) => a.id))
       : new Set<string>();
@@ -192,10 +203,17 @@ export class PartnerRecordsService {
 
     return appointments.map((a) => {
       const slot = slotById.get(a.slotId.toString());
+      const patientIdStr = a.patientId?.toString() ?? null;
+      const patientName =
+        a.manualPatient?.name ||
+        (patientIdStr ? patientById.get(patientIdStr) : null) ||
+        'Patient';
       return {
         id: a.id,
-        patientId: a.patientId.toString(),
-        patientName: patientById.get(a.patientId.toString()) ?? 'Patient',
+        patientId: patientIdStr,
+        patientName,
+        isManual: Boolean(a.isManual || a.manualPatient),
+        manualPatient: a.manualPatient ?? null,
         date: slot ? slot.date.toISOString().slice(0, 10) : '',
         time: slot?.time ?? '',
         durationMin: slot?.durationMin,
@@ -203,7 +221,7 @@ export class PartnerRecordsService {
         paymentStatus: a.paymentStatus,
         followUpOfId: a.followUpOfId?.toString(),
         rejectionReason: a.rejectionReason,
-        sharedRecordCount: sharedByPatient.get(a.patientId.toString()) ?? 0,
+        sharedRecordCount: patientIdStr ? (sharedByPatient.get(patientIdStr) ?? 0) : 0,
         assignedMemberId: a.assignedMemberId?.toString() ?? null,
         assignedName: a.assignedName ?? null,
         department: a.department ?? null,
