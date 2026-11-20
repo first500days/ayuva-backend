@@ -93,7 +93,7 @@ export class PartnerDigestService {
         ready: true as const,
         patient: {
           id: '',
-          name: (appt.manualPatient as any)?.name ?? appt.manualPatientName ?? 'Walk-in Patient',
+          name: appt.manualPatient?.name ?? 'Walk-in Patient',
           age: (appt.manualPatient as any)?.age ?? null,
           gender: (appt.manualPatient as any)?.gender ?? null,
         },
