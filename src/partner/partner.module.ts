@@ -421,5 +421,6 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerDigestService,
     TelemetryIngestGateway,
   ],
+  exports: [PartnerLiveGateway],
 })
 export class PartnerModule {}
