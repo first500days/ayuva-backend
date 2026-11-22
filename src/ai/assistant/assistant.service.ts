@@ -3,6 +3,7 @@ import { ChatRequestDto } from './dto/chat-request.dto';
 import { AssistantResponseScope, ChatResponseDto } from './dto/chat-response.dto';
 import { AiInteractionLogService } from '../ai-interaction-log/ai-interaction-log.service';
 import { AiService } from '../ai-interaction-log/schemas/ai-interaction-log.schema';
+import { ClaudeService } from '../claude/claude.service';
 import { AiSource } from '../common/ai-source.enum';
 import { AI_DISCLAIMER } from '../common/ai-disclaimer.constant';
 
@@ -39,16 +40,24 @@ const ORGANIZATIONAL_REPLIES = [
 const CLINICAL_REDIRECT_REPLY =
   "I can't answer clinical questions like that — please consult a qualified healthcare professional. If you'd like, I can help you start a symptom navigation to find the right type of care, or find a provider near you.";
 
+const ASSISTANT_SYSTEM_PROMPT = `You are the in-app assistant for Ayuva, a healthcare navigation app. You ONLY help with using the app: booking appointments with providers (Providers tab), the medical records vault (Records tab), medication reminders (Medications tab), care journey steps (Journey tab), and symptom navigation.
+You must NEVER diagnose, name conditions, suggest medicines or doses, or interpret symptoms or results. If the user asks anything clinical or about their health condition, set scope to "clinical".
+Reply in the user's language, in at most 3 short sentences.
+JSON shape: {"scope":"organizational"|"clinical","reply":"<text; empty if clinical>"}`;
+
 @Injectable()
 export class AssistantService {
-  constructor(private readonly aiInteractionLogService: AiInteractionLogService) {}
+  constructor(
+    private readonly aiInteractionLogService: AiInteractionLogService,
+    private readonly claude: ClaudeService,
+  ) {}
 
   async chat(userId: string, dto: ChatRequestDto): Promise<ChatResponseDto> {
     const startedAt = Date.now();
     const text = dto.message.toLowerCase();
     const soundsClinical = CLINICAL_KEYWORDS.some((k) => text.includes(k));
 
-    const response: ChatResponseDto = soundsClinical
+    let response: ChatResponseDto = soundsClinical
       ? {
           reply: CLINICAL_REDIRECT_REPLY,
           scope: AssistantResponseScope.CLINICAL_REDIRECT,
@@ -62,14 +71,40 @@ export class AssistantService {
           disclaimer: AI_DISCLAIMER,
         };
 
+    // The keyword gate above is the safety floor: clinical-sounding messages
+    // are never sent to the model. Otherwise Claude answers app-navigation
+    // questions and may itself flag a message as clinical.
+    if (!soundsClinical && this.claude.isEnabled()) {
+      const ai = await this.claude.completeJson<{ scope?: string; reply?: string }>({
+        system: ASSISTANT_SYSTEM_PROMPT,
+        user: dto.message,
+        maxTokens: 400,
+      });
+      if (ai?.scope === 'clinical') {
+        response = {
+          reply: CLINICAL_REDIRECT_REPLY,
+          scope: AssistantResponseScope.CLINICAL_REDIRECT,
+          source: AiSource.REAL,
+          disclaimer: AI_DISCLAIMER,
+        };
+      } else if (ai?.scope === 'organizational' && ai.reply?.trim()) {
+        response = {
+          reply: ai.reply.trim(),
+          scope: AssistantResponseScope.ORGANIZATIONAL,
+          source: AiSource.REAL,
+          disclaimer: AI_DISCLAIMER,
+        };
+      }
+    }
+
     await this.aiInteractionLogService.record({
       userId,
       service: AiService.ASSISTANT,
       input: { message: dto.message },
       outcome: { scope: response.scope, reply: response.reply },
       latencyMs: Date.now() - startedAt,
-      source: AiSource.MOCK,
-      flagged: soundsClinical,
+      source: response.source,
+      flagged: response.scope === AssistantResponseScope.CLINICAL_REDIRECT,
     });
 
     return response;

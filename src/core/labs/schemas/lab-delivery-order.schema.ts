@@ -20,6 +20,17 @@ export enum LabDeliveryMethod {
   PATIENT_PORTAL = 'patient_portal',
 }
 
+/** Whether the physical sample stayed inside its required temperature band in transit. */
+export enum ColdChainStatus {
+  WITHIN_RANGE = 'within_range',
+  BREACH = 'breach',
+  NOT_RECORDED = 'not_recorded',
+}
+
+// Refrigerated blood/tissue transport band, used when an order doesn't set its own.
+export const DEFAULT_COLD_CHAIN_MIN_C = 2;
+export const DEFAULT_COLD_CHAIN_MAX_C = 8;
+
 @Schema({ _id: false })
 export class LabDeliveryAttempt {
   @Prop({ required: true })
@@ -94,6 +105,39 @@ export class LabDeliveryOrder {
 
   @Prop()
   collectedAt: Date;
+
+  // Courier custody of the physical sample, from the patient's home to the lab.
+  @Prop({ trim: true })
+  courierName?: string;
+
+  // Dispatch rider / courier booking ID.
+  @Prop({ trim: true })
+  courierId?: string;
+
+  // When the sample left the patient's home.
+  @Prop()
+  pickedUpAt?: Date;
+
+  // Logger readings in transit; when both are present they decide the status.
+  @Prop()
+  transitTempMinC?: number;
+
+  @Prop()
+  transitTempMaxC?: number;
+
+  @Prop({ default: DEFAULT_COLD_CHAIN_MIN_C })
+  requiredTempMinC: number;
+
+  @Prop({ default: DEFAULT_COLD_CHAIN_MAX_C })
+  requiredTempMaxC: number;
+
+  // Set by hand only when there are no logger readings (e.g. a courier's report).
+  @Prop({
+    type: String,
+    enum: ColdChainStatus,
+    default: ColdChainStatus.NOT_RECORDED,
+  })
+  coldChainStatus: ColdChainStatus;
 
   @Prop()
   processedAt: Date;

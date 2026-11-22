@@ -1,13 +1,23 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminAiControlService, AvailableModel } from './admin-ai-control.service';
+import {
+  PauseSurfaceDto,
+  ResumeSurfaceDto,
+  RollbackSurfaceDto,
+  UpdateSurfaceDto,
+} from './dto/surface.dto';
 
 @Controller('admin/ai-control')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('ai-control')
 export class AdminAiControlController {
   constructor(private readonly aiControlService: AdminAiControlService) {}
 
@@ -22,9 +32,47 @@ export class AdminAiControlController {
   }
 
   @Put('surfaces/:surfaceKey')
-  async updateSurface(@Param('surfaceKey') surfaceKey: string, @Body() body: any, @Req() req: any) {
-    const actorId = req.user?.sub ?? req.user?._id ?? '000000000000000000000000';
-    return this.aiControlService.updateSurface(surfaceKey, body, actorId);
+  async updateSurface(
+    @Param('surfaceKey') surfaceKey: string,
+    @Body() dto: UpdateSurfaceDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.aiControlService.updateSurface(surfaceKey, dto, { id: user.sub, email: user.email });
+  }
+
+  @Get('surfaces/:surfaceKey/rollback-target')
+  async getRollbackTarget(@Param('surfaceKey') surfaceKey: string) {
+    return this.aiControlService.getRollbackTarget(surfaceKey);
+  }
+
+  @Post('surfaces/:surfaceKey/rollback')
+  @HttpCode(200)
+  async rollbackSurface(
+    @Param('surfaceKey') surfaceKey: string,
+    @Body() dto: RollbackSurfaceDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.aiControlService.rollbackSurface(surfaceKey, dto.reason, { id: user.sub, email: user.email });
+  }
+
+  @Post('surfaces/:surfaceKey/pause')
+  @HttpCode(200)
+  async pauseSurface(
+    @Param('surfaceKey') surfaceKey: string,
+    @Body() dto: PauseSurfaceDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.aiControlService.pauseSurface(surfaceKey, dto, { id: user.sub, email: user.email });
+  }
+
+  @Post('surfaces/:surfaceKey/resume')
+  @HttpCode(200)
+  async resumeSurface(
+    @Param('surfaceKey') surfaceKey: string,
+    @Body() dto: ResumeSurfaceDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.aiControlService.resumeSurface(surfaceKey, dto.recordType, { id: user.sub, email: user.email });
   }
 
   @Get('tools')

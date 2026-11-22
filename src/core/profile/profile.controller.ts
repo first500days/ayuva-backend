@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Put, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -17,6 +25,7 @@ import { CreateMedicationDto } from '../medications/dto/create-medication.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { AuthUserDto } from '../../auth/dto/auth-tokens-response.dto';
 import type { UserDocument } from '../users/schemas/user.schema';
+import { patientAge } from '../../common/utils/age.util';
 import {
   EmergencyContactResponseDto,
   HealthProfileResponseDto,
@@ -78,10 +87,12 @@ export class ProfileController {
   ): Promise<HealthProfileResponseDto> {
     const profile = await this.profileService.getHealthProfile(user.sub);
     return {
-      age: profile?.age ?? 0,
+      age: patientAge(profile).age ?? 0,
+      dateOfBirth: profile?.dateOfBirth?.toISOString().slice(0, 10) ?? null,
       gender: profile?.gender ?? '',
       conditions: profile?.conditions ?? [],
       allergies: profile?.allergies ?? [],
+      bloodGroup: profile?.bloodGroup || null,
     };
   }
 
@@ -97,10 +108,12 @@ export class ProfileController {
       dto,
     );
     return {
-      age: profile.age,
+      age: patientAge(profile).age ?? 0,
+      dateOfBirth: profile.dateOfBirth?.toISOString().slice(0, 10) ?? null,
       gender: profile.gender,
       conditions: profile.conditions,
       allergies: profile.allergies,
+      bloodGroup: profile.bloodGroup || null,
     };
   }
 
@@ -122,6 +135,15 @@ export class ProfileController {
       scheduleTimes: medication.scheduleTimes,
       active: medication.active,
     };
+  }
+
+  @Get('intake-qr')
+  @ApiOperation({
+    summary:
+      'Registration QR: name, time zone and emergency contact, encrypted for the Partner Portal, valid 10 minutes',
+  })
+  intakeQr(@CurrentUser() user: JwtPayload, @Query('tz') tz?: string) {
+    return this.profileService.intakeQr(user.sub, tz);
   }
 
   @Get('emergency-contact')

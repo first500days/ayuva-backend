@@ -1,19 +1,47 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminMarketplaceService } from './admin-marketplace.service';
+import { MapServiceDto } from './dto/map-service.dto';
 
 @Controller('admin/marketplace')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('marketplace')
 export class AdminMarketplaceController {
   constructor(private readonly marketplaceService: AdminMarketplaceService) {}
 
   @Get('taxonomies')
   async getTaxonomies() {
     return this.marketplaceService.getTaxonomies();
+  }
+
+  @Get('provider-services')
+  async searchProviderServices(@Query('q') q = '') {
+    return this.marketplaceService.searchProviderServices(q);
+  }
+
+  @Post('taxonomies/:id/mapped-services')
+  async mapService(
+    @Param('id') id: string,
+    @Body() dto: MapServiceDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.marketplaceService.mapService(id, dto, { id: user.sub, email: user.email });
+  }
+
+  @Delete('taxonomies/:id/mapped-services/:mappingId')
+  async unmapService(
+    @Param('id') id: string,
+    @Param('mappingId') mappingId: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.marketplaceService.unmapService(id, mappingId, user.sub);
   }
 
   @Post('taxonomies')

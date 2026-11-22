@@ -24,6 +24,8 @@ import { AdminSettingsModule } from './settings/admin-settings.module';
 import { AdminDiagnosticTestsModule } from './diagnostic-tests/admin-diagnostic-tests.module';
 import { AdminLabDeliveriesModule } from './lab-deliveries/admin-lab-deliveries.module';
 import { AdminSubscriptionsModule } from './subscriptions/admin-subscriptions.module';
+import { AdminLiveModule } from './live/admin-live.module';
+import { AdminSessionsModule } from './sessions/admin-sessions.module';
 
 @Module({
   imports: [
@@ -52,6 +54,8 @@ import { AdminSubscriptionsModule } from './subscriptions/admin-subscriptions.mo
     AdminDiagnosticTestsModule,
     AdminLabDeliveriesModule,
     AdminSubscriptionsModule,
+    AdminLiveModule,
+    AdminSessionsModule,
   ],
 })
 export class AdminModule {}

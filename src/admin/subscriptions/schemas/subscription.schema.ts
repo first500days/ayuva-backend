@@ -33,6 +33,11 @@ export class Plan {
 
   @Prop({ default: true })
   active: boolean;
+
+  // Features this tier switches off (common/feature-flags.ts). Empty = everything on,
+  // so plans saved before tiers gated features keep working unchanged.
+  @Prop({ type: [String], default: [] })
+  disabledFeatures: string[];
 }
 export const PlanSchema = SchemaFactory.createForClass(Plan);
 

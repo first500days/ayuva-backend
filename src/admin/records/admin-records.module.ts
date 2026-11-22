@@ -1,3 +1,4 @@
+import { AccessLog, AccessLogSchema } from '../../core/sharing/schemas/access-log.schema';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MedicalRecord, MedicalRecordSchema } from '../../core/records/schemas/medical-record.schema';
@@ -14,6 +15,7 @@ import { AuditLogModule } from '../../audit-log/audit-log.module';
     MongooseModule.forFeature([
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
       { name: User.name, schema: UserSchema },
+      { name: AccessLog.name, schema: AccessLogSchema },
     ]),
   ],
   controllers: [AdminRecordsController],

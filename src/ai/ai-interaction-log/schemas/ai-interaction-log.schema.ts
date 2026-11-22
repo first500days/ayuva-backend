@@ -8,6 +8,12 @@ export enum AiService {
   CARE_JOURNEY = 'careJourney',
   REPORT_INTERPRETER = 'reportInterpreter',
   ASSISTANT = 'assistant',
+  // Partner Portal AYUVA Scribe — structures a doctor's own notes (never clinical advice).
+  SCRIBE = 'scribe',
+  // Insurance coding assistant — ICD-11 codes the note's own words name, as a provisional draft.
+  CODING = 'coding',
+  // Explain My Scan — a rule-based companion to an imaging report, for the patient.
+  SCAN_EXPLAINER = 'scanExplainer',
 }
 
 export enum AiReviewStatus {
@@ -58,6 +64,42 @@ export class AIInteractionLog {
 
   @Prop()
   resolutionNotes?: string;
+
+  // The AI Control Center surface + prompt version in force when this ran.
+  @Prop()
+  surfaceKey?: string;
+
+  @Prop()
+  promptVersion?: string;
+
+  // Usage, worked out when the interaction is written (ai-usage.ts). Token
+  // counts are estimates while the engine is rule-based.
+  @Prop()
+  promptTokens?: number;
+
+  @Prop()
+  outputTokens?: number;
+
+  @Prop({ type: [String], default: undefined })
+  guardrails?: string[];
+
+  // The Gemini model the surface's balancing rule picks, and why.
+  @Prop()
+  routedModel?: string;
+
+  @Prop()
+  routeReason?: string;
+
+  // Human review outcome from the AI Monitoring queue.
+  @Prop({ type: String, enum: ['approved', 'escalated'] })
+  reviewAction?: 'approved' | 'escalated';
+
+  @Prop()
+  reviewedAt?: Date;
+
+  // Reviewer's login email (the queue's "Reviewer" column).
+  @Prop()
+  reviewedBy?: string;
 
   // Populated by the timestamps option — declared for typed access (Admin AI Monitoring, FR-15.3).
   createdAt?: Date;

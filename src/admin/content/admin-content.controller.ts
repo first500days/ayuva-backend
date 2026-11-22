@@ -9,6 +9,7 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminContentService } from './admin-content.service';
 import { QueryAdminContentDto } from './dto/query-admin-content.dto';
@@ -22,6 +23,7 @@ import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('content')
 @Controller('admin/content')
 export class AdminContentController {
   constructor(private readonly adminContentService: AdminContentService) {}

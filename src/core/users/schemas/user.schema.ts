@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 export enum UserRole {
   PATIENT = 'patient',
@@ -46,6 +46,8 @@ export class NotificationPrefs {
   @Prop({ default: true }) push: boolean;
   @Prop({ default: true }) email: boolean;
   @Prop({ default: false }) sms: boolean;
+  // Secure "your report is ready" links. The message itself carries no details.
+  @Prop({ default: true }) whatsapp: boolean;
 
   @Prop({ default: true }) appointments: boolean;
   @Prop({ default: true }) results: boolean;
@@ -55,9 +57,34 @@ export class NotificationPrefs {
   @Prop({ default: false }) marketing: boolean;
 
   @Prop({ default: true }) hideSensitiveOnLockScreen: boolean;
+
+  /**
+   * The app schedules dose reminders on the phone itself (they fire offline
+   * and cover family members); the server then skips its own dose pushes.
+   */
+  @Prop({ default: false }) medicationRemindersOnDevice: boolean;
 }
 export const NotificationPrefsSchema =
   SchemaFactory.createForClass(NotificationPrefs);
+
+/** Admin sign-in second factor: an authenticator-app (TOTP) secret. Mandatory for admins. */
+@Schema({ _id: false })
+export class UserMfa {
+  @Prop({ default: false }) enabled: boolean;
+
+  // AES-256-GCM encrypted base32 secret (TotpService), never stored in clear.
+  @Prop() secretEnc?: string;
+
+  @Prop() enrolledAt?: Date;
+
+  // Last accepted 30s step — a code is never accepted twice.
+  @Prop() lastUsedStep?: number;
+
+  @Prop({ default: 0 }) failedAttempts: number;
+
+  @Prop() lockedUntil?: Date;
+}
+export const UserMfaSchema = SchemaFactory.createForClass(UserMfa);
 
 export type UserDocument = HydratedDocument<User>;
 
@@ -108,6 +135,16 @@ export class User {
   @Prop()
   resetPasswordCodeExpiresAt?: Date;
 
+  @Prop({ default: 0 })
+  resetPasswordAttempts?: number;
+
+  // Wrong passwords in a row, and when sign-in reopens after too many.
+  @Prop({ default: 0 })
+  loginFailures?: number;
+
+  @Prop()
+  loginLockedUntil?: Date;
+
   // Captured once at registration; required before an account can be created (PRD FR-1.5).
   @Prop({ type: UserConsentSchema, required: true })
   consent: UserConsent;
@@ -125,6 +162,17 @@ export class User {
   // E.164. Unique among accounts that have one.
   @Prop({ trim: true, index: { unique: true, sparse: true } })
   phone?: string;
+
+  /**
+   * Family profiles: the guardian who manages this person (a child, an
+   * elderly parent…). Such accounts have no sign-in of their own.
+   */
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User', index: true, sparse: true })
+  managedBy?: Types.ObjectId;
+
+  /** How they're related to the guardian: child, parent, spouse… */
+  @Prop()
+  relation?: string;
 
   @Prop()
   phoneVerifiedAt?: Date;
@@ -144,6 +192,26 @@ export class User {
 
   @Prop({ type: NotificationPrefsSchema, default: () => ({}) })
   notificationPrefs?: NotificationPrefs;
+
+  // Admin accounts only.
+  @Prop({ type: UserMfaSchema })
+  mfa?: UserMfa;
+
+  // Partner Portal: the sign-in allowed right now. Tokens from any other are refused.
+  @Prop()
+  partnerSessionId?: string;
+
+  // Last keyboard/mouse/touch activity the portal reported for that session (10-minute sign-out).
+  @Prop()
+  partnerActiveAt?: Date;
+
+  // Copied from the organisation while Ayuva has locked it: no partner tokens are accepted or issued.
+  @Prop()
+  facilityLockedAt?: Date;
+
+  // "Terminate web tokens": access and refresh tokens issued before this are refused.
+  @Prop()
+  tokensValidAfter?: Date;
 
   // Populated by the timestamps:true schema option — declared for typed access (Admin User Management, FR-12.1).
   createdAt?: Date;

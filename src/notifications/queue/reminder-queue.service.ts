@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 import {
   AppointmentReminderJobData,
+  CareFollowUpJobData,
   DocumentUploadJobData,
   FollowUpReminderJobData,
   MedicationReminderJobData,
@@ -10,11 +11,26 @@ import {
   RefillReminderJobData,
   ReminderJobName,
   appointmentReminderJobId,
+  careFollowUpJobId,
   documentUploadJobId,
   followUpReminderJobId,
   medicationReminderJobId,
   refillReminderJobId,
 } from './reminder-queue.constants';
+import { dateStart } from '../../partner/hospital/clock';
+
+const NINE_AM_MS = 9 * 60 * 60_000;
+const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * When to prompt for a follow-up date, in the providers' time zone: 9 am the
+ * day before, else 9 am on the day, else not at all.
+ */
+export function careFollowUpPromptAt(followUpDate: Date, now: Date): Date | null {
+  const onTheDay = dateStart(followUpDate.toISOString().slice(0, 10)).getTime() + NINE_AM_MS;
+  const fireAt = [onTheDay - DAY_MS, onTheDay].find((t) => t > now.getTime());
+  return fireAt === undefined ? null : new Date(fireAt);
+}
 
 export interface MedicationForReminder {
   id: string;
@@ -236,6 +252,43 @@ export class ReminderQueueService {
       removeOnComplete: true,
       removeOnFail: true,
     });
+  }
+
+  /**
+   * Prompts the patient as a doctor's follow-up date approaches: 9 am the day
+   * before, or 9 am on the day if that has already gone.
+   */
+  async scheduleCareFollowUp(followUp: {
+    prescriptionId: string;
+    userId: string;
+    doctorName: string;
+    followUpDate: Date;
+  }): Promise<void> {
+    const fireAt = careFollowUpPromptAt(followUp.followUpDate, new Date());
+    if (!fireAt) return;
+    const data: CareFollowUpJobData = {
+      type: ReminderJobName.CARE_FOLLOW_UP,
+      prescriptionId: followUp.prescriptionId,
+      userId: followUp.userId,
+      doctorName: followUp.doctorName,
+      dateLabel: followUp.followUpDate.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        timeZone: 'UTC',
+      }),
+    };
+    await this.queue.add(ReminderJobName.CARE_FOLLOW_UP, data, {
+      jobId: careFollowUpJobId(followUp.prescriptionId),
+      delay: fireAt.getTime() - Date.now(),
+      removeOnComplete: true,
+      removeOnFail: true,
+    });
+  }
+
+  /** The prescription was cancelled, so its follow-up prompt goes too. */
+  async cancelCareFollowUp(prescriptionId: string): Promise<void> {
+    const job = await this.queue.getJob(careFollowUpJobId(prescriptionId));
+    await job?.remove();
   }
 
   /** Removes a pending follow-up reminder (appointment cancelled/rescheduled). */

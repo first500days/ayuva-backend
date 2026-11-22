@@ -49,6 +49,10 @@ const JOB_ROUTING: Record<
     pref: 'appointments',
     feed: { category: 'appointments', trigger: 'follow_up_due' },
   },
+  [ReminderJobName.CARE_FOLLOW_UP]: {
+    pref: 'appointments',
+    feed: { category: 'appointments', trigger: 'follow_up_due' },
+  },
   [ReminderJobName.DOCUMENT_UPLOAD]: {
     pref: 'results',
     feed: { category: 'documents', trigger: 'upload_confirmed' },
@@ -135,12 +139,16 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
       this.logger.debug(`User ${data.userId} muted ${routing.pref}; skipping ${data.type}`);
       return;
     }
+    // Dose reminders already fire from the phone itself; a push too would double them.
+    if (data.type === ReminderJobName.MEDICATION && prefs.medicationRemindersOnDevice) {
+      return;
+    }
 
     await Promise.all([
       prefs.push ? this.sendPush(data.userId, payload, prefs) : undefined,
       prefs.email && user?.email && this.isEmailWorthy(data.type)
         ? this.mail
-            .sendMail(user.email, payload.title, `<p>${escapeHtml(payload.body)}</p>`)
+            .sendMail(user.email, payload.title, `<p>${escapeHtml(this.outsideText(data, payload))}</p>`)
             .catch((err: unknown) =>
               this.logger.error(`Reminder email failed for user ${data.userId}`, err as Error),
             )
@@ -150,9 +158,23 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
       data.type === ReminderJobName.APPOINTMENT &&
       user?.phone &&
       user.phoneVerifiedAt
-        ? this.smsSender.send(user.phone, `Ayuva: ${payload.body}`)
+        ? this.smsSender.send(user.phone, `Ayuva: ${this.outsideText(data, payload)}`)
         : undefined,
     ]);
+  }
+
+  /** Email and SMS pass through outside services, so they never name a doctor or clinic. */
+  private outsideText(data: ReminderJobData, payload: FcmPayload): string {
+    switch (data.type) {
+      case ReminderJobName.APPOINTMENT:
+        return 'You have an upcoming appointment. Open Ayuva to see the details.';
+      case ReminderJobName.FOLLOW_UP:
+        return 'It’s time to check in on your recent visit. Open Ayuva to see your next steps.';
+      case ReminderJobName.CARE_FOLLOW_UP:
+        return 'You have a follow-up coming up. Open Ayuva to book a time.';
+      default:
+        return payload.body;
+    }
   }
 
   private async sendPush(
@@ -193,6 +215,8 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
         return { actionLabel: 'Open', actionRoute: '/record/[id]', actionParams: { id: data.recordId } };
       case ReminderJobName.FOLLOW_UP:
         return { actionLabel: 'Book follow-up', actionRoute: '/appointments' };
+      case ReminderJobName.CARE_FOLLOW_UP:
+        return { actionLabel: 'See my journey', actionRoute: '/journey' };
       default:
         return { actionLabel: 'View', actionRoute: '/appointments' };
     }
@@ -229,6 +253,12 @@ export class ReminderProcessor implements OnModuleInit, OnModuleDestroy {
           title: 'Follow-up due',
           body: `How are you feeling after your visit with ${data.providerName}? Check your care journey for next steps.`,
           data: { appointmentId: data.appointmentId, type: data.type },
+        };
+      case ReminderJobName.CARE_FOLLOW_UP:
+        return {
+          title: 'Follow-up coming up',
+          body: `Your follow-up with ${data.doctorName} is on ${data.dateLabel}. Open AYUVA to book a time.`,
+          data: { prescriptionId: data.prescriptionId, type: data.type },
         };
     }
   }

@@ -91,6 +91,10 @@ export class AdminIssue {
   @Prop()
   resolvedAt?: Date;
 
+  // Set when the issue passed 15 minutes unaddressed and became an alert (admin/live/exceptions.ts).
+  @Prop()
+  escalatedAt?: Date;
+
   @Prop()
   createdAt?: Date;
 

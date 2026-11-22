@@ -30,6 +30,9 @@ import { ConsentGuard } from '../../auth/guards/consent.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { RecordsService } from './records.service';
+import { LabTrendsService } from './lab-trends.service';
+import { ScanExplainService } from './scan-explain.service';
+import { ScanViewKeysService } from './scan-view-keys.service';
 import { UploadRecordDto } from './dto/upload-record.dto';
 import { QueryRecordsDto } from './dto/query-records.dto';
 import { UpdateRecordDto } from './dto/update-record.dto';
@@ -37,6 +40,8 @@ import { AttachAppointmentDto } from './dto/attach-appointment.dto';
 import { MedicalRecordResponseDto } from './dto/medical-record-response.dto';
 import { MedicalRecordDetailResponseDto } from './dto/medical-record-detail-response.dto';
 import { MedicalRecordType } from './schemas/medical-record.schema';
+import { PlainLanguageResponseDto } from './dto/plain-language-response.dto';
+import { AskRecordsDto, AskRecordsResponseDto } from './dto/ask-records.dto';
 import { AuditLogInterceptor } from '../../audit-log/interceptors/audit-log.interceptor';
 import { AuditEvent } from '../../audit-log/decorators/audit-event.decorator';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
@@ -48,7 +53,12 @@ const MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // 15MB
 @UseGuards(JwtAuthGuard, ConsentGuard)
 @Controller('records')
 export class RecordsController {
-  constructor(private readonly recordsService: RecordsService) {}
+  constructor(
+    private readonly recordsService: RecordsService,
+    private readonly labTrends: LabTrendsService,
+    private readonly scanExplain: ScanExplainService,
+    private readonly scanKeys: ScanViewKeysService,
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -99,6 +109,16 @@ export class RecordsController {
     return this.recordsService.findAll(user.sub, query);
   }
 
+  // Declared before ':id' so the path isn't read as a record id.
+  @Get('lab-trends')
+  @ApiOperation({
+    summary:
+      'Lab values over time per test from released partner lab reports, with where the latest sits against the reference range and a plain, rule-based description',
+  })
+  labTrendsList(@CurrentUser() user: JwtPayload) {
+    return this.labTrends.forPatient(user.sub);
+  }
+
   @Get(':id/file')
   @ApiOperation({ summary: "Download the record's file (U08 row menu)" })
   @AuditEvent(AuditAction.RECORD_DOWNLOAD, 'MedicalRecord')
@@ -145,6 +165,55 @@ export class RecordsController {
     @Param('id') id: string,
   ): Promise<void> {
     return this.recordsService.remove(user.sub, id);
+  }
+
+  @Post(':id/explain-scan')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '"Explain My Scan": the imaging report\'s conclusion in its own words, its terms in plain language, sizes mentioned, the doctor\'s signed note and questions to ask. Rule-based; always carries the clinical-validation disclaimer.',
+  })
+  explainScanFor(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.scanExplain.explain(user.sub, id);
+  }
+
+  @Post(':id/view-key')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'A single-use, 60-second link (GET /scan-view?key=) for the in-app scan viewer; imaging studies only',
+  })
+  scanViewKey(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.scanKeys.issue(user.sub, id);
+  }
+
+  @Post('ask')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '"Ask Your Records": answer a question about your own history (last test, how many, a value from your lab PDFs, or a search). Rule-based.',
+  })
+  @ApiOkResponse({ type: AskRecordsResponseDto })
+  ask(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: AskRecordsDto,
+  ): Promise<AskRecordsResponseDto> {
+    return this.recordsService.ask(user.sub, dto.question);
+  }
+
+  @Get(':id/plain-language')
+  @ApiOperation({
+    summary:
+      '"Simplify": everyday meanings of the medical words in the document, and each lab value against the range printed beside it. Rule-based; no medical opinion.',
+  })
+  @ApiOkResponse({ type: PlainLanguageResponseDto })
+  @AuditEvent(AuditAction.RECORD_VIEW, 'MedicalRecord')
+  @UseInterceptors(AuditLogInterceptor)
+  plainLanguage(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ): Promise<PlainLanguageResponseDto> {
+    return this.recordsService.plainLanguage(user.sub, id);
   }
 
   @Get(':id')

@@ -78,6 +78,71 @@ export class ProviderBlockedDate {
 export const ProviderBlockedDateSchema =
   SchemaFactory.createForClass(ProviderBlockedDate);
 
+export enum CredentialDocType {
+  MEDICAL_LICENSE = 'medical_license',
+  REGISTRATION_CERTIFICATE = 'registration_certificate',
+  ACCREDITATION = 'accreditation',
+  OTHER = 'other',
+}
+
+/** A licence / registration document submitted for verification (A02). */
+@Schema()
+export class ProviderCredential {
+  @Prop({ type: String, enum: CredentialDocType, required: true })
+  docType: CredentialDocType;
+
+  // Encrypted object key; the file is only streamed to admins and the owning organisation.
+  @Prop({ required: true })
+  fileRef: string;
+
+  // System name (AYUVA-LIC-XXXX.pdf), never the uploader's own filename.
+  @Prop({ required: true })
+  fileName: string;
+
+  @Prop({ required: true })
+  mimeType: string;
+
+  @Prop()
+  sizeBytes?: number;
+
+  @Prop({ required: true })
+  uploadedAt: Date;
+
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
+  uploadedBy?: Types.ObjectId;
+
+  @Prop({ type: String, enum: ['partner', 'admin'] })
+  uploadedByRole?: 'partner' | 'admin';
+}
+export const ProviderCredentialSchema =
+  SchemaFactory.createForClass(ProviderCredential);
+
+/**
+ * How the organisation's own documents (prescriptions, lab reports, summaries)
+ * are headed and footed. Every field is optional; unset fields fall back to the
+ * organisation's profile name, first location and phone.
+ */
+@Schema({ _id: false })
+export class ProviderLetterhead {
+  /** Name printed in the header, e.g. "Orange Labs & Diagnostics". */
+  @Prop() displayName?: string;
+  /** Small line under the name, e.g. "NABL accredited · Since 1998". */
+  @Prop() tagline?: string;
+  @Prop() addressLine?: string;
+  /** Phone, email and website on one line. */
+  @Prop() contactLine?: string;
+  /** Registration / licence line, e.g. "Reg. no. KMC/12345 · GSTIN ...". */
+  @Prop() registrationLine?: string;
+  /** Printed above the page number on every page. */
+  @Prop() footerNote?: string;
+  /** Header accent colour as #rrggbb. */
+  @Prop() accentColor?: string;
+  /** Encrypted JPEG logo in storage. */
+  @Prop() logoRef?: string;
+}
+export const ProviderLetterheadSchema =
+  SchemaFactory.createForClass(ProviderLetterhead);
+
 export type ProviderDocument = HydratedDocument<Provider>;
 
 @Schema({ timestamps: true })
@@ -106,6 +171,15 @@ export class Provider {
   @Prop()
   consultationFee?: number;
 
+  // Insurers this provider is empanelled with, for out-of-pocket estimates in discovery.
+  @Prop({ type: [Object], default: [] })
+  insurancePanel: {
+    insurer: string;
+    cashless: boolean;
+    opdCovered: boolean;
+    copayPct?: number;
+  }[];
+
   @Prop({
     type: String,
     enum: ProviderStatus,
@@ -126,6 +200,9 @@ export class Provider {
 
   @Prop()
   profileImageUrl?: string;
+
+  @Prop({ type: ProviderLetterheadSchema })
+  letterhead?: ProviderLetterhead;
 
   @Prop({ type: [SchemaTypes.ObjectId], ref: 'MedicalRecord' })
   verificationDocuments?: Types.ObjectId[];
@@ -180,8 +257,32 @@ export class Provider {
   @Prop()
   verifiedAt?: Date;
 
+  // Facility kill-switch: set while Ayuva has locked every staff login of this organisation.
+  @Prop()
+  lockedAt?: Date;
+
+  @Prop()
+  lockReason?: string;
+
   @Prop()
   verificationNotes?: string;
+
+  // Licence / registration documents reviewed in the verification queue.
+  @Prop({ type: [ProviderCredentialSchema], default: [] })
+  credentials: (ProviderCredential & { _id?: Types.ObjectId })[];
+
+  // Set when an admin pauses a live provider (compliance dispute, failed re-verification).
+  @Prop()
+  suspendedAt?: Date;
+
+  @Prop({ trim: true })
+  suspensionReason?: string;
+
+  // Partner Portal: the organisation's departments (hospital OPD/IPD units,
+  // lab sections) — used for staff, appointment and ward assignment and for
+  // department analytics.
+  @Prop({ type: [String], default: [] })
+  departments?: string[];
 }
 
 export const ProviderSchema = SchemaFactory.createForClass(Provider);

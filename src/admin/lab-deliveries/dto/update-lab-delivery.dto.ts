@@ -1,6 +1,6 @@
-import { IsString, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsDateString, IsNumber, Max, MaxLength, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { LabDeliveryStatus, LabDeliveryMethod } from '../../../core/labs/schemas/lab-delivery-order.schema';
+import { ColdChainStatus, LabDeliveryStatus, LabDeliveryMethod } from '../../../core/labs/schemas/lab-delivery-order.schema';
 
 export class UpdateLabDeliveryDto {
   @ApiPropertyOptional({ enum: LabDeliveryStatus })
@@ -37,6 +37,60 @@ export class UpdateLabDeliveryDto {
   @IsOptional()
   @IsEnum(['normal', 'urgent', 'stat'])
   priority?: 'normal' | 'urgent' | 'stat';
+
+  // Courier log and sample custody. An empty string / null clears the value.
+  @ApiPropertyOptional({ example: 'Dunzo Health' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  courierName?: string | null;
+
+  @ApiPropertyOptional({ example: 'RIDER-4471' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  courierId?: string | null;
+
+  @ApiPropertyOptional({ example: '2026-10-23T07:45:00.000Z' })
+  @IsOptional()
+  @IsDateString()
+  pickedUpAt?: string | null;
+
+  @ApiPropertyOptional({ example: 3.1, description: 'Lowest transit temperature (°C)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(-80)
+  @Max(60)
+  transitTempMinC?: number | null;
+
+  @ApiPropertyOptional({ example: 6.4, description: 'Highest transit temperature (°C)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(-80)
+  @Max(60)
+  transitTempMaxC?: number | null;
+
+  @ApiPropertyOptional({ example: 2 })
+  @IsOptional()
+  @IsNumber()
+  @Min(-80)
+  @Max(60)
+  requiredTempMinC?: number;
+
+  @ApiPropertyOptional({ example: 8 })
+  @IsOptional()
+  @IsNumber()
+  @Min(-80)
+  @Max(60)
+  requiredTempMaxC?: number;
+
+  @ApiPropertyOptional({
+    enum: ColdChainStatus,
+    description: 'Manual status; ignored while transit readings decide it',
+  })
+  @IsOptional()
+  @IsEnum(ColdChainStatus)
+  coldChainStatus?: ColdChainStatus;
 }
 
 export class RetryDeliveryDto {

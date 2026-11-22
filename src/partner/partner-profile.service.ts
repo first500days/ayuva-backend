@@ -1,7 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { Provider, ProviderDocument } from '../core/providers/schemas/provider.schema';
+import { Model, Types } from 'mongoose';
+import {
+  CredentialDocType,
+  Provider,
+  ProviderDocument,
+} from '../core/providers/schemas/provider.schema';
 import {
   Appointment,
   AppointmentDocument,
@@ -23,6 +33,15 @@ import { BlockedDateDto } from '../admin/providers/dto/blocked-date.dto';
 import { PartnerContextService } from './partner-context.service';
 import { PartnerRecordsService } from './partner-records.service';
 import { UpdatePartnerProfileDto } from './dto/partner.dto';
+import { StaffRole, roleLabel } from './rbac/partner-permissions';
+import { registrationStateOf } from './staff/registration-status';
+
+/** Appointments in these states no longer hold their slot. */
+const CLOSED_APPOINTMENT_STATUSES = [
+  AppointmentStatus.CANCELLED_BY_PATIENT,
+  AppointmentStatus.CANCELLED_BY_PROVIDER,
+  AppointmentStatus.REFUNDED,
+];
 
 const EDITABLE_FIELDS = [
   'name',
@@ -36,6 +55,8 @@ const EDITABLE_FIELDS = [
   'profileImageUrl',
   'requiresApproval',
   'locations',
+  'departments',
+  'insurancePanel',
 ] as const;
 
 @Injectable()
@@ -50,17 +71,85 @@ export class PartnerProfileService {
     private readonly records: PartnerRecordsService,
   ) {}
 
+  /**
+   * Profile plus who is signed in: their role inside the organisation and the
+   * effective permissions the portal renders its sidebar from. Works while
+   * the organisation is still awaiting verification.
+   */
   async getMe(userId: string) {
-    return this.toProfile(await this.context.getProvider(userId));
+    const ctx = await this.context.resolve(userId);
+    const m = ctx.member;
+    return {
+      ...this.toProfile(ctx.provider),
+      orgType: ctx.orgType,
+      membership: {
+        id: m.id,
+        role: m.role,
+        roleLabel: roleLabel(ctx.orgType, m.role),
+        isOwner: m.isOwner,
+        fullName: m.fullName,
+        email: m.email,
+        title: m.title ?? null,
+        department: m.department ?? null,
+        registrationNumber: m.registrationNumber ?? null,
+        // Prescription signing stays locked until this is 'verified'.
+        registration: registrationStateOf(m, ctx.provider),
+        phone: m.phone ?? null,
+        dutySchedule: (m.dutySchedule ?? []).map((b) => ({
+          day: b.day,
+          start: b.start,
+          end: b.end,
+        })),
+        onDuty: m.onDuty ?? false,
+        dutyStatusAt: m.dutyStatusAt?.toISOString() ?? null,
+        permissions: ctx.permissions,
+        // The member's own portal preferences (imaging layouts, macros…).
+        preferences: m.preferences ?? {},
+      },
+    };
+  }
+
+  /** P01: licence / registration documents — viewable and uploadable while still pending. */
+  async credentials(userId: string) {
+    const ctx = await this.context.resolve(userId);
+    return this.adminProviders.listCredentials(ctx.provider.id as string);
+  }
+
+  async addCredential(
+    userId: string,
+    file: Express.Multer.File | undefined,
+    docType: CredentialDocType,
+  ) {
+    const ctx = await this.context.resolve(userId);
+    if (ctx.role !== StaffRole.ADMIN) {
+      throw new ForbiddenException(
+        'Only an organisation admin can submit verification documents',
+      );
+    }
+    return this.adminProviders.addCredential(ctx.provider.id as string, file, docType, {
+      userId,
+      role: 'partner',
+    });
   }
 
   async updateProfile(userId: string, dto: UpdatePartnerProfileDto) {
     const provider = await this.context.requireLive(userId);
     for (const key of EDITABLE_FIELDS) {
-      if (dto[key] !== undefined) provider.set(key, dto[key]);
+      if (dto[key] !== undefined) {
+        provider.set(
+          key,
+          key === 'departments'
+            ? [
+                ...new Set(
+                  (dto.departments ?? []).map((d) => d.trim()).filter(Boolean),
+                ),
+              ]
+            : dto[key],
+        );
+      }
     }
     await provider.save();
-    return this.toProfile(provider);
+    return this.getMe(userId);
   }
 
   async updateSchedule(userId: string, dto: ProviderScheduleDto) {
@@ -100,6 +189,72 @@ export class PartnerProfileService {
       time: s.time,
       durationMin: s.durationMin,
     }));
+  }
+
+  /** Every slot on one day — open, booked and blocked — for the slot manager. */
+  async daySlots(userId: string, dateIso: string) {
+    const provider = await this.context.requireLive(userId);
+    const start = new Date(`${dateIso}T00:00:00.000Z`);
+    if (Number.isNaN(start.getTime())) {
+      throw new BadRequestException('date must be YYYY-MM-DD');
+    }
+    const end = new Date(start.getTime() + 86_400_000);
+    const slots = await this.slotModel
+      .find({ providerId: provider._id, date: { $gte: start, $lt: end } })
+      .sort({ time: 1 })
+      .exec();
+    const appointments = await this.appointmentModel
+      .find({
+        slotId: { $in: slots.map((s) => s._id) },
+        status: { $nin: CLOSED_APPOINTMENT_STATUSES },
+      })
+      .select('slotId status assignedName')
+      .exec();
+    const bookingBySlot = new Map(appointments.map((a) => [a.slotId.toString(), a]));
+    return {
+      date: dateIso,
+      dateBlockedReason: provider.blockedDates.find(
+        (b) => b.date.toISOString().slice(0, 10) === dateIso,
+      )?.reason,
+      slots: slots.map((s) => {
+        const booking = bookingBySlot.get(s.id);
+        return {
+          id: s.id,
+          time: s.time,
+          durationMin: s.durationMin,
+          status: s.status,
+          blockedReason: s.blockedReason,
+          appointmentStatus: booking?.status,
+          assignedName: booking?.assignedName,
+        };
+      }),
+    };
+  }
+
+  /** Close one open slot to new bookings, or reopen a slot that was closed. Booked slots are never touched. */
+  async setSlotBlocked(userId: string, slotId: string, blocked: boolean, reason?: string) {
+    const provider = await this.context.requireLive(userId);
+    if (!Types.ObjectId.isValid(slotId)) throw new NotFoundException('Slot not found');
+    const slot = await this.slotModel.findOne({ _id: slotId, providerId: provider._id });
+    if (!slot) throw new NotFoundException('Slot not found');
+    if (slot.status === AppointmentSlotStatus.BOOKED) {
+      throw new ConflictException('This slot has a booking — reschedule or cancel the appointment instead');
+    }
+    if (blocked) {
+      slot.status = AppointmentSlotStatus.BLOCKED;
+      slot.blockedReason = reason?.trim() || 'Closed by provider';
+      slot.manuallyBlocked = true;
+    } else {
+      const day = slot.date.toISOString().slice(0, 10);
+      if (provider.blockedDates.some((b) => b.date.toISOString().slice(0, 10) === day)) {
+        throw new ConflictException('This whole day is blocked — unblock the date first');
+      }
+      slot.status = AppointmentSlotStatus.OPEN;
+      slot.set('blockedReason', undefined);
+      slot.set('manuallyBlocked', undefined);
+    }
+    await slot.save();
+    return { id: slot.id, status: slot.status, blockedReason: slot.blockedReason };
   }
 
   /** P03 dashboard: today's appointments, pending items, recent shared reports. */
@@ -187,11 +342,13 @@ export class PartnerProfileService {
       qualifications: p.qualifications ?? [],
       languages: p.languages,
       experienceYears: p.experienceYears,
+      insurancePanel: p.insurancePanel ?? [],
       consultationFee: p.consultationFee,
       bio: p.bio,
       profileImageUrl: p.profileImageUrl,
       requiresApproval: p.requiresApproval ?? false,
       locations: p.locations,
+      departments: p.departments ?? [],
       rating: p.rating,
       schedule: p.schedule
         ? {

@@ -1,8 +1,10 @@
+import { FEATURE_FLAGS } from '../../common/feature-flags';
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AuditLogInterceptor } from '../../audit-log/interceptors/audit-log.interceptor';
 import { AuditEvent } from '../../audit-log/decorators/audit-event.decorator';
@@ -20,9 +22,16 @@ import {
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('subscriptions')
 @Controller('admin/subscriptions')
 export class AdminSubscriptionsController {
   constructor(private readonly service: AdminSubscriptionsService) {}
+
+  @Get('features')
+  @ApiOperation({ summary: 'Features a tier can switch off (app and Partner Portal)' })
+  features() {
+    return Object.entries(FEATURE_FLAGS).map(([key, f]) => ({ key, ...f }));
+  }
 
   @Get('plans')
   @ApiOperation({ summary: 'Free / Premium / Enterprise plans with subscriber counts (A03)' })

@@ -1,8 +1,10 @@
+import { ShareLiveService } from './share-live.service';
 import {
   BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -28,6 +30,8 @@ import {
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 import { AppNotificationsService } from '../../notifications/app-notifications.service';
+import { PartnerNotifierService } from '../../partner/notify/partner-notifier.service';
+import { PartnerTrigger } from '../../partner/notify/partner-triggers';
 import {
   CreateGrantDto,
   ShareGrantResponseDto,
@@ -43,8 +47,10 @@ import {
 } from './share-scope';
 
 const DURATION_TO_MS: Record<string, number | null> = {
-  // v1 values — still honoured for display, no longer accepted on create.
-  '24h': 24 * 60 * 60 * 1000,
+  [ShareDuration.HOURS_1]: 60 * 60 * 1000,
+  [ShareDuration.HOURS_2]: 2 * 60 * 60 * 1000,
+  [ShareDuration.HOURS_24]: 24 * 60 * 60 * 1000,
+  // v1 value — still honoured for display, no longer accepted on create.
   '7d': 7 * 24 * 60 * 60 * 1000,
   [ShareDuration.DAYS_30]: 30 * 24 * 60 * 60 * 1000,
   [ShareDuration.UNTIL_REVOKED]: null,
@@ -77,6 +83,12 @@ export class SharingService {
     private readonly slotModel: Model<AppointmentSlotDocument>,
     private readonly audit: AuditLogService,
     private readonly notifications: AppNotificationsService,
+    // Tells the receiving partner organisation (Notification Center "Patient shared records").
+    @Optional()
+    private readonly partnerNotifier?: PartnerNotifierService,
+    // Closes open partner screens when a share ends. Optional for hand-built test modules.
+    @Optional()
+    private readonly shareLive?: ShareLiveService,
   ) {}
 
   /** Share recipients: verified partners only (an org is `connected` once its provider is approved). */
@@ -189,6 +201,20 @@ export class SharingService {
     });
     // A grant is never silent to the patient (U11).
     await this.notifyConsentEvent(userId, grant, 'granted', scopeLabel);
+    await this.partnerNotifier?.emit(org.providerId, {
+      trigger: PartnerTrigger.RECORDS_SHARED,
+      title: 'Patient shared records',
+      message: `{patient} shared ${scopeLabel.toLowerCase()} with you${grant.purpose ? ` — "${grant.purpose}"` : ''}.`,
+      patientId: userId,
+      safeMessage: 'A patient shared Medical Vault records with your organisation.',
+      route: '/partner/patients',
+      params: { patientId: userId },
+      data: {
+        grantId: grant.id,
+        scopeKind: grant.scopeKind,
+        expiresAt: expiresAt?.toISOString(),
+      },
+    });
 
     return this.toGrantResponse(grant);
   }
@@ -255,6 +281,8 @@ export class SharingService {
     grant.status = 'revoked';
     grant.revokedAt = new Date();
     await grant.save();
+    // The partner's open screens blur now, not at their next refresh.
+    await this.shareLive?.ended(grant, 'revoked');
 
     const scopeLabel = describeScope(grant);
     await this.logModel.create({

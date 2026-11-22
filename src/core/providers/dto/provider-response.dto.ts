@@ -1,8 +1,22 @@
+import type { FeeEstimate } from '../insurance-estimate';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ProviderCategory } from '../schemas/provider.schema';
 import { ProviderLocationDto } from './create-provider.dto';
 
 export class ProviderResponseDto {
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Insurers this provider is empanelled with',
+  })
+  acceptedInsurers?: string[];
+
+  @ApiPropertyOptional({
+    type: Object,
+    description:
+      'With ?insurer=: the estimated out-of-pocket cost for that insurer',
+  })
+  insuranceEstimate?: FeeEstimate | null;
+
   @ApiProperty({ example: '64f0c8e2b1a2c3d4e5f6a7b8' })
   id: string;
 

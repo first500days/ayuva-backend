@@ -10,6 +10,8 @@ import {
   MedicalRecordDocument,
   MedicalRecordKind,
   MedicalRecordType,
+  consentTokenFor,
+  recordTitle,
 } from './schemas/medical-record.schema';
 import {
   Appointment,
@@ -18,9 +20,11 @@ import {
 import {
   ReportInterpretation,
   ReportInterpretationDocument,
-  ReportAiStatus,
+  patientView,
 } from '../../ai/report-interpreter/schemas/report-interpretation.schema';
+import { User, UserDocument } from '../users/schemas/user.schema';
 import { StorageService } from '../../storage/storage.service';
+import { systemFileName } from '../../common/utils/system-file-name.util';
 import { ReminderQueueService } from '../../notifications/queue/reminder-queue.service';
 import { MedicalRecordResponseDto } from './dto/medical-record-response.dto';
 import { MedicalRecordDetailResponseDto } from './dto/medical-record-detail-response.dto';
@@ -28,6 +32,40 @@ import { UploadRecordDto } from './dto/upload-record.dto';
 import { UpdateRecordDto } from './dto/update-record.dto';
 import { QueryRecordsDto } from './dto/query-records.dto';
 import { buildSafeRegex } from '../../common/utils/regex.util';
+import {
+  detectDocument,
+  FILENAME_TYPE_PATTERNS,
+  type DocumentDetection,
+} from './document-detect';
+import { autoTags } from './auto-tags';
+import { readDocumentText } from './document-text';
+import { simplifyDocument, type PlainLanguageGuide } from './plain-language';
+import { parseQuestion } from './ask-records';
+import type { AskRecordsResponseDto } from './dto/ask-records.dto';
+
+const FOLDER_WORDS: Record<MedicalRecordType, [string, string]> = {
+  [MedicalRecordType.LAB_REPORT]: ['lab report', 'lab reports'],
+  [MedicalRecordType.SCAN]: ['scan', 'scans'],
+  [MedicalRecordType.PRESCRIPTION]: ['prescription', 'prescriptions'],
+  [MedicalRecordType.DISCHARGE]: ['discharge summary', 'discharge summaries'],
+  [MedicalRecordType.INSURANCE]: ['insurance document', 'insurance documents'],
+  [MedicalRecordType.VACCINATION]: [
+    'vaccination record',
+    'vaccination records',
+  ],
+  [MedicalRecordType.CERTIFICATE]: ['certificate', 'certificates'],
+};
+// Lab PDFs read to answer a value question, newest first.
+const ASK_MAX_REPORTS = 12;
+
+const dateText = (d: Date) =>
+  d.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  });
+const num = (n: number) => String(Number(n.toFixed(3)));
 
 export const ALLOWED_RECORD_MIME_TYPES = [
   'application/pdf',
@@ -40,24 +78,8 @@ export const ALLOWED_RECORD_MIME_TYPES = [
 // Priority-ordered filename heuristics. Phase 3 replaces this with real
 // OCR/AI-assisted classification (PRD FR-8.3) — this rule-based pass is the
 // permanent fallback/first-pass, not a placeholder to be deleted outright.
-const CATEGORY_PATTERNS: Array<[RegExp, MedicalRecordType]> = [
-  [/discharge|summary/i, MedicalRecordType.DISCHARGE],
-  [
-    /\b(rx|prescription|medication|pharmacy)\b/i,
-    MedicalRecordType.PRESCRIPTION,
-  ],
-  [/vaccin|immuni[sz]ation|booster/i, MedicalRecordType.VACCINATION],
-  [/insurance|policy|claim|tpa/i, MedicalRecordType.INSURANCE],
-  [/certificate|fitness|sick[-_ ]?leave/i, MedicalRecordType.CERTIFICATE],
-  [
-    /blood|cbc|lipid|glucose|hba1c|panel|h(a)?ematology|ecg|ekg/i,
-    MedicalRecordType.LAB_REPORT,
-  ],
-  [
-    /x-?ray|mri|ct[-_ ]?scan|ultrasound|echo|scan|imaging|radiology/i,
-    MedicalRecordType.SCAN,
-  ],
-];
+// File-name folder hints live with the rest of the document reading.
+const CATEGORY_PATTERNS = FILENAME_TYPE_PATTERNS;
 
 @Injectable()
 export class RecordsService {
@@ -68,6 +90,8 @@ export class RecordsService {
     private readonly appointmentModel: Model<AppointmentDocument>,
     @InjectModel(ReportInterpretation.name)
     private readonly reportInterpretationModel: Model<ReportInterpretationDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly storageService: StorageService,
     private readonly reminderQueueService: ReminderQueueService,
   ) {}
@@ -99,48 +123,99 @@ export class RecordsService {
       await this.getOwnedAppointmentOrThrow(userId, options.appointmentId);
     }
 
+    // A patient's own document: read its folder, date and provider from the
+    // text it carries (and its file name) for whatever they didn't say.
+    const detection =
+      kind === MedicalRecordKind.ORIGINAL &&
+      (!options.type || !options.recordDate || !options.providerName)
+        ? detectDocument({
+            text: await readDocumentText(file.buffer, file.mimetype),
+            fileName: file.originalname,
+          })
+        : undefined;
+    const detected: DocumentDetection | undefined = detection && {
+      textRead: detection.textRead,
+      ...(!options.type && detection.type && { type: detection.type }),
+      ...(!options.recordDate &&
+        detection.recordDate && { recordDate: detection.recordDate }),
+      ...(!options.providerName &&
+        detection.providerName && { providerName: detection.providerName }),
+      ...(detection.procedureType && { procedureType: detection.procedureType }),
+      ...(detection.attendingPhysician && {
+        attendingPhysician: detection.attendingPhysician,
+      }),
+    };
+
     // A saved explanation lives in its source's folder, next to it.
     const type =
       options.type ??
       source?.type ??
       (kind === MedicalRecordKind.VISIT_SUMMARY
         ? MedicalRecordType.PRESCRIPTION
-        : this.categorize(file.originalname, file.mimetype));
-    const fileRef = await this.storageService.upload(
-      file.buffer,
-      file.originalname,
-      userId,
-    );
+        : (detected?.type?.value ??
+          this.categorize(file.originalname, file.mimetype)));
+    const providerName =
+      options.providerName ??
+      source?.providerName ??
+      detected?.providerName?.value;
+    const recordDate = options.recordDate
+      ? new Date(options.recordDate)
+      : (source?.recordDate ??
+        (detected?.recordDate
+          ? new Date(detected.recordDate.value)
+          : undefined));
+
+    // The device filename only feeds the folder guess above and the patient's
+    // own vault title; the stored key and every other screen get a system name.
+    const recordId = new Types.ObjectId();
+    const systemName = systemFileName(recordId.toHexString(), file.mimetype, file.originalname);
+    const fileRef = await this.storageService.upload(file.buffer, systemName, userId);
+    // Consent is snapshotted onto the record at ingestion (the admin "Consent Token").
+    const patient = await this.userModel.findById(userId).select('consent').lean().exec();
 
     const record = await this.recordModel.create({
+      _id: recordId,
       patientId: userId,
       fileRef,
       originalFileName: file.originalname,
+      systemFileName: systemName,
+      consentToken: consentTokenFor(userId, patient?.consent, 'ingestion'),
       mimeType: file.mimetype,
       type,
       kind,
-      tags: options.tags ?? [],
+      // A patient's own document is tagged from what was read off it, so nothing needs typing.
+      tags:
+        kind === MedicalRecordKind.ORIGINAL
+          ? autoTags({
+              existing: options.tags,
+              providerName,
+              attendingPhysician: detected?.attendingPhysician?.value,
+              procedureType: detected?.procedureType?.value,
+              recordDate,
+            })
+          : (options.tags ?? []),
       ...(source && { derivedFromRecordId: source._id }),
       ...(options.appointmentId && {
         attachedAppointmentId: new Types.ObjectId(options.appointmentId),
       }),
-      ...((options.providerName ?? source?.providerName) && {
-        providerName: options.providerName ?? source?.providerName,
+      ...(providerName && { providerName }),
+      ...(detected?.procedureType && { procedureType: detected.procedureType.value }),
+      ...(detected?.attendingPhysician && {
+        attendingPhysician: detected.attendingPhysician.value,
       }),
-      ...((options.recordDate || source?.recordDate) && {
-        recordDate: options.recordDate
-          ? new Date(options.recordDate)
-          : source?.recordDate,
-      }),
+      ...(recordDate && { recordDate }),
+      patientUploaded: true,
     });
 
+    // Push text can show on a lock screen, so it names the system file, not the device one.
     await this.reminderQueueService.sendDocumentUploadConfirmation({
       recordId: record.id,
       userId,
-      fileName: record.originalFileName,
+      fileName: systemName,
     });
 
-    return this.toResponse(record);
+    // `detected` tells the app what was read, so the patient can confirm or correct it.
+    return { ...this.toResponse(record), ...(detected && { detected }) };
   }
 
   /** U08 vault listing: folder, free-text (name/tag/provider), tag, kind and clinical-date filters. */
@@ -171,7 +246,13 @@ export class RecordsService {
     if (filters.q) {
       const re = buildSafeRegex(filters.q);
       and.push({
-        $or: [{ originalFileName: re }, { tags: re }, { providerName: re }],
+        $or: [
+          { originalFileName: re },
+          { tags: re },
+          { providerName: re },
+          { procedureType: re },
+          { attendingPhysician: re },
+        ],
       });
     }
     if (filters.from || filters.to) {
@@ -203,7 +284,14 @@ export class RecordsService {
     dto: UpdateRecordDto,
   ): Promise<MedicalRecordResponseDto> {
     const record = await this.getOwnedRecordOrThrow(userId, id);
-    if (dto.title !== undefined) record.originalFileName = dto.title.trim();
+    // A patient's own name for the document is its title; the upload's file name stays as it was.
+    if (dto.title !== undefined) record.procedureType = dto.title.trim();
+    if (dto.procedureType !== undefined) {
+      record.procedureType = dto.procedureType.trim() || undefined;
+    }
+    if (dto.attendingPhysician !== undefined) {
+      record.attendingPhysician = dto.attendingPhysician.trim() || undefined;
+    }
     if (dto.type !== undefined) record.type = dto.type;
     if (dto.tags !== undefined) record.tags = dto.tags;
     if (dto.providerName !== undefined) {
@@ -244,6 +332,133 @@ export class RecordsService {
     };
   }
 
+  /**
+   * "Ask Your Records": a question about the patient's own history, answered
+   * from their vault by rules — dates, counts, values read from their lab
+   * PDFs, or a search — always with the records it came from.
+   */
+  async ask(userId: string, question: string): Promise<AskRecordsResponseDto> {
+    const intent = parseQuestion(question);
+    const docs = await this.recordModel
+      .find({
+        patientId: new Types.ObjectId(userId),
+        kind: {
+          $nin: [
+            MedicalRecordKind.SIMPLIFICATION,
+            MedicalRecordKind.VISIT_SUMMARY,
+          ],
+        },
+        ...('type' in intent && intent.type && { type: intent.type }),
+      })
+      .exec();
+    const when = (r: MedicalRecordDocument) =>
+      r.recordDate ?? r.uploadedAt ?? new Date(0);
+    docs.sort((a, b) => when(b).getTime() - when(a).getTime());
+    const from = (r: MedicalRecordDocument) =>
+      r.providerName ? ` from ${r.providerName}` : '';
+    const [one, many] =
+      'type' in intent && intent.type
+        ? FOLDER_WORDS[intent.type]
+        : ['record', 'records'];
+
+    if (intent.kind === 'latest' || intent.kind === 'earliest') {
+      const r = intent.kind === 'latest' ? docs[0] : docs[docs.length - 1];
+      return {
+        basis: 'dates',
+        answer: r
+          ? `Your ${intent.kind === 'latest' ? 'most recent' : 'first'} ${one} is "${recordTitle(r)}", dated ${dateText(when(r))}${from(r)}.`
+          : `I couldn't find any ${many} in your records.`,
+        records: r ? [this.toResponse(r)] : [],
+      };
+    }
+
+    if (intent.kind === 'count') {
+      const since = intent.since;
+      const hits = since ? docs.filter((r) => when(r) >= since) : docs;
+      return {
+        basis: 'count',
+        answer: `You have ${hits.length} ${hits.length === 1 ? one : many}${since ? ` since ${dateText(since)}` : ''}.`,
+        records: hits.slice(0, 5).map((r) => this.toResponse(r)),
+      };
+    }
+
+    if (intent.kind === 'value') {
+      const labs = docs
+        .filter((r) => r.type === MedicalRecordType.LAB_REPORT)
+        .slice(0, ASK_MAX_REPORTS);
+      const found: { r: MedicalRecordDocument; text: string }[] = [];
+      for (const r of labs) {
+        if (found.length >= 3) break;
+        const text = await this.storageService
+          .read(r.fileRef)
+          .then((buf) =>
+            readDocumentText(
+              buf,
+              r.mimeType ?? guessMimeType(r.originalFileName),
+            ),
+          )
+          .catch(() => '');
+        const v = simplifyDocument(text).values.find((x) =>
+          intent.marker.pattern.test(x.name),
+        );
+        if (!v) continue;
+        found.push({
+          r,
+          text:
+            `${num(v.value)} ${v.unit}`.trim() +
+            ` on ${dateText(when(r))}${from(r)} — ${v.position} the range printed on that report (${num(v.low)}–${num(v.high)})`,
+        });
+      }
+      const label = intent.marker.label;
+      return {
+        basis: 'values',
+        answer: found.length
+          ? `Your ${label} was ${found[0].text}.` +
+            (found.length > 1
+              ? ` Before that: ${found
+                  .slice(1)
+                  .map((f) => f.text.split(' — ')[0])
+                  .join('; ')}.`
+              : '')
+          : labs.length
+            ? `I couldn't find a ${label} value in the text of your lab reports. Photos and scanned reports can't be read yet.`
+            : "You don't have any lab reports in your records yet.",
+        records: found.map((f) => this.toResponse(f.r)),
+      };
+    }
+
+    const words = intent.words;
+    const matches = words.length
+      ? docs.filter((r) =>
+          words.some((w) => {
+            const re = buildSafeRegex(w);
+            return (
+              re.test(r.originalFileName) ||
+              re.test(r.procedureType ?? '') ||
+              re.test(r.attendingPhysician ?? '') ||
+              re.test(r.providerName ?? '') ||
+              (r.tags ?? []).some((t) => re.test(t))
+            );
+          }),
+        )
+      : intent.type
+        ? docs
+        : [];
+    return {
+      basis: 'search',
+      answer: matches.length
+        ? `I found ${matches.length} ${matches.length === 1 ? one : many}${words.length ? ` matching "${words.join(' ')}"` : ''}.`
+        : 'I couldn\'t find anything for that. Try "When was my last blood test?" or "What was my HbA1c?"',
+      records: matches.slice(0, 5).map((r) => this.toResponse(r)),
+    };
+  }
+
+  /** "Simplify": what the document's medical words mean, and where each value sits. */
+  async plainLanguage(userId: string, id: string): Promise<PlainLanguageGuide> {
+    const { buffer, mimeType } = await this.download(userId, id);
+    return simplifyDocument(await readDocumentText(buffer, mimeType));
+  }
+
   async findOne(
     userId: string,
     id: string,
@@ -262,14 +477,14 @@ export class RecordsService {
 
     // ReportInterpretation is Phase-3-owned and may not exist yet — a record with
     // no matching doc is honestly reported as "queued", not a 404 or a fake status.
+    // A summary held for clinical review reads as still processing.
     const interpretation = await this.reportInterpretationModel
       .findOne({ recordId: record._id })
       .exec();
 
     return {
       ...this.toResponse(record),
-      aiStatus: interpretation?.aiStatus ?? ReportAiStatus.QUEUED,
-      summaryText: interpretation?.summaryText,
+      ...patientView(interpretation),
     };
   }
 
@@ -355,15 +570,22 @@ export class RecordsService {
     const mimeType = record.mimeType ?? guessMimeType(fileName);
     return {
       id: record.id,
-      title: record.originalFileName,
+      title: recordTitle(record),
       fileName,
       mimeType,
+      procedureType: record.procedureType,
+      attendingPhysician: record.attendingPhysician,
       type: record.type,
       kind: record.kind ?? MedicalRecordKind.ORIGINAL,
       uploadedAt,
       recordDate: record.recordDate?.toISOString() ?? uploadedAt,
       tags: record.tags ?? [],
       providerName: record.providerName,
+      // Older patient uploads had no provider name; deliveries always carry one.
+      source:
+        record.patientUploaded || !record.providerName
+          ? 'uploaded'
+          : 'provider',
       derivedFromRecordId: record.derivedFromRecordId?.toString(),
       attachedAppointmentId: record.attachedAppointmentId?.toString(),
     };

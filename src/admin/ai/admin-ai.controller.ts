@@ -2,8 +2,10 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -16,20 +18,57 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminAiService } from './admin-ai.service';
 import { QueryAiLogsDto } from './dto/query-ai-logs.dto';
 import { UpdateEscalationDto } from './dto/update-escalation.dto';
 import { AdminAiOverviewResponseDto } from './dto/admin-ai-overview-response.dto';
-import { AdminAiLogResponseDto } from './dto/admin-ai-log-response.dto';
+import {
+  AdminAiLogResponseDto,
+  AiReviewDecisionDto,
+} from './dto/admin-ai-log-response.dto';
 
 @ApiTags('Admin - AI Monitoring')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('ai-monitoring')
 @Controller('admin/ai')
 export class AdminAiController {
   constructor(private readonly adminAiService: AdminAiService) {}
+
+  @Post('escalations/:id/approve')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Approve & Send to Patient: clears the flag and releases a held report summary to the patient app',
+  })
+  @ApiOkResponse({ type: AdminAiLogResponseDto })
+  approve(
+    @Param('id') id: string,
+    @Body() dto: AiReviewDecisionDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<AdminAiLogResponseDto> {
+    return this.adminAiService.approve(id, dto.notes, { id: user.sub, email: user.email });
+  }
+
+  @Post('escalations/:id/escalate')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      "Block & Send to Human Doctor Review: withdraws a report summary from the patient's view",
+  })
+  @ApiOkResponse({ type: AdminAiLogResponseDto })
+  escalate(
+    @Param('id') id: string,
+    @Body() dto: AiReviewDecisionDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<AdminAiLogResponseDto> {
+    return this.adminAiService.escalate(id, dto.notes, { id: user.sub, email: user.email });
+  }
 
   @Get('overview')
   @ApiOperation({

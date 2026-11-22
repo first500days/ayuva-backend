@@ -1,0 +1,397 @@
+import { ProviderCategory } from '../../core/providers/schemas/provider.schema';
+
+/**
+ * Partner Portal RBAC. One portal serves three kinds of organisation, and a
+ * member's role inside their organisation decides what they can do. The same
+ * matrix drives API enforcement (PartnerPermGuard) and the portal sidebar
+ * (GET /partner/me returns the effective permission list), so the two can
+ * never disagree.
+ */
+
+/** What kind of organisation a partner account belongs to — derived from Provider.type. */
+export enum OrgType {
+  CLINIC = 'clinic',
+  HOSPITAL = 'hospital',
+  DIAGNOSTIC = 'diagnostic',
+}
+
+const ORG_BY_CATEGORY: Record<string, OrgType> = {
+  [ProviderCategory.HOSPITAL]: OrgType.HOSPITAL,
+  [ProviderCategory.DIAGNOSTIC]: OrgType.DIAGNOSTIC,
+};
+
+/** Hospital and Diagnostic map to their own portal; GP, Specialist and Physio run a clinic. */
+export function orgTypeOf(category: ProviderCategory | string): OrgType {
+  return ORG_BY_CATEGORY[category] ?? OrgType.CLINIC;
+}
+
+/** A member's role inside their organisation (not the platform-level UserRole). */
+export enum StaffRole {
+  ADMIN = 'admin',
+  DOCTOR = 'doctor',
+  NURSE = 'nurse',
+  TECHNICIAN = 'technician',
+  RECEPTIONIST = 'receptionist',
+  BILLING = 'billing',
+  // Hospital pharmacy: dispenses against e-prescriptions (a registered pharmacist).
+  PHARMACIST = 'pharmacist',
+}
+
+export enum Perm {
+  DASHBOARD = 'dashboard.view',
+  APPOINTMENTS_VIEW = 'appointments.view',
+  APPOINTMENTS_MANAGE = 'appointments.manage',
+  PATIENTS_VIEW = 'patients.view',
+  // Opening patient-shared vault records. Kept separate from PATIENTS_VIEW so
+  // front-desk and admin roles can work a patient list without reading clinical
+  // documents (HIPAA "minimum necessary").
+  RECORDS_VIEW = 'records.view',
+  CLINICAL_WRITE = 'clinical.write',
+  REFERRALS_VIEW = 'referrals.view',
+  REFERRALS_MANAGE = 'referrals.manage',
+  LAB_ORDERS_VIEW = 'lab.orders.view',
+  LAB_ORDERS_MANAGE = 'lab.orders.manage',
+  LAB_REPORTS_DRAFT = 'lab.reports.draft',
+  LAB_REPORTS_RELEASE = 'lab.reports.release',
+  LAB_CATALOG = 'lab.catalog.manage',
+  LAB_INVENTORY = 'lab.inventory.manage',
+  IMAGING_VIEW = 'imaging.view',
+  WARDS_VIEW = 'wards.view',
+  WARDS_MANAGE = 'wards.manage',
+  ANALYTICS = 'analytics.view',
+  BILLING_VIEW = 'billing.view',
+  CLAIMS_MANAGE = 'claims.manage',
+  STAFF_VIEW = 'staff.view',
+  STAFF_MANAGE = 'staff.manage',
+  ORG_SETTINGS = 'org.settings',
+  SECURITY_AUDIT = 'security.audit',
+  // Hospital pharmacy store: medicines, batches, receipts and write-offs.
+  PHARMACY_STOCK = 'pharmacy.stock',
+  // Reading signed prescriptions and dispensing against them (pharmacists).
+  PHARMACY_DISPENSE = 'pharmacy.dispense',
+  // Central Supply: consumable/implant stock levels and the equipment register.
+  SUPPLY_VIEW = 'supply.view',
+  // Receiving and issuing supplies, logging equipment maintenance.
+  SUPPLY_MANAGE = 'supply.manage',
+  // Emergency board.
+  ER_VIEW = 'er.view',
+  // Registering casualty patients and updating their details.
+  ER_MANAGE = 'er.manage',
+  // Triage, doctor pick-up and disposition (clinical staff).
+  ER_TRIAGE = 'er.triage',
+  // Operation theatre schedule.
+  OT_VIEW = 'ot.view',
+  // Booking cases and logging their pre-op → post-op stages.
+  OT_MANAGE = 'ot.manage',
+  // Hospital lab (LIS): sample worklist and results.
+  LIS_VIEW = 'lis.view',
+  // Requesting, collecting, receiving samples and entering text results.
+  LIS_MANAGE = 'lis.manage',
+  // Pathologist sign-off of a report.
+  LIS_VERIFY = 'lis.verify',
+  // Inpatient vitals and the early-warning screen (clinical staff).
+  TELEMETRY_VIEW = 'telemetry.view',
+  // Charting observations by hand.
+  TELEMETRY_RECORD = 'telemetry.record',
+  // Registering monitors and their keys; shows no patient data.
+  TELEMETRY_MANAGE = 'telemetry.manage',
+}
+
+const ALL = Object.values(Perm);
+
+/** Permissions that only make sense for a given organisation type. */
+const ORG_SCOPED: Partial<Record<Perm, OrgType[]>> = {
+  [Perm.LAB_ORDERS_VIEW]: [OrgType.DIAGNOSTIC],
+  [Perm.LAB_ORDERS_MANAGE]: [OrgType.DIAGNOSTIC],
+  [Perm.LAB_REPORTS_DRAFT]: [OrgType.DIAGNOSTIC],
+  [Perm.LAB_REPORTS_RELEASE]: [OrgType.DIAGNOSTIC],
+  [Perm.LAB_CATALOG]: [OrgType.DIAGNOSTIC],
+  [Perm.LAB_INVENTORY]: [OrgType.DIAGNOSTIC],
+  [Perm.WARDS_VIEW]: [OrgType.HOSPITAL],
+  [Perm.WARDS_MANAGE]: [OrgType.HOSPITAL],
+  [Perm.CLAIMS_MANAGE]: [OrgType.HOSPITAL],
+  [Perm.PHARMACY_STOCK]: [OrgType.HOSPITAL],
+  [Perm.PHARMACY_DISPENSE]: [OrgType.HOSPITAL],
+  [Perm.SUPPLY_VIEW]: [OrgType.HOSPITAL],
+  [Perm.SUPPLY_MANAGE]: [OrgType.HOSPITAL],
+  [Perm.ER_VIEW]: [OrgType.HOSPITAL],
+  [Perm.ER_MANAGE]: [OrgType.HOSPITAL],
+  [Perm.ER_TRIAGE]: [OrgType.HOSPITAL],
+  [Perm.OT_VIEW]: [OrgType.HOSPITAL],
+  [Perm.OT_MANAGE]: [OrgType.HOSPITAL],
+  [Perm.LIS_VIEW]: [OrgType.HOSPITAL],
+  [Perm.LIS_MANAGE]: [OrgType.HOSPITAL],
+  [Perm.LIS_VERIFY]: [OrgType.HOSPITAL],
+  [Perm.TELEMETRY_VIEW]: [OrgType.HOSPITAL],
+  [Perm.TELEMETRY_RECORD]: [OrgType.HOSPITAL],
+  [Perm.TELEMETRY_MANAGE]: [OrgType.HOSPITAL],
+  // Clinicians write notes and prescriptions; a lab issues reports instead.
+  [Perm.CLINICAL_WRITE]: [OrgType.CLINIC, OrgType.HOSPITAL],
+};
+
+const P = Perm;
+
+/**
+ * Role → permissions, per organisation type. Hospital and diagnostic-centre
+ * admins run the organisation but do not treat patients, so they get no
+ * clinical-write or shared-record access; a clinic's admin is the practising
+ * doctor who owns the practice, so they get everything.
+ */
+const MATRIX: Record<OrgType, Record<StaffRole, Perm[]>> = {
+  [OrgType.CLINIC]: {
+    [StaffRole.ADMIN]: ALL,
+    [StaffRole.DOCTOR]: [
+      P.DASHBOARD,
+      P.APPOINTMENTS_VIEW,
+      P.APPOINTMENTS_MANAGE,
+      P.PATIENTS_VIEW,
+      P.RECORDS_VIEW,
+      P.CLINICAL_WRITE,
+      P.REFERRALS_VIEW,
+      P.REFERRALS_MANAGE,
+      P.IMAGING_VIEW,
+      P.STAFF_VIEW,
+    ],
+    [StaffRole.NURSE]: [
+      P.DASHBOARD,
+      P.APPOINTMENTS_VIEW,
+      P.PATIENTS_VIEW,
+      P.RECORDS_VIEW,
+      P.REFERRALS_VIEW,
+      P.STAFF_VIEW,
+    ],
+    [StaffRole.RECEPTIONIST]: [
+      P.DASHBOARD,
+      P.APPOINTMENTS_VIEW,
+      P.APPOINTMENTS_MANAGE,
+      P.PATIENTS_VIEW,
+      P.REFERRALS_VIEW,
+      P.STAFF_VIEW,
+    ],
+    [StaffRole.BILLING]: [P.DASHBOARD, P.BILLING_VIEW, P.ANALYTICS],
+    [StaffRole.TECHNICIAN]: [P.DASHBOARD, P.APPOINTMENTS_VIEW, P.IMAGING_VIEW],
+    [StaffRole.PHARMACIST]: [],
+  },
+  [OrgType.HOSPITAL]: {
+    // Runs the pharmacy store but doesn't read prescriptions (minimum necessary).
+    [StaffRole.ADMIN]: ALL.filter(
+      (p) =>
+        p !== P.CLINICAL_WRITE &&
+        p !== P.RECORDS_VIEW &&
+        p !== P.PHARMACY_DISPENSE &&
+        p !== P.ER_TRIAGE &&
+        p !== P.LIS_VIEW &&
+        p !== P.LIS_MANAGE &&
+        p !== P.LIS_VERIFY &&
+        p !== P.TELEMETRY_VIEW &&
+        p !== P.TELEMETRY_RECORD,
+    ),
+    [StaffRole.DOCTOR]: [
+      P.DASHBOARD,
+      P.APPOINTMENTS_VIEW,
+      P.APPOINTMENTS_MANAGE,
+      P.PATIENTS_VIEW,
+      P.RECORDS_VIEW,
+      P.CLINICAL_WRITE,
+      P.REFERRALS_VIEW,
+      P.REFERRALS_MANAGE,
+      P.WARDS_VIEW,
+      P.WARDS_MANAGE,
+      P.IMAGING_VIEW,
+      P.STAFF_VIEW,
+      P.ER_VIEW,
+      P.ER_MANAGE,
+      P.ER_TRIAGE,
+      P.OT_VIEW,
+      P.OT_MANAGE,
+      P.LIS_VIEW,
+      P.LIS_MANAGE,
+      P.LIS_VERIFY,
+      P.TELEMETRY_VIEW,
+      P.TELEMETRY_RECORD,
+    ],
+    [StaffRole.NURSE]: [
+      P.DASHBOARD,
+      P.APPOINTMENTS_VIEW,
+      P.PATIENTS_VIEW,
+      P.RECORDS_VIEW,
+      P.WARDS_VIEW,
+      P.WARDS_MANAGE,
+      P.REFERRALS_VIEW,
+      P.STAFF_VIEW,
+      P.SUPPLY_VIEW,
+      P.ER_VIEW,
+      P.ER_MANAGE,
+      P.ER_TRIAGE,
+      P.OT_VIEW,
+      P.OT_MANAGE,
+      P.LIS_VIEW,
+      P.LIS_MANAGE,
+      P.TELEMETRY_VIEW,
+      P.TELEMETRY_RECORD,
+    ],
+    [StaffRole.RECEPTIONIST]: [
+      P.DASHBOARD,
+      P.APPOINTMENTS_VIEW,
+      P.APPOINTMENTS_MANAGE,
+      P.PATIENTS_VIEW,
+      P.WARDS_VIEW,
+      P.WARDS_MANAGE,
+      P.REFERRALS_VIEW,
+      P.REFERRALS_MANAGE,
+      P.STAFF_VIEW,
+      P.ER_VIEW,
+      P.ER_MANAGE,
+      P.OT_VIEW,
+    ],
+    [StaffRole.BILLING]: [
+      P.DASHBOARD,
+      P.BILLING_VIEW,
+      P.CLAIMS_MANAGE,
+      P.ANALYTICS,
+      P.PATIENTS_VIEW,
+    ],
+    // Biomedical / stores technicians run central supply and equipment upkeep.
+    [StaffRole.TECHNICIAN]: [
+      P.DASHBOARD,
+      P.WARDS_VIEW,
+      P.IMAGING_VIEW,
+      P.STAFF_VIEW,
+      P.SUPPLY_VIEW,
+      P.SUPPLY_MANAGE,
+      P.OT_VIEW,
+      P.LIS_VIEW,
+      P.LIS_MANAGE,
+      P.TELEMETRY_MANAGE,
+    ],
+    [StaffRole.PHARMACIST]: [
+      P.DASHBOARD,
+      P.PHARMACY_STOCK,
+      P.PHARMACY_DISPENSE,
+      P.STAFF_VIEW,
+    ],
+  },
+  [OrgType.DIAGNOSTIC]: {
+    [StaffRole.ADMIN]: ALL.filter((p) => p !== P.CLINICAL_WRITE),
+    // Pathologist / radiologist: signs reports off.
+    [StaffRole.DOCTOR]: [
+      P.DASHBOARD,
+      P.APPOINTMENTS_VIEW,
+      P.PATIENTS_VIEW,
+      P.RECORDS_VIEW,
+      P.LAB_ORDERS_VIEW,
+      P.LAB_REPORTS_DRAFT,
+      P.LAB_REPORTS_RELEASE,
+      P.IMAGING_VIEW,
+      P.REFERRALS_VIEW,
+      P.STAFF_VIEW,
+    ],
+    [StaffRole.TECHNICIAN]: [
+      P.DASHBOARD,
+      P.LAB_ORDERS_VIEW,
+      P.LAB_ORDERS_MANAGE,
+      P.LAB_REPORTS_DRAFT,
+      P.LAB_INVENTORY,
+      P.IMAGING_VIEW,
+      P.STAFF_VIEW,
+    ],
+    [StaffRole.NURSE]: [
+      P.DASHBOARD,
+      P.LAB_ORDERS_VIEW,
+      P.LAB_ORDERS_MANAGE,
+      P.STAFF_VIEW,
+    ],
+    [StaffRole.RECEPTIONIST]: [
+      P.DASHBOARD,
+      P.APPOINTMENTS_VIEW,
+      P.APPOINTMENTS_MANAGE,
+      P.PATIENTS_VIEW,
+      P.LAB_ORDERS_VIEW,
+      P.LAB_ORDERS_MANAGE,
+      P.REFERRALS_VIEW,
+      P.REFERRALS_MANAGE,
+      P.STAFF_VIEW,
+    ],
+    [StaffRole.BILLING]: [
+      P.DASHBOARD,
+      P.BILLING_VIEW,
+      P.ANALYTICS,
+      P.LAB_ORDERS_VIEW,
+    ],
+    [StaffRole.PHARMACIST]: [],
+  },
+};
+
+/** Effective permissions for a role in an organisation type, with org-scoped ones filtered out. */
+export function permissionsFor(orgType: OrgType, role: StaffRole): Perm[] {
+  const granted = MATRIX[orgType]?.[role] ?? [];
+  return granted.filter((p) => {
+    const scope = ORG_SCOPED[p];
+    return !scope || scope.includes(orgType);
+  });
+}
+
+export function hasPerm(
+  orgType: OrgType,
+  role: StaffRole,
+  perm: Perm,
+): boolean {
+  return permissionsFor(orgType, role).includes(perm);
+}
+
+/** Roles an organisation of this type can assign, in display order. */
+export function assignableRoles(orgType: OrgType): StaffRole[] {
+  switch (orgType) {
+    case OrgType.HOSPITAL:
+      return [
+        StaffRole.ADMIN,
+        StaffRole.DOCTOR,
+        StaffRole.NURSE,
+        StaffRole.PHARMACIST,
+        StaffRole.RECEPTIONIST,
+        StaffRole.BILLING,
+        StaffRole.TECHNICIAN,
+      ];
+    case OrgType.DIAGNOSTIC:
+      return [
+        StaffRole.ADMIN,
+        StaffRole.DOCTOR,
+        StaffRole.TECHNICIAN,
+        StaffRole.RECEPTIONIST,
+        StaffRole.NURSE,
+        StaffRole.BILLING,
+      ];
+    default:
+      return [
+        StaffRole.ADMIN,
+        StaffRole.DOCTOR,
+        StaffRole.NURSE,
+        StaffRole.RECEPTIONIST,
+        StaffRole.BILLING,
+      ];
+  }
+}
+
+/** Display labels, e.g. a diagnostic centre's "doctor" is its pathologist. */
+export function roleLabel(orgType: OrgType, role: StaffRole): string {
+  if (orgType === OrgType.DIAGNOSTIC && role === StaffRole.DOCTOR)
+    return 'Pathologist / Radiologist';
+  if (orgType === OrgType.DIAGNOSTIC && role === StaffRole.NURSE)
+    return 'Phlebotomist';
+  switch (role) {
+    case StaffRole.ADMIN:
+      return 'Administrator';
+    case StaffRole.DOCTOR:
+      return 'Doctor';
+    case StaffRole.NURSE:
+      return 'Nurse';
+    case StaffRole.TECHNICIAN:
+      return 'Technician';
+    case StaffRole.RECEPTIONIST:
+      return 'Receptionist';
+    case StaffRole.BILLING:
+      return 'Billing & Accounts';
+    case StaffRole.PHARMACIST:
+      return 'Pharmacist';
+  }
+}

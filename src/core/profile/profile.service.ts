@@ -14,11 +14,14 @@ import {
   MedicationDocument,
 } from '../medications/schemas/medication.schema';
 import { CreateHealthProfileDto } from '../health-profile/dto/create-health-profile.dto';
+import { ageFromDateOfBirth } from '../../common/utils/age.util';
 import { CreateEmergencyContactDto } from '../health-profile/dto/create-emergency-contact.dto';
 import { CreateMedicationDto } from '../medications/dto/create-medication.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { ReminderQueueService } from '../../notifications/queue/reminder-queue.service';
+import { INTAKE_TTL_MS, sealIntake, validZone } from './intake-qr';
+import { intakeSecret } from './intake-secret';
 
 /**
  * Onboarding writes (TRD §4.1). Data captured here must be immediately
@@ -38,6 +41,32 @@ export class ProfileService {
     private readonly userModel: Model<UserDocument>,
     private readonly reminderQueueService: ReminderQueueService,
   ) {}
+
+  /**
+   * The registration QR for the profile screen: name, time zone and emergency
+   * contact, sealed so only the Partner Portal can read it, valid 10 minutes.
+   */
+  async intakeQr(userId: string, deviceZone?: string) {
+    const [user, contact] = await Promise.all([
+      this.userModel.findById(userId).select('fullName timezone').lean().exec(),
+      this.getEmergencyContact(userId),
+    ]);
+    if (!user) throw new NotFoundException('User not found');
+    const exp = Date.now() + INTAKE_TTL_MS;
+    const code = sealIntake(
+      {
+        uid: userId,
+        name: user.fullName,
+        tz: validZone(user.timezone) ?? validZone(deviceZone),
+        ec: contact?.phone
+          ? { name: contact.name ?? '', phone: contact.phone }
+          : null,
+        exp,
+      },
+      intakeSecret(),
+    );
+    return { code, expiresAt: new Date(exp).toISOString() };
+  }
 
   /**
    * The patient's own account record. Every screen that greets the user by
@@ -93,14 +122,20 @@ export class ProfileService {
     userId: string,
     dto: CreateHealthProfileDto,
   ): Promise<HealthProfileDocument> {
+    // A date of birth wins; a bare age only comes from older app builds.
+    const dateOfBirth = dto.dateOfBirth
+      ? new Date(`${dto.dateOfBirth}T00:00:00.000Z`)
+      : undefined;
     return this.healthProfileModel.findOneAndUpdate(
       { userId: new Types.ObjectId(userId) },
       {
         $set: {
-          age: dto.age,
+          age: dateOfBirth ? ageFromDateOfBirth(dateOfBirth) : dto.age,
+          ...(dateOfBirth && { dateOfBirth }),
           gender: dto.gender,
           conditions: dto.conditions,
           allergies: dto.allergies,
+          ...(dto.bloodGroup !== undefined && { bloodGroup: dto.bloodGroup }),
         },
       },
       { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true },

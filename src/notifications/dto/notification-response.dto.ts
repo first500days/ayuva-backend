@@ -51,6 +51,9 @@ export class NotificationPreferencesDto {
   @ApiProperty({ description: 'SMS channel — appointment reminders only' })
   @IsBoolean()
   sms: boolean;
+  @ApiProperty({ description: 'WhatsApp channel — secure report links only' })
+  @IsBoolean()
+  whatsapp: boolean;
 
   @ApiProperty()
   @IsBoolean()
@@ -73,6 +76,12 @@ export class NotificationPreferencesDto {
   @ApiProperty({ description: 'When on, lock-screen previews use lockScreenText only' })
   @IsBoolean()
   hideSensitiveOnLockScreen: boolean;
+  @ApiProperty({
+    description:
+      'The app schedules dose reminders on the phone; the server skips its dose pushes',
+  })
+  @IsBoolean()
+  medicationRemindersOnDevice: boolean;
 }
 
 /** PUT body: every field optional so older app builds (no channel switches) keep working. */
@@ -80,6 +89,7 @@ export class UpdateNotificationPreferencesDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() push?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() email?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() sms?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() whatsapp?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() appointments?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() results?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() sharing?: boolean;
@@ -87,4 +97,5 @@ export class UpdateNotificationPreferencesDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() family?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() marketing?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() hideSensitiveOnLockScreen?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() medicationRemindersOnDevice?: boolean;
 }

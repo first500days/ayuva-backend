@@ -6,7 +6,7 @@ jest.mock('firebase-admin/app', () => ({
 
 import { fcmSenderProvider } from './fcm.provider';
 import { LogFcmSender } from './log-fcm.sender';
-import { FirebaseFcmSender } from './firebase-fcm.sender';
+import { RoutingPushSender } from './routing-push.sender';
 
 function useFactory(config: Record<string, unknown>) {
   const configService = { get: jest.fn((key: string) => config[key]) };
@@ -25,26 +25,26 @@ describe('fcmSenderProvider', () => {
     expect(sender).toBeInstanceOf(LogFcmSender);
   });
 
-  it('constructs FirebaseFcmSender when all credentials are configured', () => {
+  it('constructs the routing sender when all credentials are configured', () => {
     const sender = useFactory({
       'firebase.projectId': 'my-project',
       'firebase.clientEmail': 'svc@my-project.iam.gserviceaccount.com',
       'firebase.privateKey': '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----',
     });
-    expect(sender).toBeInstanceOf(FirebaseFcmSender);
+    expect(sender).toBeInstanceOf(RoutingPushSender);
   });
 
   it('throws instead of silently falling back to LogFcmSender when credentials are missing in production', () => {
     expect(() => useFactory({ nodeEnv: 'production' })).toThrow(/FCM credentials missing/);
   });
 
-  it('still constructs FirebaseFcmSender in production when credentials are present', () => {
+  it('still constructs the routing sender in production when credentials are present', () => {
     const sender = useFactory({
       nodeEnv: 'production',
       'firebase.projectId': 'my-project',
       'firebase.clientEmail': 'svc@my-project.iam.gserviceaccount.com',
       'firebase.privateKey': '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----',
     });
-    expect(sender).toBeInstanceOf(FirebaseFcmSender);
+    expect(sender).toBeInstanceOf(RoutingPushSender);
   });
 });

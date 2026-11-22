@@ -108,6 +108,6 @@ export class PartnerAuthService {
         this.logger.error(`Failed to notify admins of partner ${provider.id}`, err.stack),
       );
 
-    return this.authService.login({ email, password: dto.password });
+    return this.authService.loginForTokens({ email, password: dto.password });
   }
 }

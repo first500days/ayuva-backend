@@ -8,6 +8,11 @@ import {
   MedicalRecord,
   MedicalRecordSchema,
 } from '../../core/records/schemas/medical-record.schema';
+import { User, UserSchema } from '../../core/users/schemas/user.schema';
+import {
+  AiSurfaceConfig,
+  AiSurfaceConfigSchema,
+} from '../../admin/ai-control/schemas/ai-surface-config.schema';
 import { ReportInterpreterController } from './report-interpreter.controller';
 import { ReportInterpreterService } from './report-interpreter.service';
 import { AuthModule } from '../../auth/auth.module';
@@ -24,6 +29,9 @@ import { AiInteractionLogModule } from '../ai-interaction-log/ai-interaction-log
     MongooseModule.forFeature([
       { name: ReportInterpretation.name, schema: ReportInterpretationSchema },
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
+      { name: User.name, schema: UserSchema },
+      // Read-only: the live prompt version and any compliance holds.
+      { name: AiSurfaceConfig.name, schema: AiSurfaceConfigSchema },
     ]),
   ],
   controllers: [ReportInterpreterController],

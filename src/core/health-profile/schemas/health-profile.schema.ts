@@ -15,8 +15,13 @@ export class HealthProfile {
   })
   userId: Types.ObjectId;
 
+  // Derived from dateOfBirth when there is one; read the age through
+  // patientAge() so it stays current after birthdays.
   @Prop({ required: true })
   age: number;
+
+  @Prop()
+  dateOfBirth?: Date;
 
   @Prop({ required: true })
   gender: string;
@@ -26,6 +31,10 @@ export class HealthProfile {
 
   @Prop({ type: [String], default: [] })
   allergies: string[];
+
+  // Shown to first responders on the app's SOS screen. Unset until the patient says.
+  @Prop()
+  bloodGroup?: string;
 }
 
 export const HealthProfileSchema = SchemaFactory.createForClass(HealthProfile);

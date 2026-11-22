@@ -12,4 +12,8 @@ export class LogFcmSender implements FcmSender {
       `[log-only FCM] -> token=${token.slice(0, 12)}… title="${payload.title}" body="${payload.body}"`,
     );
   }
+
+  async sendAndWake(token: string, payload: FcmPayload): Promise<void> {
+    await this.send(token, payload);
+  }
 }

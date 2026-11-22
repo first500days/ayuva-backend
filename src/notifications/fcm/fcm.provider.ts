@@ -4,6 +4,8 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { FCM_SENDER } from './fcm-sender.interface';
 import { LogFcmSender } from './log-fcm.sender';
 import { FirebaseFcmSender } from './firebase-fcm.sender';
+import { ExpoPushSender } from './expo-push.sender';
+import { RoutingPushSender } from './routing-push.sender';
 
 const logger = new Logger('FcmProvider');
 
@@ -42,6 +44,9 @@ export const fcmSenderProvider: Provider = {
         { credential: cert({ projectId, clientEmail, privateKey }) },
         'ayuva-fcm',
       );
-    return new FirebaseFcmSender(app);
+    return new RoutingPushSender(
+      new FirebaseFcmSender(app),
+      new ExpoPushSender(config.get<string>('firebase.expoAccessToken')),
+    );
   },
 };

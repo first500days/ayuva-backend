@@ -1,0 +1,509 @@
+import { applyDecorators } from '@nestjs/common';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  Equals,
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsISO8601,
+  IsMongoId,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
+
+const toBool = ({ value }: { value: unknown }) =>
+  value === true || value === 'true' || value === '1';
+
+/** ICD-11 codes picked from GET /partner/diagnosis-codes; the server resolves the SNOMED CT ids and titles. */
+const DiagnosisCodes = () =>
+  applyDecorators(
+    ApiPropertyOptional({ type: [String], example: ['BA00', '5A11'] }),
+    IsOptional(),
+    IsArray(),
+    ArrayMaxSize(10),
+    IsString({ each: true }),
+    MaxLength(16, { each: true }),
+  );
+
+export class DiagnosisSearchDto {
+  @ApiProperty({ example: 'hypertension' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  q: string;
+}
+
+export class PatientsQueryDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(80) q?: string;
+
+  @ApiPropertyOptional({
+    description: 'Only patients assigned to / treated by me',
+  })
+  @IsOptional()
+  @Transform(toBool)
+  @IsBoolean()
+  mine?: boolean;
+}
+
+export class ScribeStructureDto {
+  @ApiProperty({
+    description: "The doctor's typed or dictated consultation text",
+  })
+  @IsString()
+  @MinLength(3)
+  @MaxLength(20000)
+  text: string;
+}
+
+/** The note's current sections, read by the coding assistant (nothing is saved). */
+export class SuggestCodesDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  chiefComplaint?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  history?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  examination?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  assessment?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  plan?: string;
+}
+
+export class NoteSectionsDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  chiefComplaint?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(8000)
+  history?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(8000)
+  examination?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  assessment?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(8000)
+  plan?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  advice?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  followUp?: string;
+}
+
+export class NoteVitalsDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(30) bp?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  pulse?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  temperature?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(30) spo2?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  respiratoryRate?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  weight?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  height?: string;
+}
+
+export class CreateNoteDto {
+  @ApiProperty() @IsMongoId() patientId: string;
+  @ApiPropertyOptional() @IsOptional() @IsMongoId() appointmentId?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  rawInput?: string;
+
+  @ApiPropertyOptional({ enum: ['typed', 'dictated', 'mixed', 'ambient'] })
+  @IsOptional()
+  @IsIn(['typed', 'dictated', 'mixed', 'ambient'])
+  inputMode?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Ambient listening: the patient agreed to the consultation being transcribed',
+  })
+  @IsOptional()
+  @IsBoolean()
+  ambientConsent?: boolean;
+
+  @ApiPropertyOptional({ type: NoteSectionsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NoteSectionsDto)
+  sections?: NoteSectionsDto;
+
+  @ApiPropertyOptional({ type: NoteVitalsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NoteVitalsDto)
+  vitals?: NoteVitalsDto;
+
+  @ApiPropertyOptional({ enum: ['mock', 'real', 'manual'] })
+  @IsOptional()
+  @IsIn(['mock', 'real', 'manual'])
+  structuringSource?: string;
+
+  @DiagnosisCodes()
+  diagnosisCodes?: string[];
+}
+
+export class UpdateNoteDto {
+  @ApiPropertyOptional() @IsOptional() @IsMongoId() appointmentId?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  rawInput?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsIn(['typed', 'dictated', 'mixed', 'ambient'])
+  inputMode?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Ambient listening: the patient agreed to the consultation being transcribed',
+  })
+  @IsOptional()
+  @IsBoolean()
+  ambientConsent?: boolean;
+
+  @ApiPropertyOptional({ type: NoteSectionsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NoteSectionsDto)
+  sections?: NoteSectionsDto;
+
+  @ApiPropertyOptional({ type: NoteVitalsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NoteVitalsDto)
+  vitals?: NoteVitalsDto;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsIn(['mock', 'real', 'manual'])
+  structuringSource?: string;
+
+  @DiagnosisCodes()
+  diagnosisCodes?: string[];
+}
+
+export class NotesQueryDto {
+  @ApiPropertyOptional() @IsOptional() @IsMongoId() patientId?: string;
+  @ApiPropertyOptional({ enum: ['draft', 'signed'] })
+  @IsOptional()
+  @IsIn(['draft', 'signed'])
+  status?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(toBool)
+  @IsBoolean()
+  mine?: boolean;
+}
+
+export class RxItemDto {
+  @ApiProperty({ example: 'Paracetamol' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  medicine: string;
+  @ApiPropertyOptional({ example: 'Tablet' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  form?: string;
+  @ApiPropertyOptional({ example: '500 mg' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  strength?: string;
+  @ApiPropertyOptional({ example: '1 tablet' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  dose?: string;
+  @ApiProperty({ example: '1-0-1' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(60)
+  frequency: string;
+  @ApiProperty({ example: '5 days' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  duration: string;
+  @ApiPropertyOptional({ example: 'Oral' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  route?: string;
+  @ApiPropertyOptional({ example: 'After food' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  instructions?: string;
+  @ApiPropertyOptional({ example: '10' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  quantity?: string;
+  @ApiPropertyOptional({ example: 0, description: 'Refills allowed (0–12)' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(12)
+  refills?: number;
+}
+
+export class CreatePrescriptionDto {
+  @ApiProperty() @IsMongoId() patientId: string;
+  @ApiPropertyOptional() @IsOptional() @IsMongoId() appointmentId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsMongoId() noteId?: string;
+
+  @ApiProperty({ type: [RxItemDto] })
+  @IsArray()
+  @ArrayMaxSize(30)
+  @ValidateNested({ each: true })
+  @Type(() => RxItemDto)
+  items: RxItemDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  diagnosis?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  advice?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  investigations?: string[];
+
+  @ApiPropertyOptional({ example: '2026-10-20' })
+  @IsOptional()
+  @IsISO8601()
+  followUpDate?: string;
+
+  @DiagnosisCodes()
+  diagnosisCodes?: string[];
+}
+
+export class UpdatePrescriptionDto {
+  @ApiPropertyOptional({ type: [RxItemDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @ValidateNested({ each: true })
+  @Type(() => RxItemDto)
+  items?: RxItemDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  diagnosis?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  advice?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  investigations?: string[];
+
+  @ApiPropertyOptional() @IsOptional() @IsISO8601() followUpDate?: string;
+  @ApiPropertyOptional() @IsOptional() @IsMongoId() appointmentId?: string;
+
+  @DiagnosisCodes()
+  diagnosisCodes?: string[];
+}
+
+export class PharmacyDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+  @ApiProperty() @IsEmail() email: string;
+}
+
+export const RX_DISPATCH_TARGETS = [
+  'vault',
+  'internal_pharmacy',
+  'sms',
+  'whatsapp',
+] as const;
+
+export class SignPrescriptionDto {
+  @ApiProperty({
+    description:
+      'The prescriber confirms they assessed the patient and authorise this prescription — the explicit sign-off',
+  })
+  @IsBoolean()
+  @Equals(true, {
+    message: 'Confirm the sign-off declaration to sign this prescription',
+  })
+  attest: boolean;
+
+  @ApiPropertyOptional({
+    default: true,
+    description: "Deliver the signed PDF to the patient's Medical Vault",
+  })
+  @IsOptional()
+  @IsBoolean()
+  sendToVault?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'The prescriber reviewed the allergy / interaction warnings shown and prescribes anyway',
+  })
+  @IsOptional()
+  @IsBoolean()
+  acknowledgeWarnings?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    enum: RX_DISPATCH_TARGETS,
+    description:
+      "Where to send it: the patient's Ayuva app (vault), the hospital's internal pharmacy, an SMS and/or WhatsApp notice to the patient (no medical details — a link to the app). Defaults to the vault.",
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(4)
+  @IsIn(RX_DISPATCH_TARGETS, { each: true })
+  dispatchTo?: (typeof RX_DISPATCH_TARGETS)[number][];
+
+  @ApiPropertyOptional({
+    type: PharmacyDto,
+    description: 'Also email the signed PDF to a pharmacy',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PharmacyDto)
+  pharmacy?: PharmacyDto;
+}
+
+export class CancelPrescriptionDto {
+  @ApiProperty() @IsString() @MinLength(3) @MaxLength(500) reason: string;
+}
+
+export class PrescriptionsQueryDto {
+  @ApiPropertyOptional() @IsOptional() @IsMongoId() patientId?: string;
+  @ApiPropertyOptional({ enum: ['draft', 'signed', 'cancelled'] })
+  @IsOptional()
+  @IsIn(['draft', 'signed', 'cancelled'])
+  status?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(toBool)
+  @IsBoolean()
+  mine?: boolean;
+}
+
+export const SKETCH_TEMPLATE_IDS = ['body-front', 'body-back', 'head', 'blank'];
+export const SKETCH_COLORS = ['#dc2626', '#2563eb', '#111827', '#16a34a'];
+export const SKETCH_WIDTHS = [2, 4, 8];
+
+export class SketchStrokeDto {
+  @ApiProperty({ enum: SKETCH_COLORS }) @IsIn(SKETCH_COLORS) c: string;
+  @ApiProperty({ enum: SKETCH_WIDTHS }) @IsIn(SKETCH_WIDTHS) w: number;
+
+  @ApiProperty({
+    type: [Number],
+    description: 'Flat [x0, y0, x1, y1, …] in the 400 × 500 sketch space',
+  })
+  @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(4000)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(500, { each: true })
+  p: number[];
+}
+
+export class SaveSketchDto {
+  @ApiProperty({ enum: SKETCH_TEMPLATE_IDS })
+  @IsIn(SKETCH_TEMPLATE_IDS)
+  template: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  caption?: string;
+
+  @ApiProperty({ type: [SketchStrokeDto] })
+  @IsArray()
+  @ArrayMaxSize(300)
+  @ValidateNested({ each: true })
+  @Type(() => SketchStrokeDto)
+  strokes: SketchStrokeDto[];
+}

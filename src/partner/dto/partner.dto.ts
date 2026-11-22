@@ -1,5 +1,6 @@
+import { INSURERS } from '../../core/providers/insurance-estimate';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
@@ -9,11 +10,14 @@ import {
   IsIn,
   IsInt,
   IsISO8601,
+  IsMongoId,
   IsNumber,
 
   IsOptional,
   IsString,
-
+  Matches,
+  MaxLength,
+  Max,
   Min,
   MinLength,
   ValidateNested,
@@ -80,6 +84,28 @@ class PartnerLocationDto {
 }
 
 /** P02 — editable profile fields. */
+/** One insurer this provider is empanelled with (out-of-pocket estimates in discovery). */
+export class InsurancePanelEntryDto {
+  @ApiProperty({ enum: INSURERS })
+  @IsIn(INSURERS as unknown as string[])
+  insurer: string;
+
+  @ApiProperty({ description: 'The insurer settles directly with the provider' })
+  @IsBoolean()
+  cashless: boolean;
+
+  @ApiProperty({ description: 'Out-patient consultations are covered' })
+  @IsBoolean()
+  opdCovered: boolean;
+
+  @ApiPropertyOptional({ description: 'Patient share, percent of the fee' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  copayPct?: number;
+}
+
 export class UpdatePartnerProfileDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MinLength(2) name?: string;
 
@@ -108,6 +134,14 @@ export class UpdatePartnerProfileDto {
   @ApiPropertyOptional() @IsOptional() @IsString() profileImageUrl?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() requiresApproval?: boolean;
 
+  @ApiPropertyOptional({ type: () => [InsurancePanelEntryDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @ValidateNested({ each: true })
+  @Type(() => InsurancePanelEntryDto)
+  insurancePanel?: InsurancePanelEntryDto[];
+
   @ApiPropertyOptional({ type: [PartnerLocationDto] })
   @IsOptional()
   @IsArray()
@@ -115,6 +149,13 @@ export class UpdatePartnerProfileDto {
   @ValidateNested({ each: true })
   @Type(() => PartnerLocationDto)
   locations?: PartnerLocationDto[];
+
+  @ApiPropertyOptional({ type: [String], description: 'Departments / units, e.g. Cardiology, OPD, ICU' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(40)
+  @IsString({ each: true })
+  departments?: string[];
 }
 
 export class PartnerAppointmentsQueryDto {
@@ -122,6 +163,22 @@ export class PartnerAppointmentsQueryDto {
   @IsOptional()
   @IsIn(['incoming', 'today', 'upcoming', 'completed'])
   scope?: 'incoming' | 'today' | 'upcoming' | 'completed';
+
+  @ApiPropertyOptional({ description: 'Only appointments assigned to me' })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true' || value === '1')
+  @IsBoolean()
+  mine?: boolean;
+}
+
+/** Hospital/clinic front desk: who sees this patient, under which department. */
+export class AssignAppointmentDto {
+  @ApiPropertyOptional({ nullable: true, description: 'Staff member id; null to unassign' })
+  @IsOptional()
+  @IsMongoId()
+  memberId?: string | null;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() department?: string;
 }
 
 export class RejectAppointmentDto {
@@ -140,11 +197,42 @@ export class PartnerFollowUpDto {
   slotId: string;
 }
 
+/** Front desk books a patient already linked to the organisation (referral, booking, share…) into a slot. */
+export class PartnerBookDto {
+  @ApiProperty() @IsMongoId() patientId: string;
+
+  @ApiProperty({ description: 'An OPEN slot belonging to this provider' })
+  @IsMongoId()
+  slotId: string;
+
+  @ApiPropertyOptional({ description: 'The incoming referral this booking answers' })
+  @IsOptional()
+  @IsMongoId()
+  referralId?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsMongoId() memberId?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(80) department?: string;
+}
+
 export class PartnerSlotsQueryDto {
   @ApiPropertyOptional({ example: '2026-10-01' })
   @IsOptional()
   @IsISO8601()
   from?: string;
+}
+
+export class PartnerDaySlotsQueryDto {
+  @ApiProperty({ example: '2026-10-23' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'date must be YYYY-MM-DD' })
+  date: string;
+}
+
+export class PartnerBlockSlotDto {
+  @ApiPropertyOptional({ example: 'Doctor in surgery' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }
 
 export class PartnerPaymentsQueryDto {

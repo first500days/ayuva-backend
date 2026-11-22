@@ -52,6 +52,18 @@ export class UpdateRecordDto {
   @MaxLength(120)
   providerName?: string;
 
+  @ApiPropertyOptional({ example: 'MRI Brain' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  procedureType?: string;
+
+  @ApiPropertyOptional({ example: 'Dr Rakesh Sharma' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  attendingPhysician?: string;
+
   @ApiPropertyOptional({ example: '2026-07-14' })
   @IsOptional()
   @IsDateString()

@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminGrowthService } from './admin-growth.service';
 import { CampaignStatus } from './schemas/growth-campaign.schema';
@@ -9,6 +10,7 @@ import { CampaignStatus } from './schemas/growth-campaign.schema';
 @Controller('admin/growth')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('growth')
 export class AdminGrowthController {
   constructor(private readonly growthService: AdminGrowthService) {}
 

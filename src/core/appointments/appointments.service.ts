@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -27,9 +28,13 @@ import {
   PatchAppointmentDto,
   PatientAppointmentAction,
 } from './dto/patch-appointment.dto';
+import { isSlotInPast } from '../../common/utils/slot-time.util';
 import { AppointmentResponseDto } from './dto/appointment-response.dto';
 import { ReminderQueueService } from '../../notifications/queue/reminder-queue.service';
 import { SharingService } from '../sharing/sharing.service';
+import { PartnerNotifierService } from '../../partner/notify/partner-notifier.service';
+import { PartnerTrigger } from '../../partner/notify/partner-triggers';
+import { LiveBus } from '../../common/live/live-bus.service';
 
 export type AppointmentsScope = 'upcoming' | 'past';
 
@@ -49,6 +54,13 @@ export class AppointmentsService {
     private readonly providerModel: Model<ProviderDocument>,
     private readonly reminderQueueService: ReminderQueueService,
     private readonly sharingService: SharingService,
+    // Partner Notification Center ("New patient booking" etc.). Optional so unit
+    // tests that build the service by hand don't need to supply it.
+    @Optional()
+    private readonly partnerNotifier?: PartnerNotifierService,
+    // Keeps partner dashboards live; optional for the same reason.
+    @Optional()
+    private readonly live?: LiveBus,
   ) {}
 
   async create(
@@ -80,6 +92,8 @@ export class AppointmentsService {
       );
     }
 
+    await this.rejectIfPast(slot);
+
     try {
       const appointment = await this.appointmentModel.create({
         patientId: userId,
@@ -94,6 +108,17 @@ export class AppointmentsService {
       // gated behind the "Set reminder" toggle, which is specifically the
       // pre-visit reminder.
       await this.scheduleFollowUp(appointment, provider, slot);
+      await this.notifyPartner(
+        appointment,
+        slot,
+        PartnerTrigger.NEW_BOOKING,
+        provider.requiresApproval
+          ? 'New booking request'
+          : 'New patient booking',
+        provider.requiresApproval
+          ? `{patient} requested ${this.describeSlot(slot)} — accept or decline it in Appointments.`
+          : `{patient} booked ${this.describeSlot(slot)}.`,
+      );
       return this.toResponse(appointment, provider, slot);
     } catch (err) {
       // Compensate: give the slot back if we booked it but couldn't persist the appointment.
@@ -282,6 +307,16 @@ export class AppointmentsService {
     );
   }
 
+  /** A slot whose start time has gone can't be booked: put it back and refuse. */
+  private async rejectIfPast(slot: AppointmentSlotDocument): Promise<void> {
+    if (!isSlotInPast(slot.date, slot.time)) return;
+    await this.slotModel.updateOne(
+      { _id: slot._id, status: AppointmentSlotStatus.BOOKED },
+      { $set: { status: AppointmentSlotStatus.OPEN } },
+    );
+    throw new BadRequestException('That time has already passed — please pick a later slot');
+  }
+
   private async reschedule(
     appointment: AppointmentDocument,
     newSlotId: string,
@@ -308,6 +343,8 @@ export class AppointmentsService {
       );
     }
 
+    await this.rejectIfPast(newSlot);
+
     const oldSlotId = appointment.slotId;
     appointment.slotId = newSlot._id;
     await appointment.save();
@@ -323,6 +360,7 @@ export class AppointmentsService {
           err as Error,
         ),
       );
+    this.live?.slotOpened(oldSlotId.toString());
 
     const provider = await this.providerModel.findById(appointment.providerId);
 
@@ -337,6 +375,13 @@ export class AppointmentsService {
     await this.scheduleFollowUp(appointment, provider ?? undefined, newSlot);
     // "This visit" record access follows the visit to its new time.
     await this.sharingService.syncVisitExpiry(appointment.id);
+    await this.notifyPartner(
+      appointment,
+      newSlot,
+      PartnerTrigger.BOOKING_CHANGED,
+      'Booking rescheduled',
+      `{patient}'s appointment moved to ${this.describeSlot(newSlot)}.`,
+    );
 
     return this.toResponse(appointment, provider ?? undefined, newSlot);
   }
@@ -359,6 +404,9 @@ export class AppointmentsService {
         ),
       );
 
+    // People on the waitlist hear about the freed time.
+    this.live?.slotOpened(appointment.slotId.toString());
+
     // A stale job firing for a cancelled appointment is a real bug, not an edge case.
     await this.reminderQueueService.cancelAppointmentReminder(appointment.id);
     await this.reminderQueueService.cancelFollowUpReminder(appointment.id);
@@ -372,11 +420,51 @@ export class AppointmentsService {
       this.providerModel.findById(appointment.providerId),
       this.slotModel.findById(appointment.slotId),
     ]);
+    await this.notifyPartner(
+      appointment,
+      slot ?? undefined,
+      PartnerTrigger.BOOKING_CHANGED,
+      'Booking cancelled',
+      `{patient} cancelled ${slot ? this.describeSlot(slot) : 'their appointment'} — the slot is open again.`,
+    );
     return this.toResponse(
       appointment,
       provider ?? undefined,
       slot ?? undefined,
     );
+  }
+
+  /** Partner Notification Center hook — best-effort, never fails the patient's action. */
+  private async notifyPartner(
+    appointment: AppointmentDocument,
+    slot: AppointmentSlotDocument | undefined,
+    trigger: PartnerTrigger,
+    title: string,
+    message: string,
+  ): Promise<void> {
+    this.live?.publish(appointment.providerId, 'appointments');
+    await this.partnerNotifier?.emit(appointment.providerId, {
+      trigger,
+      title,
+      message,
+      patientId: appointment.patientId.toString(),
+      safeMessage:
+        trigger === PartnerTrigger.NEW_BOOKING
+          ? `${title}${slot ? ` for ${this.describeSlot(slot)}` : ''}.`
+          : `${title}${slot ? ` (${this.describeSlot(slot)})` : ''}.`,
+      route: '/partner/appointments',
+      params: { appointmentId: appointment.id },
+      data: {
+        appointmentId: appointment.id,
+        status: appointment.status,
+        date: slot?.date.toISOString().slice(0, 10),
+        time: slot?.time,
+      },
+    });
+  }
+
+  private describeSlot(slot: AppointmentSlotDocument): string {
+    return `${slot.date.toISOString().slice(0, 10)} at ${slot.time}`;
   }
 
   private async setReminder(
@@ -469,6 +557,7 @@ export class AppointmentsService {
       time: slot?.time ?? '',
       status: appointment.status,
       reminderEnabled: appointment.reminderEnabled,
+      arrivedAt: appointment.arrivedAt?.toISOString() ?? null,
     };
   }
 }

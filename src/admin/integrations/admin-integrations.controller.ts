@@ -2,12 +2,14 @@ import { Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminIntegrationsService } from './admin-integrations.service';
 
 @Controller('admin/integrations')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('integrations')
 export class AdminIntegrationsController {
   constructor(private readonly integrationsService: AdminIntegrationsService) {}
 

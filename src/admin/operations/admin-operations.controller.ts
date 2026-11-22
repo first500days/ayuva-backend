@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminOperationsService } from './admin-operations.service';
 import { CreateIssueDto } from './dto/create-issue.dto';
@@ -10,6 +11,7 @@ import { AddTimelineEventDto, QueryIssuesDto, ResolveIssueDto, UpdateIssueDto } 
 @Controller('admin/operations')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('operations')
 export class AdminOperationsController {
   constructor(private readonly operationsService: AdminOperationsService) {}
 

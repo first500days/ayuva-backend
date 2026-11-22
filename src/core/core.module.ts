@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { UsersModule } from './users/users.module';
 import { HealthProfileModule } from './health-profile/health-profile.module';
 import { ProfileModule } from './profile/profile.module';
+import { MyPlanModule } from './plans/my-plan.module';
+import { WaitlistModule } from './appointments/waitlist/waitlist.module';
+import { PatientLiveModule } from './live/patient-live.module';
 import { MedicationsModule } from './medications/medications.module';
 import { ProvidersModule } from './providers/providers.module';
 import { AppointmentsModule } from './appointments/appointments.module';
@@ -21,11 +24,16 @@ import { SharingModule } from './sharing/sharing.module';
  * Kept as its own module tree — separate from the AI domain — so it can be
  * split into an independently deployed service later without a rewrite.
  */
+import { FamilyModule } from './family/family.module';
+
 @Module({
   imports: [
     UsersModule,
     HealthProfileModule,
     ProfileModule,
+    MyPlanModule,
+    WaitlistModule,
+    PatientLiveModule,
     MedicationsModule,
     ProvidersModule,
     AppointmentsModule,
@@ -39,6 +47,7 @@ import { SharingModule } from './sharing/sharing.module';
     RolesModule,
     ContentModule,
     SharingModule,
+    FamilyModule,
   ],
 })
 export class CoreModule {}

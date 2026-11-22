@@ -1,25 +1,50 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
+  ExtractionMethod,
   GlossaryTerm,
   HighlightedValue,
   HighlightedValueStatus,
   ReportAiStatus,
   ReportInterpretation,
   ReportInterpretationDocument,
+  ReportReleaseStatus,
 } from './schemas/report-interpretation.schema';
 import {
   MedicalRecord,
   MedicalRecordDocument,
   MedicalRecordType,
+  consentStatusOf,
 } from '../../core/records/schemas/medical-record.schema';
+import { User, UserDocument } from '../../core/users/schemas/user.schema';
+import {
+  ALL_RECORD_TYPES,
+  AiSurfaceConfig,
+  AiSurfaceConfigDocument,
+} from '../../admin/ai-control/schemas/ai-surface-config.schema';
 import { AnalyseReportDto } from './dto/analyse-report.dto';
 import { ReportInterpretationResponseDto } from './dto/report-interpretation-response.dto';
 import { AiInteractionLogService } from '../ai-interaction-log/ai-interaction-log.service';
 import { AiService } from '../ai-interaction-log/schemas/ai-interaction-log.schema';
 import { AiSource } from '../common/ai-source.enum';
 import { AI_DISCLAIMER } from '../common/ai-disclaimer.constant';
+
+// The AI Control Center surface whose prompt version and holds apply here.
+export const REPORT_SURFACE_KEY = 'report_interpreter';
+
+// What the patient sees while a flagged or escalated summary waits for a person.
+const WITHHELD_SUMMARY: Record<Exclude<ReportReleaseStatus, ReportReleaseStatus.RELEASED>, string> = {
+  [ReportReleaseStatus.HELD_FOR_REVIEW]:
+    'Your report summary is being checked by our clinical team. We’ll let you know when it’s ready — your document is safe in your vault.',
+  [ReportReleaseStatus.ESCALATED]:
+    'A doctor is reviewing this report before AYUVA shows a summary. Please speak to your provider about your results in the meantime.',
+};
 
 interface MockTemplate {
   summaryText: string;
@@ -156,6 +181,10 @@ export class ReportInterpreterService {
     private readonly reportInterpretationModel: Model<ReportInterpretationDocument>,
     @InjectModel(MedicalRecord.name)
     private readonly medicalRecordModel: Model<MedicalRecordDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
+    @InjectModel(AiSurfaceConfig.name)
+    private readonly surfaceModel: Model<AiSurfaceConfigDocument>,
     private readonly aiInteractionLogService: AiInteractionLogService,
   ) {}
 
@@ -176,13 +205,38 @@ export class ReportInterpreterService {
       throw new NotFoundException('Medical record not found');
     }
 
+    // Health-data consent gates AI processing of documents (consent.dto.ts).
+    const patient = await this.userModel.findById(userId).select('consent').lean().exec();
+    if (consentStatusOf(record, patient?.consent).status !== 'verified') {
+      throw new ForbiddenException(
+        'AYUVA can’t explain this document because consent to process your health data isn’t in place for it. You can change this in your privacy settings.',
+      );
+    }
+
     let interpretation = await this.reportInterpretationModel.findOne({
       recordId: record._id,
     });
 
     // Idempotent on repeat views (FR-9.2) — regenerate only if not already interpreted.
-    if (!interpretation || interpretation.aiStatus !== ReportAiStatus.INTERPRETED) {
+    const generate = !interpretation || interpretation.aiStatus !== ReportAiStatus.INTERPRETED;
+    let promptVersion = interpretation?.promptVersion;
+    let flagged = false;
+    if (generate) {
+      const surface = await this.surfaceModel
+        .findOne({ surfaceKey: REPORT_SURFACE_KEY })
+        .select('version pauses')
+        .lean()
+        .exec();
+      // A compliance hold stops new summaries for this kind of document until reviewed.
+      if (surface?.pauses?.some((p) => p.recordType === ALL_RECORD_TYPES || p.recordType === record.type)) {
+        throw new ServiceUnavailableException(
+          'AI explanations for this kind of document are paused while our clinical team reviews them. Your document is safe in your vault.',
+        );
+      }
+      promptVersion = surface?.version;
+
       const generated = this.generateMockInterpretation(record);
+      flagged = generated.highlightedValues.some((v) => v.status !== HighlightedValueStatus.NORMAL);
       // Non-null: upsert:true + returnDocument:'after' always returns a document.
       interpretation = (await this.reportInterpretationModel.findOneAndUpdate(
         { recordId: record._id },
@@ -193,12 +247,23 @@ export class ReportInterpreterService {
             glossaryTerms: generated.glossaryTerms,
             suggestedQuestions: generated.suggestedQuestions,
             aiStatus: ReportAiStatus.INTERPRETED,
+            // Flagged output waits for a reviewer's "Approve & Send to Patient".
+            releaseStatus: flagged ? ReportReleaseStatus.HELD_FOR_REVIEW : ReportReleaseStatus.RELEASED,
+            extractionMethod: ExtractionMethod.AI_PARSED,
+            surfaceKey: REPORT_SURFACE_KEY,
+            promptVersion,
           },
+          $unset: { verifiedAt: '', verifiedBy: '', reviewNotes: '' },
         },
         { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true },
       ))!;
     }
+    if (!interpretation) {
+      throw new NotFoundException('Report interpretation not found');
+    }
 
+    // Only a newly generated output is flagged for review — repeat views of
+    // the same summary would otherwise fill the queue with duplicates.
     await this.aiInteractionLogService.record({
       userId,
       service: AiService.REPORT_INTERPRETER,
@@ -206,12 +271,13 @@ export class ReportInterpreterService {
       outcome: {
         interpretationId: interpretation.id,
         highlightedCount: interpretation.highlightedValues.length,
+        generated: generate,
       },
       latencyMs: Date.now() - startedAt,
       source: AiSource.MOCK,
-      flagged: interpretation.highlightedValues.some(
-        (v) => v.status !== HighlightedValueStatus.NORMAL,
-      ),
+      flagged,
+      surfaceKey: REPORT_SURFACE_KEY,
+      promptVersion,
     });
 
     return this.toResponse(interpretation);
@@ -281,6 +347,21 @@ export class ReportInterpreterService {
   private toResponse(
     interpretation: ReportInterpretationDocument,
   ): ReportInterpretationResponseDto {
+    const releaseStatus = interpretation.releaseStatus ?? ReportReleaseStatus.RELEASED;
+    if (releaseStatus !== ReportReleaseStatus.RELEASED) {
+      // Nothing of the AI output reaches the patient until a reviewer releases it.
+      return {
+        id: interpretation.id,
+        recordId: interpretation.recordId.toString(),
+        summaryText: WITHHELD_SUMMARY[releaseStatus],
+        highlightedValues: [],
+        glossaryTerms: [],
+        suggestedQuestions: [],
+        aiStatus: ReportAiStatus.PROCESSING,
+        source: AiSource.MOCK,
+        disclaimer: AI_DISCLAIMER,
+      };
+    }
     return {
       id: interpretation.id,
       recordId: interpretation.recordId.toString(),

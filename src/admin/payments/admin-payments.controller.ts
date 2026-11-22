@@ -8,6 +8,7 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminPaymentsService } from './admin-payments.service';
 import { QueryAdminPaymentsDto } from './dto/query-admin-payments.dto';
@@ -21,6 +22,7 @@ import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('payments')
 @Controller('admin/payments')
 export class AdminPaymentsController {
   constructor(private readonly adminPaymentsService: AdminPaymentsService) {}

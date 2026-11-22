@@ -1,0 +1,277 @@
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
+
+/** The Lab Queue pipeline, in order. */
+export enum LabOrderStatus {
+  ORDERED = 'ordered',
+  SAMPLE_COLLECTED = 'sample_collected',
+  PROCESSING = 'processing',
+  REPORT_READY = 'report_ready',
+  DELIVERED = 'delivered',
+  CANCELLED = 'cancelled',
+}
+
+@Schema({ _id: false })
+export class LabOrderItem {
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'LabCatalogItem', required: true })
+  testId: Types.ObjectId;
+  @Prop({ required: true }) code: string;
+  @Prop({ required: true }) name: string;
+  @Prop({ required: true }) category: string;
+  @Prop({ required: true }) price: number;
+  @Prop() sampleType?: string;
+  @Prop({ default: 24 }) tatHours: number;
+}
+export const LabOrderItemSchema = SchemaFactory.createForClass(LabOrderItem);
+
+@Schema({ _id: false })
+export class VisitEvent {
+  @Prop({ required: true }) at: Date;
+  @Prop({ required: true }) status: string;
+  @Prop() byName?: string;
+  @Prop() note?: string;
+}
+export const VisitEventSchema = SchemaFactory.createForClass(VisitEvent);
+
+@Schema({ _id: false })
+export class LabCollection {
+  // 'lab' (walk-in / at centre) | 'home'
+  @Prop({ required: true, default: 'lab' }) type: string;
+  @Prop({ trim: true }) address?: string;
+  @Prop() scheduledAt?: Date;
+  @Prop() collectedAt?: Date;
+  /** Home visits: the address pin, the collector's pickup status and the planned stop number. */
+  @Prop() lat?: number;
+  @Prop() lng?: number;
+  @Prop() visitStatus?: string;
+  @Prop() routeSeq?: number;
+  @Prop({ type: [VisitEventSchema], default: undefined })
+  visitEvents?: VisitEvent[];
+}
+export const LabCollectionSchema = SchemaFactory.createForClass(LabCollection);
+
+@Schema({ _id: false })
+export class LabOrderEvent {
+  @Prop({ required: true }) at: Date;
+  @Prop({ required: true }) status: string;
+  @Prop() byName?: string;
+  @Prop() note?: string;
+}
+export const LabOrderEventSchema = SchemaFactory.createForClass(LabOrderEvent);
+
+/** One scan of a vial at a station (see sample-tracking.ts). */
+@Schema({ _id: false })
+export class SampleEvent {
+  @Prop({ required: true }) at: Date;
+  @Prop({ required: true }) stage: string;
+  @Prop() byName?: string;
+  @Prop() note?: string;
+}
+export const SampleEventSchema = SchemaFactory.createForClass(SampleEvent);
+
+/** A sample tube linked to the order by scanning its barcode label. */
+@Schema({ _id: false })
+export class LabSample {
+  @Prop({ required: true }) barcode: string;
+  @Prop({ required: true }) linkedAt: Date;
+  @Prop() linkedByName?: string;
+  // The last scan confirming the tube belongs to this order (e.g. before results are entered).
+  @Prop() verifiedAt?: Date;
+  @Prop() verifiedByName?: string;
+  /** Where the vial is now: labelled, collected, received, in_analysis, stored or rejected. */
+  @Prop({ default: 'collected' }) stage: string;
+  @Prop() sampleType?: string;
+  @Prop({ type: [SampleEventSchema], default: [] }) events: SampleEvent[];
+}
+export const LabSampleSchema = SchemaFactory.createForClass(LabSample);
+
+/** Who was told about a critical (panic) value, and how — the lab's call-out record. */
+@Schema({ _id: false })
+export class CriticalCallout {
+  @Prop({ required: true }) at: Date;
+  @Prop({ required: true, trim: true }) notifiedName: string;
+  // 'phone' | 'in_person' | 'message' | 'other'
+  @Prop({ required: true }) method: string;
+  // The person told repeated the value back.
+  @Prop({ default: false }) readBack: boolean;
+  @Prop({ trim: true }) note?: string;
+  @Prop() byName?: string;
+}
+export const CriticalCalloutSchema =
+  SchemaFactory.createForClass(CriticalCallout);
+
+/**
+ * An imaging file attached to an order — a DICOM slice, an ECG waveform, a
+ * video loop or a pathology slide — encrypted at rest like vault files. DICOM
+ * identifiers are kept so the viewer can group slices into series without
+ * downloading them.
+ */
+@Schema()
+export class ImagingFile {
+  @Prop({ required: true }) fileRef: string;
+  @Prop({ required: true }) fileName: string;
+  @Prop({ default: 0 }) size: number;
+  @Prop({ required: true }) uploadedAt: Date;
+  @Prop() uploadedByName?: string;
+  @Prop() description?: string;
+  // 'dicom' | 'ecg' | 'video' | 'slide'
+  @Prop({ default: 'dicom' }) kind: string;
+  @Prop() mime?: string;
+  @Prop() studyUid?: string;
+  @Prop() seriesUid?: string;
+  @Prop() sopUid?: string;
+  @Prop() modality?: string;
+  @Prop() seriesNumber?: number;
+  @Prop() seriesDescription?: string;
+  @Prop() instanceNumber?: number;
+}
+export const ImagingFileSchema = SchemaFactory.createForClass(ImagingFile);
+
+@Schema({ _id: false })
+export class LabPayment {
+  // 'unpaid' | 'paid' | 'waived'
+  @Prop({ default: 'unpaid' }) status: string;
+  @Prop() method?: string;
+  @Prop() paidAt?: Date;
+}
+export const LabPaymentSchema = SchemaFactory.createForClass(LabPayment);
+
+export type LabOrderDocument = HydratedDocument<PartnerLabOrder>;
+
+/** A diagnostic order moving through the lab: collection → processing → report → delivery. */
+@Schema({ timestamps: true, collection: 'partner_lab_orders' })
+export class PartnerLabOrder {
+  @Prop({ required: true, unique: true })
+  orderNo: string;
+
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Provider',
+    required: true,
+    index: true,
+  })
+  providerId: Types.ObjectId;
+
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
+  patientId: Types.ObjectId;
+
+  @Prop({ required: true })
+  patientName: string;
+
+  @Prop({ type: [LabOrderItemSchema], default: [] })
+  items: LabOrderItem[];
+
+  @Prop({ default: 0 })
+  total: number;
+
+  // 'walk_in' | 'appointment' | 'referral'
+  @Prop({ required: true, default: 'walk_in' })
+  source: string;
+
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Appointment' })
+  appointmentId?: Types.ObjectId;
+
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Referral' })
+  referralId?: Types.ObjectId;
+
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Provider',
+    index: true,
+    sparse: true,
+  })
+  referringProviderId?: Types.ObjectId;
+
+  @Prop()
+  referringProviderName?: string;
+
+  @Prop()
+  referringDoctorName?: string;
+
+  @Prop({ type: LabCollectionSchema, default: () => ({ type: 'lab' }) })
+  sampleCollection: LabCollection;
+
+  // 'routine' | 'urgent' | 'stat'
+  @Prop({ default: 'routine' })
+  priority: string;
+
+  @Prop({
+    type: String,
+    enum: LabOrderStatus,
+    default: LabOrderStatus.ORDERED,
+    index: true,
+  })
+  status: LabOrderStatus;
+
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'PartnerMember',
+    index: true,
+    sparse: true,
+  })
+  technicianMemberId?: Types.ObjectId;
+
+  @Prop()
+  technicianName?: string;
+
+  // Phlebotomist for home collection.
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'PartnerMember',
+    index: true,
+    sparse: true,
+  })
+  collectorMemberId?: Types.ObjectId;
+
+  @Prop()
+  collectorName?: string;
+
+  @Prop({ type: [LabOrderEventSchema], default: [] })
+  statusHistory: LabOrderEvent[];
+
+  @Prop({ type: [LabSampleSchema], default: [] })
+  samples: LabSample[];
+
+  @Prop({ type: [CriticalCalloutSchema], default: [] })
+  criticalCallouts: CriticalCallout[];
+
+  /** Catalogue test ids whose reagents were already taken from inventory (once per order). */
+  @Prop({ type: [String], default: [] })
+  stockDeducted: string[];
+
+  // When the report is due, from the slowest test's turnaround.
+  @Prop()
+  dueAt?: Date;
+
+  @Prop()
+  deliveredAt?: Date;
+
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'MedicalRecord' })
+  vaultRecordId?: Types.ObjectId;
+
+  @Prop({ type: [ImagingFileSchema], default: [] })
+  imaging: (ImagingFile & { _id: Types.ObjectId })[];
+
+  // Link to the study in an external PACS viewer, when the centre uses one.
+  @Prop({ trim: true })
+  pacsUrl?: string;
+
+  @Prop({ type: LabPaymentSchema, default: () => ({ status: 'unpaid' }) })
+  payment: LabPayment;
+
+  @Prop({ default: '' })
+  notes: string;
+
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export const PartnerLabOrderSchema =
+  SchemaFactory.createForClass(PartnerLabOrder);
+PartnerLabOrderSchema.index({ providerId: 1, status: 1, createdAt: -1 });
+PartnerLabOrderSchema.index({ providerId: 1, 'samples.barcode': 1 });

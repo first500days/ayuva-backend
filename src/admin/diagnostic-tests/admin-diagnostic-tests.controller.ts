@@ -1,12 +1,22 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
+import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminDiagnosticTestsService } from './admin-diagnostic-tests.service';
 import { QueryDiagnosticTestsDto } from './dto/query-diagnostic-tests.dto';
 import { CreateDiagnosticTestDto } from './dto/create-diagnostic-test.dto';
 import { UpdateDiagnosticTestDto } from './dto/update-diagnostic-test.dto';
 import { AdminDiagnosticTestResponseDto } from './dto/admin-diagnostic-test-response.dto';
 
+// Was reachable without signing in; now admin-only like the rest of the panel.
 @ApiTags('Admin - Diagnostic Tests')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN)
+@AdminArea('diagnostics')
 @Controller('admin/diagnostic-tests')
 export class AdminDiagnosticTestsController {
   constructor(private readonly service: AdminDiagnosticTestsService) {}

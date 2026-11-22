@@ -1,9 +1,15 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import { User } from '../../core/users/schemas/user.schema';
+import { makeAppendOnly } from '../append-only';
 
 export enum AuditAction {
   LOGIN = 'login',
+  LOGIN_FAILED = 'login_failed',
+  // An administrator ended every session (all web/app tokens) of a login.
+  SESSIONS_TERMINATED = 'sessions_terminated',
+  FACILITY_LOCKED = 'facility_locked',
+  FACILITY_UNLOCKED = 'facility_unlocked',
   REGISTER = 'register',
   RECORD_UPLOAD = 'record_upload',
   RECORD_VIEW = 'record_view',
@@ -16,6 +22,28 @@ export enum AuditAction {
   ADMIN_PROVIDER_REJECT = 'admin_provider_reject',
   ADMIN_PROVIDER_SUSPEND = 'admin_provider_suspend',
   ADMIN_PROVIDER_ACTIVATE = 'admin_provider_activate',
+  ADMIN_PROVIDER_CREDENTIAL_VIEW = 'admin_provider_credential_view',
+  ADMIN_PROVIDER_CREDENTIAL_UPLOAD = 'admin_provider_credential_upload',
+  ADMIN_DOCTOR_SCHEDULE_UPDATE = 'admin_doctor_schedule_update',
+  // Ayuva's decision on a doctor's medical council registration (unlocks e-prescribing).
+  ADMIN_DOCTOR_REGISTRATION_REVIEW = 'admin_doctor_registration_review',
+  PARTNER_CREDENTIAL_UPLOAD = 'partner_credential_upload',
+  // Admin sign-in second factor (TOTP).
+  ADMIN_MFA_ENROLL = 'admin_mfa_enroll',
+  ADMIN_MFA_FAILED = 'admin_mfa_failed',
+  ADMIN_MFA_RESET = 'admin_mfa_reset',
+  // AI safety: prompt versions, rollback, compliance pauses and human review.
+  ADMIN_AI_PROMPT_UPDATE = 'admin_ai_prompt_update',
+  ADMIN_AI_PROMPT_ROLLBACK = 'admin_ai_prompt_rollback',
+  ADMIN_AI_PROMPT_PAUSE = 'admin_ai_prompt_pause',
+  ADMIN_AI_PROMPT_RESUME = 'admin_ai_prompt_resume',
+  ADMIN_AI_OUTPUT_APPROVE = 'admin_ai_output_approve',
+  ADMIN_AI_OUTPUT_ESCALATE = 'admin_ai_output_escalate',
+  ADMIN_FEEDBACK_COMPLIANCE_ESCALATE = 'admin_feedback_compliance_escalate',
+  ADMIN_MARKETPLACE_SERVICE_MAP = 'admin_marketplace_service_map',
+  ADMIN_MARKETPLACE_SERVICE_UNMAP = 'admin_marketplace_service_unmap',
+  // A file or AI action refused because the record has no consent token.
+  RECORD_ACCESS_BLOCKED = 'record_access_blocked',
   ADMIN_HOSPITAL_CREATE = 'admin_hospital_create',
   ADMIN_HOSPITAL_UPDATE = 'admin_hospital_update',
   ADMIN_HOSPITAL_VERIFY = 'admin_hospital_verify',
@@ -39,6 +67,8 @@ export enum AuditAction {
   ADMIN_REPORT_ARCHIVE = 'admin_report_archive',
   ADMIN_AI_ESCALATION_UPDATE = 'admin_ai_escalation_update',
   PARTNER_REGISTER = 'partner_register',
+  // A partner desk registered a patient by scanning their AYUVA profile QR.
+  PARTNER_PATIENT_INTAKE = 'partner_patient_intake',
   PARTNER_RECORD_VIEW = 'partner_record_view',
   PARTNER_APPOINTMENT_UPDATE = 'partner_appointment_update',
   ADMIN_PLAN_CREATE = 'admin_plan_create',
@@ -57,6 +87,54 @@ export enum AuditAction {
   FAMILY_PERMISSIONS_UPDATE = 'family_permissions_update',
   FAMILY_LINK_REVOKE = 'family_link_revoke',
   FAMILY_MEMBER_ACCESS = 'family_member_access',
+  // Partner Portal staff, clinical and operations actions ("Security & Logs").
+  PARTNER_STAFF_INVITE = 'partner_staff_invite',
+  PARTNER_STAFF_UPDATE = 'partner_staff_update',
+  PARTNER_STAFF_SUSPEND = 'partner_staff_suspend',
+  // Security & Logs "Freeze account" on suspicious activity.
+  PARTNER_STAFF_FREEZE = 'partner_staff_freeze',
+  // On-duty check-in / check-out.
+  PARTNER_STAFF_DUTY = 'partner_staff_duty',
+  PARTNER_STAFF_ACCEPT = 'partner_staff_accept',
+  PARTNER_SETTINGS_UPDATE = 'partner_settings_update',
+  PARTNER_PATIENT_VIEW = 'partner_patient_view',
+  PARTNER_NOTE_SIGN = 'partner_note_sign',
+  PARTNER_NOTE_SHARE = 'partner_note_share',
+  PARTNER_RX_SIGN = 'partner_rx_sign',
+  PARTNER_RX_CANCEL = 'partner_rx_cancel',
+  PARTNER_REFERRAL_CREATE = 'partner_referral_create',
+  PARTNER_REFERRAL_UPDATE = 'partner_referral_update',
+  PARTNER_LAB_ORDER_UPDATE = 'partner_lab_order_update',
+  PARTNER_LAB_REPORT_RELEASE = 'partner_lab_report_release',
+  PARTNER_IMAGING_VIEW = 'partner_imaging_view',
+  PARTNER_ADMISSION_UPDATE = 'partner_admission_update',
+  PARTNER_CLAIM_UPDATE = 'partner_claim_update',
+  // Billing-desk receipts (split payments).
+  PARTNER_PAYMENT_RECORD = 'partner_payment_record',
+  PARTNER_PAYMENT_VOID = 'partner_payment_void',
+  // Lab sample and result trail: vial barcode scans, result entry and changes,
+  // and critical-value call-outs.
+  PARTNER_LAB_SAMPLE_SCAN = 'partner_lab_sample_scan',
+  PARTNER_LAB_SAMPLE_MISMATCH = 'partner_lab_sample_mismatch',
+  PARTNER_LAB_RESULT_ENTRY = 'partner_lab_result_entry',
+  PARTNER_LAB_RESULT_OVERRIDE = 'partner_lab_result_override',
+  PARTNER_LAB_CRITICAL_CALLOUT = 'partner_lab_critical_callout',
+  PARTNER_STOCK_UPDATE = 'partner_stock_update',
+  PARTNER_PHARMACY_DISPENSE = 'partner_pharmacy_dispense',
+  PARTNER_ASSET_UPDATE = 'partner_asset_update',
+  PARTNER_ER_UPDATE = 'partner_er_update',
+  PARTNER_OT_UPDATE = 'partner_ot_update',
+  PARTNER_LIS_UPDATE = 'partner_lis_update',
+  PARTNER_ALLERGY_UPDATE = 'partner_allergy_update',
+  PARTNER_CASE_MESSAGE = 'partner_case_message',
+  PARTNER_COLD_CHAIN = 'partner_cold_chain',
+  PARTNER_LAB_QC = 'partner_lab_qc',
+  PARTNER_LAB_ANALYSER = 'partner_lab_analyser',
+  FAMILY_PROFILE_UPDATE = 'family_profile_update',
+  // An approved report going to the patient, and the patient opening its secure link.
+  REPORT_DISPATCHED = 'report_dispatched',
+  REPORT_LINK_OPENED = 'report_link_opened',
+  PARTNER_IMAGING_MEASUREMENT = 'partner_imaging_measurement',
 }
 
 export type AuditLogDocument = HydratedDocument<AuditLog>;
@@ -91,3 +169,4 @@ export class AuditLog {
 }
 
 export const AuditLogSchema = SchemaFactory.createForClass(AuditLog);
+makeAppendOnly(AuditLogSchema);

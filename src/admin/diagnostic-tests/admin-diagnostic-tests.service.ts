@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, QueryFilter } from 'mongoose';
 import { DiagnosticTest, DiagnosticTestDocument } from '../../core/labs/schemas/diagnostic-test.schema';
@@ -6,7 +6,23 @@ import { QueryDiagnosticTestsDto } from './dto/query-diagnostic-tests.dto';
 import { CreateDiagnosticTestDto } from './dto/create-diagnostic-test.dto';
 import { UpdateDiagnosticTestDto } from './dto/update-diagnostic-test.dto';
 import { AdminDiagnosticTestResponseDto } from './dto/admin-diagnostic-test-response.dto';
-import { buildSafeRegex } from '../../common/utils/regex.util';
+import { buildSafeRegex, escapeRegExp } from '../../common/utils/regex.util';
+
+/** Trims, collapses whitespace and drops blanks, case-insensitive repeats and the test's own name. */
+export function normalizeAliases(aliases: string[] | undefined, testName: string): string[] {
+  const seen = new Set([testName.trim().toLowerCase()]);
+  const result: string[] = [];
+  for (const raw of aliases ?? []) {
+    const alias = raw.trim().replace(/\s+/g, ' ');
+    const key = alias.toLowerCase();
+    if (!alias || seen.has(key)) continue;
+    seen.add(key);
+    result.push(alias);
+  }
+  return result;
+}
+
+const exactly = (value: string) => new RegExp(`^${escapeRegExp(value)}$`, 'i');
 
 @Injectable()
 export class AdminDiagnosticTestsService {
@@ -26,6 +42,7 @@ export class AdminDiagnosticTestsService {
           { testCode: re },
           { category: re },
           { tags: re },
+          { aliases: re },
         ],
       });
     }
@@ -69,6 +86,8 @@ export class AdminDiagnosticTestsService {
   }
 
   async create(dto: CreateDiagnosticTestDto): Promise<AdminDiagnosticTestResponseDto> {
+    const aliases = normalizeAliases(dto.aliases, dto.testName);
+    await this.assertNamesAvailable(dto.testName, aliases);
     const test = await this.diagnosticTestModel.create({
       testCode: dto.testCode,
       testName: dto.testName,
@@ -88,6 +107,7 @@ export class AdminDiagnosticTestsService {
       })) || [],
       isActive: dto.isActive ?? true,
       tags: dto.tags || [],
+      aliases,
       description: dto.description,
       preparationInstructions: dto.preparationInstructions,
       reportFormat: dto.reportFormat,
@@ -98,6 +118,13 @@ export class AdminDiagnosticTestsService {
 
   async update(id: string, dto: UpdateDiagnosticTestDto): Promise<AdminDiagnosticTestResponseDto> {
     const test = await this.getTestOrThrow(id);
+
+    if (dto.aliases !== undefined || dto.testName !== undefined) {
+      const testName = dto.testName ?? test.testName;
+      const aliases = normalizeAliases(dto.aliases ?? test.aliases, testName);
+      await this.assertNamesAvailable(testName, aliases, test._id);
+      test.aliases = aliases;
+    }
 
     if (dto.testCode !== undefined) test.testCode = dto.testCode;
     if (dto.testName !== undefined) test.testName = dto.testName;
@@ -135,9 +162,25 @@ export class AdminDiagnosticTestsService {
   }
 
   async bulkCreate(dtos: CreateDiagnosticTestDto[]): Promise<AdminDiagnosticTestResponseDto[]> {
+    const aliasesByCode = new Map<string, string[]>();
+    const claimedBy = new Map<string, string>();
+    for (const dto of dtos) {
+      const aliases = normalizeAliases(dto.aliases, dto.testName);
+      for (const alias of aliases) {
+        const owner = claimedBy.get(alias.toLowerCase());
+        if (owner && owner !== dto.testCode) {
+          throw new ConflictException(`"${alias}" is listed for both ${owner} and ${dto.testCode}`);
+        }
+        claimedBy.set(alias.toLowerCase(), dto.testCode);
+      }
+      await this.assertNamesAvailable(dto.testName, aliases);
+      aliasesByCode.set(dto.testCode, aliases);
+    }
+
     const tests = await this.diagnosticTestModel.insertMany(
       dtos.map(dto => ({
         ...dto,
+        aliases: aliasesByCode.get(dto.testCode) ?? [],
         sampleType: dto.sampleType ?? '',
         providerPricing: dto.providerPricing?.map(p => ({
           labId: new Types.ObjectId(p.labId),
@@ -158,6 +201,39 @@ export class AdminDiagnosticTestsService {
 
   async getActiveCount(): Promise<number> {
     return this.diagnosticTestModel.countDocuments({ isActive: true }).exec();
+  }
+
+  /**
+   * An alias may point at one master test only, and a test's name may not be
+   * another test's alias — otherwise incoming partner text would map ambiguously.
+   */
+  private async assertNamesAvailable(
+    testName: string,
+    aliases: string[],
+    excludeId?: Types.ObjectId,
+  ): Promise<void> {
+    const others: QueryFilter<DiagnosticTestDocument> = excludeId ? { _id: { $ne: excludeId } } : {};
+    if (aliases.length > 0) {
+      const patterns = aliases.map(exactly);
+      const clash = await this.diagnosticTestModel
+        .findOne({ ...others, $or: [{ testName: { $in: patterns } }, { aliases: { $in: patterns } }] })
+        .select('testName testCode aliases')
+        .exec();
+      if (clash) {
+        const names = [clash.testName, ...(clash.aliases ?? [])].map((n) => n.toLowerCase());
+        const taken = aliases.find((a) => names.includes(a.toLowerCase())) ?? aliases[0];
+        throw new ConflictException(`"${taken}" already maps to ${clash.testName} (${clash.testCode})`);
+      }
+    }
+    const nameClash = await this.diagnosticTestModel
+      .findOne({ ...others, aliases: exactly(testName.trim()) })
+      .select('testName testCode')
+      .exec();
+    if (nameClash) {
+      throw new ConflictException(
+        `"${testName.trim()}" is already an alias of ${nameClash.testName} (${nameClash.testCode})`,
+      );
+    }
   }
 
   private async getTestOrThrow(id: string): Promise<DiagnosticTestDocument> {
@@ -192,6 +268,7 @@ export class AdminDiagnosticTestsService {
       })),
       isActive: test.isActive ?? true,
       tags: test.tags ?? [],
+      aliases: test.aliases ?? [],
       description: test.description,
       preparationInstructions: test.preparationInstructions,
       reportFormat: test.reportFormat,

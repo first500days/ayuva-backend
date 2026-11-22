@@ -221,6 +221,37 @@ describe('ReminderProcessor (BullMQ consumer)', () => {
       expect(mail.sendMail).not.toHaveBeenCalled();
     });
 
+    it('skips dose pushes when the phone schedules them itself, but keeps refill alerts', async () => {
+      const { deviceTokenModel, fcmSender } = buildProcessor({
+        email: 'pat@example.com',
+        notificationPrefs: { medicationRemindersOnDevice: true },
+      });
+      withDevice(deviceTokenModel);
+
+      await capturedProcessor!({
+        data: {
+          type: ReminderJobName.MEDICATION,
+          medicationId: 'med-1',
+          userId: 'user-1',
+          name: 'Amlodipine',
+          dosage: '5 mg',
+          scheduleTime: '08:00',
+        },
+      });
+      expect(fcmSender.send).not.toHaveBeenCalled();
+
+      await capturedProcessor!({
+        data: {
+          type: ReminderJobName.REFILL,
+          medicationId: 'med-1',
+          userId: 'user-1',
+          name: 'Amlodipine',
+          suppliesRemainingDays: 3,
+        },
+      });
+      expect(fcmSender.send).toHaveBeenCalled();
+    });
+
     it('still emails a reminder when push is off — channels are independent', async () => {
       const { deviceTokenModel, fcmSender, mail } = buildProcessor({
         email: 'pat@example.com',
@@ -234,8 +265,9 @@ describe('ReminderProcessor (BullMQ consumer)', () => {
       expect(mail.sendMail).toHaveBeenCalledWith(
         'pat@example.com',
         'Upcoming appointment reminder',
-        expect.stringContaining('Dr. Menon'),
+        expect.stringContaining('upcoming appointment'),
       );
+      expect(JSON.stringify(mail.sendMail.mock.calls)).not.toContain('Menon');
     });
 
     it('texts appointment reminders only to a verified number with SMS on', async () => {
@@ -248,8 +280,9 @@ describe('ReminderProcessor (BullMQ consumer)', () => {
       await capturedProcessor!(APPOINTMENT_JOB);
       expect(verified.smsSender.send).toHaveBeenCalledWith(
         '+919800000000',
-        expect.stringContaining('Dr. Menon'),
+        expect.stringContaining('upcoming appointment'),
       );
+      expect(JSON.stringify(verified.smsSender.send.mock.calls)).not.toContain('Menon');
 
       const unverified = buildProcessor({
         phone: '+919800000000',

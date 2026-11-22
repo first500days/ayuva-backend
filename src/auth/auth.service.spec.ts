@@ -1,7 +1,13 @@
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { Types } from 'mongoose';
 import { AuthService } from './auth.service';
+import type { AuthTokensResponseDto } from './dto/auth-tokens-response.dto';
+import { TotpService, currentStep, totpCode } from './services/totp.service';
 import { UserRole, UserStatus } from '../core/users/schemas/user.schema';
 
 function buildService() {
@@ -9,6 +15,8 @@ function buildService() {
     create: jest.fn(),
     findOne: jest.fn(),
     findById: jest.fn(),
+    findByIdAndUpdate: jest.fn(),
+    updateOne: jest.fn(),
   };
   const healthProfileModel = {
     countDocuments: jest
@@ -26,6 +34,23 @@ function buildService() {
     sendWelcomeEmail: jest.fn().mockResolvedValue(undefined),
     sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
   };
+  const totp = new TotpService({
+    get: () =>
+      '4f8d9a2e1c6b7f3a5d0e8c4b2a9f6d1e3c7b5a8f0d2e4c6b8a1f3d5e7c9b0a2d',
+  } as any);
+  const adminAccess = {
+    resolve: jest.fn().mockResolvedValue({
+      permissions: ['content:read', 'content:write'],
+      roleName: 'Content Admin',
+      modules: ['dashboard', 'content'],
+      directoryId: 'dir-1',
+      active: true,
+    }),
+    recordLogin: jest.fn().mockResolvedValue(undefined),
+  };
+  const recordModel = {
+    updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+  };
 
   const service = new AuthService(
     userModel as any,
@@ -35,6 +60,9 @@ function buildService() {
     googleAuthService as any,
     auditLogService as any,
     mailService as any,
+    totp,
+    adminAccess as any,
+    recordModel as any,
   );
 
   return {
@@ -46,6 +74,24 @@ function buildService() {
     googleAuthService,
     auditLogService,
     mailService,
+    totp,
+    adminAccess,
+    recordModel,
+  };
+}
+
+/** An admin login document as AuthService sees it (mongoose doc stand-in). */
+async function adminUser(overrides: Record<string, unknown> = {}) {
+  return {
+    _id: 'admin-1',
+    id: 'admin-1',
+    fullName: 'Ops Admin',
+    email: 'ops@ayuva.health',
+    role: UserRole.ADMIN,
+    status: UserStatus.ACTIVE,
+    passwordHash: await bcrypt.hash('CorrectPassword1', 4),
+    save: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
   };
 }
 
@@ -110,6 +156,158 @@ describe('AuthService', () => {
     });
   });
 
+  describe('partner sessions', () => {
+    const partner = async (overrides: Record<string, unknown> = {}) => ({
+      _id: '64b000000000000000000001',
+      id: '64b000000000000000000001',
+      fullName: 'Dr. Rao',
+      email: 'rao@example.com',
+      role: UserRole.PARTNER,
+      status: UserStatus.ACTIVE,
+      passwordHash: await bcrypt.hash('CorrectPassword1', 4),
+      ...overrides,
+    });
+    const refreshAs = (
+      built: ReturnType<typeof buildService>,
+      user: unknown,
+      sid?: string,
+    ) => {
+      built.jwtService.verifyAsync.mockResolvedValue({ sub: '64b000000000000000000001', sid });
+      built.userModel.findById.mockResolvedValue(user);
+      return built.service.refresh({ refreshToken: 'r' });
+    };
+
+    it('records where a sign-in came from', async () => {
+      const { service, userModel, auditLogService } = buildService();
+      userModel.findOne.mockResolvedValue(await partner());
+      userModel.updateOne.mockResolvedValue({});
+
+      await service.login(
+        { email: 'rao@example.com', password: 'CorrectPassword1' },
+        '203.0.113.7',
+      );
+
+      expect(auditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'login', ipAddress: '203.0.113.7' }),
+      );
+    });
+
+    it('starts a new session on each sign-in and puts it in the tokens', async () => {
+      const { service, userModel, jwtService } = buildService();
+      userModel.findOne.mockResolvedValue(await partner());
+      userModel.updateOne.mockResolvedValue({});
+
+      await service.login({
+        email: 'rao@example.com',
+        password: 'CorrectPassword1',
+      });
+
+      const set = userModel.updateOne.mock.calls[0][1] as {
+        $set: { partnerSessionId: string };
+      };
+      expect(set.$set.partnerSessionId).toEqual(expect.any(String));
+      expect(jwtService.signAsync.mock.calls[0][0]).toMatchObject({
+        sid: set.$set.partnerSessionId,
+      });
+    });
+
+    it('leaves patients and their tokens out of it', async () => {
+      const { service, userModel, jwtService } = buildService();
+      userModel.findOne.mockResolvedValue(
+        await partner({ role: UserRole.PATIENT }),
+      );
+
+      await service.login({
+        email: 'rao@example.com',
+        password: 'CorrectPassword1',
+      });
+
+      expect(userModel.updateOne).not.toHaveBeenCalled();
+      expect(jwtService.signAsync.mock.calls[0][0]).not.toHaveProperty('sid');
+    });
+
+    it('refuses a refresh from a replaced session', async () => {
+      const built = buildService();
+      await expect(
+        refreshAs(built, await partner({ partnerSessionId: 'new' }), 'old'),
+      ).rejects.toThrow(/^SESSION_REPLACED/);
+    });
+
+    it('keeps the session id through a refresh', async () => {
+      const built = buildService();
+      await refreshAs(built, await partner({ partnerSessionId: 's1' }), 's1');
+      expect(built.jwtService.signAsync.mock.calls[0][0]).toMatchObject({
+        sid: 's1',
+      });
+    });
+
+    it('lets accounts with no recorded session keep refreshing', async () => {
+      const built = buildService();
+      await expect(
+        refreshAs(built, await partner(), undefined),
+      ).resolves.toBeDefined();
+    });
+
+    it('replaces the session id on sign-out, so old tokens stay dead', async () => {
+      const { service, userModel } = buildService();
+      userModel.updateOne.mockResolvedValue({});
+
+      await service.logout({
+        sub: '64b000000000000000000001',
+        email: 'rao@example.com',
+        role: UserRole.PARTNER,
+        sid: 's1',
+      });
+
+      expect(userModel.updateOne).toHaveBeenCalledWith(
+        { _id: '64b000000000000000000001', partnerSessionId: 's1' },
+        { $set: { partnerSessionId: expect.any(String) as string } },
+      );
+    });
+
+    it('ends the session after five wrong passwords on the lock screen', async () => {
+      const { service, userModel } = buildService();
+      userModel.findById.mockResolvedValue(await partner());
+      userModel.updateOne.mockResolvedValue({});
+      const payload = {
+        sub: '64b000000000000000000001',
+        email: 'rao@example.com',
+        role: UserRole.PARTNER,
+        sid: 's1',
+      };
+
+      for (let i = 0; i < 4; i++)
+        await expect(service.unlock(payload, 'wrong')).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+      expect(userModel.updateOne).not.toHaveBeenCalled();
+      await expect(service.unlock(payload, 'wrong')).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(userModel.updateOne).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts the right password and forgets earlier mistakes', async () => {
+      const { service, userModel } = buildService();
+      userModel.findById.mockResolvedValue(await partner());
+      const payload = {
+        sub: '64b000000000000000000001',
+        email: 'rao@example.com',
+        role: UserRole.PARTNER,
+      };
+
+      await expect(service.unlock(payload, 'wrong')).rejects.toThrow(
+        /4 attempts left/,
+      );
+      await expect(
+        service.unlock(payload, 'CorrectPassword1'),
+      ).resolves.toBeUndefined();
+      await expect(service.unlock(payload, 'wrong')).rejects.toThrow(
+        /4 attempts left/,
+      );
+    });
+  });
+
   describe('login', () => {
     it('throws UnauthorizedException when no user exists for the email', async () => {
       const { service, userModel } = buildService();
@@ -134,6 +332,105 @@ describe('AuthService', () => {
           password: 'WrongPassword1',
         }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    describe('failed sign-ins', () => {
+      const wrong = { email: 'a@example.com', password: 'WrongPassword1' };
+
+      it('logs each failure with the address it came from', async () => {
+        const { service, userModel, auditLogService } = buildService();
+        const passwordHash = await bcrypt.hash('CorrectPassword1', 10);
+        userModel.findOne.mockResolvedValue({
+          _id: 'id-1',
+          id: 'user-1',
+          passwordHash,
+          status: UserStatus.ACTIVE,
+        });
+        userModel.findByIdAndUpdate.mockResolvedValue({ loginFailures: 3 });
+
+        await expect(service.login(wrong, '203.0.113.9')).rejects.toBeInstanceOf(
+          UnauthorizedException,
+        );
+        expect(auditLogService.record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: 'login_failed',
+            actorId: 'user-1',
+            ipAddress: '203.0.113.9',
+            metadata: { attempt: 3, locked: false },
+          }),
+        );
+        expect(userModel.updateOne).not.toHaveBeenCalled();
+      });
+
+      it('pauses the account on the tenth wrong password', async () => {
+        const { service, userModel, auditLogService } = buildService();
+        const passwordHash = await bcrypt.hash('CorrectPassword1', 10);
+        userModel.findOne.mockResolvedValue({
+          _id: 'id-1',
+          id: 'user-1',
+          passwordHash,
+          status: UserStatus.ACTIVE,
+        });
+        userModel.findByIdAndUpdate.mockResolvedValue({ loginFailures: 10 });
+
+        await expect(service.login(wrong)).rejects.toBeInstanceOf(
+          UnauthorizedException,
+        );
+        const update = userModel.updateOne.mock.calls[0][1].$set;
+        expect(update.loginFailures).toBe(0);
+        expect(update.loginLockedUntil.getTime()).toBeGreaterThan(Date.now());
+        expect(auditLogService.record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: { attempt: 10, locked: true },
+          }),
+        );
+      });
+
+      it('refuses even the right password while paused', async () => {
+        const { service, userModel } = buildService();
+        const passwordHash = await bcrypt.hash('CorrectPassword1', 10);
+        userModel.findOne.mockResolvedValue({
+          passwordHash,
+          status: UserStatus.ACTIVE,
+          loginLockedUntil: new Date(Date.now() + 5 * 60_000),
+        });
+
+        await expect(
+          service.login({ email: 'a@example.com', password: 'CorrectPassword1' }),
+        ).rejects.toMatchObject({ status: 429 });
+      });
+
+      it('clears the count after a successful sign-in', async () => {
+        const { service, userModel } = buildService();
+        const passwordHash = await bcrypt.hash('CorrectPassword1', 10);
+        userModel.findOne.mockResolvedValue({
+          _id: 'id-1',
+          id: new Types.ObjectId().toString(),
+          email: 'a@example.com',
+          role: UserRole.PATIENT,
+          passwordHash,
+          status: UserStatus.ACTIVE,
+          loginFailures: 4,
+        });
+
+        await service.login({
+          email: 'a@example.com',
+          password: 'CorrectPassword1',
+        });
+        expect(userModel.updateOne.mock.calls[0][1]).toEqual({
+          $set: { loginFailures: 0 },
+          $unset: { loginLockedUntil: 1 },
+        });
+      });
+
+      it('writes no audit row for an account that does not exist', async () => {
+        const { service, userModel, auditLogService } = buildService();
+        userModel.findOne.mockResolvedValue(null);
+        await expect(service.login(wrong)).rejects.toBeInstanceOf(
+          UnauthorizedException,
+        );
+        expect(auditLogService.record).not.toHaveBeenCalled();
+      });
     });
 
     it('throws UnauthorizedException for a deactivated account, even with the correct password', async () => {
@@ -161,6 +458,135 @@ describe('AuthService', () => {
 
       await expect(
         service.login({ email: 'amara.o@example.com', password: 'anything' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+  });
+
+  describe('admin MFA (mandatory)', () => {
+    it('gives an un-enrolled admin an enrolment challenge and no tokens', async () => {
+      const { service, userModel, jwtService } = buildService();
+      userModel.findOne.mockResolvedValue(await adminUser());
+      jwtService.signAsync.mockResolvedValue('mfa-token');
+
+      const result = (await service.login({
+        email: 'ops@ayuva.health',
+        password: 'CorrectPassword1',
+      })) as any;
+
+      expect(result.accessToken).toBeUndefined();
+      expect(result).toEqual(
+        expect.objectContaining({ mfaRequired: true, mfaToken: 'mfa-token' }),
+      );
+      expect(result.enrollment.otpauthUrl).toContain(
+        `secret=${result.enrollment.secret}`,
+      );
+      // The challenge token is signed with its own secret, never the access one.
+      const [, options] = jwtService.signAsync.mock.calls[0];
+      expect(options.secret).toMatch(/:admin-mfa$/);
+    });
+
+    it('gives an enrolled admin a plain challenge without a new secret', async () => {
+      const { service, userModel, totp } = buildService();
+      userModel.findOne.mockResolvedValue(
+        await adminUser({
+          mfa: {
+            enabled: true,
+            secretEnc: totp.encrypt(totp.generateSecret()),
+          },
+        }),
+      );
+
+      const result = (await service.login({
+        email: 'ops@ayuva.health',
+        password: 'CorrectPassword1',
+      })) as any;
+
+      expect(result.mfaRequired).toBe(true);
+      expect(result.enrollment).toBeUndefined();
+    });
+
+    it('refuses a deactivated admin before any challenge', async () => {
+      const { service, userModel, adminAccess } = buildService();
+      userModel.findOne.mockResolvedValue(await adminUser());
+      adminAccess.resolve.mockResolvedValue({ active: false, permissions: [] });
+
+      await expect(
+        service.login({
+          email: 'ops@ayuva.health',
+          password: 'CorrectPassword1',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('enrols on the first correct code and issues tokens carrying mfa + role permissions', async () => {
+      const { service, userModel, jwtService, totp } = buildService();
+      const secret = totp.generateSecret();
+      const user = await adminUser();
+      userModel.findById.mockResolvedValue(user);
+      jwtService.verifyAsync.mockResolvedValue({
+        sub: 'admin-1',
+        purpose: 'admin_mfa',
+        enroll: totp.encrypt(secret),
+      });
+
+      const result = await service.verifyAdminMfa({
+        mfaToken: 'mfa-token',
+        code: totpCode(secret, currentStep()),
+      });
+
+      expect(result.accessToken).toBe('signed-token');
+      expect((user as any).mfa).toEqual(
+        expect.objectContaining({ enabled: true }),
+      );
+      expect(totp.decrypt((user as any).mfa.secretEnc)).toBe(secret);
+      expect(jwtService.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mfa: true,
+          perms: ['content:read', 'content:write'],
+        }),
+      );
+    });
+
+    it('rejects a wrong code and counts the failure', async () => {
+      const { service, userModel, jwtService, totp } = buildService();
+      const secret = totp.generateSecret();
+      userModel.findById.mockResolvedValue(
+        await adminUser({
+          mfa: {
+            enabled: true,
+            secretEnc: totp.encrypt(secret),
+            failedAttempts: 0,
+          },
+        }),
+      );
+      (userModel as any).updateOne = jest.fn().mockResolvedValue({});
+      jwtService.verifyAsync.mockResolvedValue({
+        sub: 'admin-1',
+        purpose: 'admin_mfa',
+      });
+
+      const wrong =
+        totpCode(secret, currentStep()) === '000000' ? '111111' : '000000';
+      await expect(
+        service.verifyAdminMfa({ mfaToken: 'mfa-token', code: wrong }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect((userModel as any).updateOne).toHaveBeenCalledWith(
+        { _id: 'admin-1' },
+        { $set: { 'mfa.failedAttempts': 1 } },
+      );
+    });
+
+    it('refuses an admin refresh token minted without MFA', async () => {
+      const { service, jwtService, userModel } = buildService();
+      jwtService.verifyAsync.mockResolvedValue({
+        sub: 'admin-1',
+        email: 'ops@ayuva.health',
+        role: UserRole.ADMIN,
+      });
+      userModel.findById.mockResolvedValue(await adminUser());
+
+      await expect(
+        service.refresh({ refreshToken: 'pre-mfa-token' }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
   });
@@ -207,6 +633,112 @@ describe('AuthService', () => {
     });
   });
 
+  describe('password recovery', () => {
+    it('sends an expiring reset code to password-enabled accounts', async () => {
+      const { service, userModel, mailService } = buildService();
+      userModel.findOne.mockResolvedValue({
+        id: 'user-1',
+        email: 'person@example.com',
+        passwordHash: 'existing-hash',
+      });
+
+      await service.forgotPassword({ email: 'Person@Example.com' });
+
+      const update = userModel.findByIdAndUpdate.mock.calls[0];
+      expect(update[0]).toBe('user-1');
+      expect(update[1].resetPasswordCode).toMatch(/^\d{6}$/);
+      expect(update[1].resetPasswordCodeExpiresAt.getTime()).toBeGreaterThan(
+        Date.now(),
+      );
+      expect(mailService.sendPasswordResetEmail).toHaveBeenCalledWith(
+        'person@example.com',
+        update[1].resetPasswordCode,
+      );
+    });
+
+    it('returns the same successful response for an unknown email', async () => {
+      const { service, userModel, mailService } = buildService();
+      userModel.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.forgotPassword({ email: 'unknown@example.com' }),
+      ).resolves.toBeUndefined();
+      expect(mailService.sendPasswordResetEmail).not.toHaveBeenCalled();
+    });
+
+    it('changes the password and consumes a valid reset code', async () => {
+      const { service, userModel, auditLogService } = buildService();
+      userModel.findOne.mockResolvedValue({
+        id: 'user-1',
+        email: 'person@example.com',
+        resetPasswordCode: '482913',
+      });
+
+      await service.resetPassword({
+        email: 'Person@Example.com',
+        code: '482913',
+        newPassword: 'NewPassword123',
+      });
+
+      const update = userModel.findByIdAndUpdate.mock.calls[0];
+      expect(update[0]).toBe('user-1');
+      expect(update[1].passwordHash).not.toBe('NewPassword123');
+      expect(update[1].resetPasswordCode).toBeNull();
+      expect(update[1].resetPasswordCodeExpiresAt).toBeNull();
+      expect(auditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'password_reset_completed',
+          actorId: 'user-1',
+        }),
+      );
+    });
+
+    it('kills a reset code after five wrong tries', async () => {
+      const { service, userModel } = buildService();
+      const user = {
+        _id: 'id-1',
+        id: 'user-1',
+        resetPasswordCode: '482913',
+        resetPasswordAttempts: 0,
+      };
+      userModel.findOne.mockResolvedValue(user);
+      const attempt = () =>
+        service.resetPassword({
+          email: 'person@example.com',
+          code: '000000',
+          newPassword: 'NewPassword123',
+        });
+
+      await expect(attempt()).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(userModel.updateOne.mock.calls[0][1].$set).toEqual({
+        resetPasswordAttempts: 1,
+      });
+
+      user.resetPasswordAttempts = 4;
+      await expect(attempt()).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(userModel.updateOne.mock.calls[1][1].$set).toEqual({
+        resetPasswordCode: null,
+        resetPasswordCodeExpiresAt: null,
+        resetPasswordAttempts: 0,
+      });
+      expect(userModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid or expired reset codes', async () => {
+      const { service, userModel } = buildService();
+      userModel.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.resetPassword({
+          email: 'person@example.com',
+          code: '000000',
+          newPassword: 'NewPassword123',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(userModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+  });
+
   describe('oauthGoogle', () => {
     it('creates a new account on first-time Google sign-in and requires consent to have been supplied', async () => {
       const { service, googleAuthService, userModel } = buildService();
@@ -234,7 +766,9 @@ describe('AuthService', () => {
           email: 'amara.o@example.com',
         }),
       );
-      expect(result.user.onboardingComplete).toBe(false);
+      expect((result as AuthTokensResponseDto).user.onboardingComplete).toBe(
+        false,
+      );
     });
 
     it('throws UnauthorizedException when an existing linked account has been deactivated', async () => {

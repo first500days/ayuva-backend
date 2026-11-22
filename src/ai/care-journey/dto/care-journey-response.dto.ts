@@ -1,6 +1,38 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CareJourneyStatus, CareStepStatus } from '../schemas/care-journey.schema';
 import { AiSource } from '../../common/ai-source.enum';
+import type { MilestoneKind, MilestoneState } from '../journey-map';
+
+export class MilestoneDto {
+  @ApiProperty({ example: 'appt:64f0c8e2b1a2c3d4e5f6a7ba' })
+  id: string;
+
+  @ApiProperty({
+    enum: ['step', 'appointment', 'follow_up', 'prescription', 'lab_report', 'scan', 'discharge'],
+  })
+  kind: MilestoneKind;
+
+  @ApiProperty({ example: 'Visit with Dr Rao' })
+  title: string;
+
+  @ApiPropertyOptional({ example: 'From Thyrocare' })
+  detail?: string;
+
+  @ApiPropertyOptional({ description: 'Absent for a pathway step nothing has dated yet' })
+  at?: string;
+
+  @ApiPropertyOptional({ description: 'A whole day: show no clock time' })
+  allDay?: boolean;
+
+  @ApiProperty({ enum: ['done', 'current', 'upcoming'] })
+  state: MilestoneState;
+
+  @ApiPropertyOptional({ example: '/record/[id]' })
+  route?: string;
+
+  @ApiPropertyOptional({ type: 'object', additionalProperties: { type: 'string' } })
+  params?: Record<string, string>;
+}
 
 export class CareStepResponseDto {
   @ApiProperty({ example: 'Book GP Appointment' })
@@ -46,4 +78,12 @@ export class CareJourneyResponseDto {
       'AYUVA provides healthcare navigation, document organization, and information simplification only. AYUVA does not provide medical advice, diagnosis, treatment recommendations, or emergency guidance. Always consult a qualified healthcare professional.',
   })
   disclaimer: string;
+}
+
+export class CareJourneyMapResponseDto {
+  @ApiProperty({ type: [MilestoneDto] })
+  milestones: MilestoneDto[];
+
+  @ApiPropertyOptional({ type: CareJourneyResponseDto, nullable: true })
+  journey: CareJourneyResponseDto | null;
 }

@@ -12,13 +12,67 @@ function buildService() {
   const slotModel = {
     find: jest.fn(),
   };
-  const service = new ProvidersService(providerModel as any, slotModel as any);
-  return { service, providerModel, slotModel };
+  const taxonomyModel = {
+    find: jest.fn(),
+  };
+  const service = new ProvidersService(
+    providerModel as any,
+    slotModel as any,
+    taxonomyModel as any,
+  );
+  return { service, providerModel, slotModel, taxonomyModel };
+}
+
+/** Mongoose-style chain: find().select().lean().exec() / find().sort().exec(). */
+function chain(result: unknown): Record<string, jest.Mock> {
+  const query: Record<string, jest.Mock> = {
+    exec: jest.fn().mockResolvedValue(result),
+  };
+  for (const step of ['select', 'lean', 'sort']) query[step] = jest.fn(() => query);
+  return query;
 }
 
 const VALID_ID = new Types.ObjectId().toString();
 
 describe('ProvidersService', () => {
+  describe('findAll — marketplace category expansion', () => {
+    it('widens a search to the category synonyms, mapped services and the providers offering them', async () => {
+      const { service, providerModel, taxonomyModel } = buildService();
+      const clinicId = new Types.ObjectId();
+      taxonomyModel.find.mockReturnValue(
+        chain([
+          {
+            name: 'Cardiology',
+            synonyms: ['Cardiologist'],
+            mappedServices: [{ serviceText: 'Heart Scan', entityId: clinicId }],
+          },
+        ]),
+      );
+      providerModel.find.mockReturnValue(chain([]));
+
+      await service.findAll({ query: 'cardiology' } as any, VALID_ID);
+
+      const filter = providerModel.find.mock.calls[0][0];
+      const searchOr = filter.$and[1].$or;
+      const specialtyIn = searchOr.find((m: any) => m.specialty?.$in)?.specialty.$in;
+      expect(specialtyIn.map((r: RegExp) => r.source)).toEqual(
+        expect.arrayContaining(['Cardiology', 'Cardiologist', 'Heart Scan']),
+      );
+      expect(searchOr).toContainEqual({ _id: { $in: [clinicId] } });
+    });
+
+    it('does not expand very short search text', async () => {
+      const { service, providerModel, taxonomyModel } = buildService();
+      providerModel.find.mockReturnValue(chain([]));
+
+      await service.findAll({ query: 'ca' } as any, VALID_ID);
+
+      expect(taxonomyModel.find).not.toHaveBeenCalled();
+      const filter = providerModel.find.mock.calls[0][0];
+      expect(filter.$and[1].$or).toHaveLength(2);
+    });
+  });
+
   describe('findOne', () => {
     it('throws NotFoundException for a syntactically invalid id (avoids a Mongoose CastError)', async () => {
       const { service } = buildService();

@@ -2,12 +2,14 @@ import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nest
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminFounderService } from './admin-founder.service';
 
 @Controller('admin/founder')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('founder')
 export class AdminFounderController {
   constructor(private readonly founderService: AdminFounderService) {}
 

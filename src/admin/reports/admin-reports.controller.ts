@@ -17,6 +17,9 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { JwtPayload } from '../../auth/interfaces/jwt-payload.interface';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminReportsService } from './admin-reports.service';
 import { QueryAdminReportsDto } from './dto/query-admin-reports.dto';
@@ -29,6 +32,7 @@ import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('reports')
 @Controller('admin/reports')
 export class AdminReportsController {
   constructor(private readonly adminReportsService: AdminReportsService) {}
@@ -63,9 +67,10 @@ export class AdminReportsController {
   @UseInterceptors(AuditLogInterceptor)
   async getFile(
     @Param('id') id: string,
+    @CurrentUser() user: JwtPayload,
     @Res({ passthrough: true }) res: Response,
   ): Promise<Buffer> {
-    const { buffer, contentType } = await this.adminReportsService.getFile(id);
+    const { buffer, contentType } = await this.adminReportsService.getFile(id, user.sub);
     res.setHeader('Content-Type', contentType);
     return buffer;
   }

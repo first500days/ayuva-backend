@@ -5,6 +5,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Min,
 } from 'class-validator';
 
@@ -28,6 +29,11 @@ export class CreateMedicationDto {
   })
   @IsArray()
   @IsString({ each: true })
+  // The reminder scheduler turns each into a daily cron; anything else used to fail there with a 500.
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    each: true,
+    message: 'Dose times must be 24-hour HH:mm, like 08:00 or 21:30',
+  })
   scheduleTimes: string[];
 
   @ApiPropertyOptional({

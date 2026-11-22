@@ -1,0 +1,861 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import { MedicalRecordType } from '../../core/records/schemas/medical-record.schema';
+import { ALLOWED_RECORD_MIME_TYPES } from '../../core/records/records.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { LiveBus } from '../../common/live/live-bus.service';
+import { AuditAction } from '../../audit-log/schemas/audit-log.schema';
+import { PartnerActor } from '../rbac/partner-perm.guard';
+import { PartnerNotifierService } from '../notify/partner-notifier.service';
+import { PartnerNotifySettingsService } from '../notify/partner-notify-settings.service';
+import { PartnerTrigger } from '../notify/partner-triggers';
+import { PartnerDocumentsService } from '../documents/partner-documents.service';
+import {
+  LabCatalogItem,
+  LabCatalogItemDocument,
+  LabParameter,
+} from './schemas/lab-catalog-item.schema';
+import { LabOrderDocument, LabOrderStatus } from './schemas/lab-order.schema';
+import { LabResult, LabResultDocument } from './schemas/lab-result.schema';
+import { PartnerQcService } from './partner-qc.service';
+import { PartnerLabInventoryService } from './partner-lab-inventory.service';
+import { User, UserDocument } from '../../core/users/schemas/user.schema';
+import { computeFlag, isCriticalFlag } from './lab-flags';
+import {
+  ResultRow,
+  freshCritical,
+  resultChanges,
+  resultRows,
+} from './result-changes';
+import { PartnerLabOrdersService } from './partner-lab-orders.service';
+import { PartnerLabCriticalService } from './partner-lab-critical.service';
+import { PartnerTrendLinksService } from './partner-trend-links.service';
+import { ReportDispatchService } from '../../notifications/report-delivery/report-dispatch.service';
+import {
+  ReleaseResultDto,
+  SaveResultDto,
+  UploadReportDto,
+} from './dto/lab.dto';
+import {
+  HistoryPoint,
+  ResultCheck,
+  numericValue,
+  resultChecks,
+} from './result-checks';
+
+// Caps the log rows one save can write if a whole report is rewritten.
+const MAX_OVERRIDE_ROWS = 100;
+
+const IMAGING_CATEGORIES = ['radiology', 'imaging', 'cardiology'];
+
+/** The vault's name for an order: its first tests, then how many more. */
+export function nameTests(names: string[]): string | undefined {
+  if (!names.length) return undefined;
+  const shown = names.slice(0, 2).join(', ');
+  return names.length > 2 ? `${shown} +${names.length - 2} more` : shown;
+}
+
+/** A test section as posted by the Report Builder or read back from a saved result. */
+interface ResultTestInput {
+  testId?: string | Types.ObjectId | null;
+  name: string;
+  values: {
+    name: string;
+    value?: string | null;
+    unit?: string | null;
+    refLow?: number | null;
+    refHigh?: number | null;
+    refText?: string | null;
+    criticalLow?: number | null;
+    criticalHigh?: number | null;
+  }[];
+}
+
+/** Delta checks look back this far (the longest rule window). */
+const HISTORY_DAYS = 60;
+
+/** Every test and parameter name on a report, for matching it against QC holds. */
+function parameterNames(
+  tests: { name: string; values: { name: string }[] }[],
+): string[] {
+  return tests.flatMap((t) => [t.name, ...t.values.map((v) => v.name)]);
+}
+
+const checkEntry = (c: ResultCheck) => ({
+  kind: c.kind,
+  code: c.code,
+  severity: c.severity,
+  parameters: c.parameters,
+  message: c.message,
+  ...(c.previous && {
+    previousValue: c.previous.value,
+    previousUnit: c.previous.unit ?? undefined,
+    previousAt: c.previous.at,
+  }),
+});
+
+/** Report Builder (structured values → PDF) and Report Uploader (file → vault). */
+@Injectable()
+export class PartnerLabResultsService {
+  constructor(
+    @InjectModel(LabResult.name)
+    private readonly resultModel: Model<LabResultDocument>,
+    @InjectModel(LabCatalogItem.name)
+    private readonly catalogModel: Model<LabCatalogItemDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
+    private readonly orders: PartnerLabOrdersService,
+    private readonly critical: PartnerLabCriticalService,
+    private readonly trendLinks: PartnerTrendLinksService,
+    private readonly documents: PartnerDocumentsService,
+    private readonly notifier: PartnerNotifierService,
+    private readonly notifySettings: PartnerNotifySettingsService,
+    private readonly audit: AuditLogService,
+    private readonly reportDispatch: ReportDispatchService,
+    private readonly live: LiveBus,
+    private readonly qc: PartnerQcService,
+    private readonly inventory: PartnerLabInventoryService,
+  ) {}
+
+  /** The saved draft/released result, or a blank template built from the catalogue's parameters. */
+  async get(actor: PartnerActor, orderId: string) {
+    const order = await this.orders.load(actor, orderId);
+    const result = await this.resultModel
+      .findOne({ orderId: order._id })
+      .exec();
+    const template = result ? null : await this.template(order);
+    // Only a hold on an analyte this report contains locks its sign-off.
+    const qcHold = await this.qcHold(
+      actor,
+      parameterNames(result ? result.tests : (template ?? [])),
+    );
+    if (result) return { ...this.toResponse(result, order), qcHold };
+    return {
+      qcHold,
+      orderId: order.id,
+      status: 'new' as const,
+      critical: false,
+      comments: '',
+      tests: template ?? [],
+      draftedByName: null,
+      releasedByName: null,
+      releasedAt: null,
+      recordId: null,
+      updatedAt: null,
+    };
+  }
+
+  async save(actor: PartnerActor, orderId: string, dto: SaveResultDto) {
+    const order = await this.orders.load(actor, orderId);
+    this.assertOpen(order);
+    const existing = await this.resultModel
+      .findOne({ orderId: order._id })
+      .select('status tests criticalAlerted criticalSince')
+      .lean()
+      .exec();
+    if (existing?.status === 'released')
+      throw new BadRequestException('This report has already been released');
+    const tests = this.withFlags(dto.tests);
+    const rows = resultRows(tests);
+    const { entered, overridden } = resultChanges(
+      resultRows(existing?.tests ?? []),
+      rows,
+    );
+    const reason = dto.overrideReason?.trim();
+    if (overridden.length && (!reason || reason.length < 5))
+      throw new BadRequestException(
+        'Give a reason for changing a result that was already entered',
+      );
+    const fresh = freshCritical(rows, existing?.criticalAlerted ?? []);
+    const checks = resultChecks(rows, await this.historyFor(order));
+    const isCritical = rows.some((r) => isCriticalFlag(r.flag));
+    const result = await this.resultModel.findOneAndUpdate(
+      { orderId: order._id },
+      {
+        // A critical value starts the call-out clock; correcting it away stops it.
+        ...(isCritical
+          ? {}
+          : {
+              $unset: {
+                criticalSince: 1,
+                criticalEscalatedAt: 1,
+                criticalPhysicianAlertedAt: 1,
+              },
+            }),
+        $set: {
+          ...(isCritical && {
+            criticalSince: existing?.criticalSince ?? new Date(),
+          }),
+          providerId: actor.provider._id,
+          patientId: order.patientId,
+          tests,
+          comments: dto.comments ?? '',
+          critical: tests.some((t) =>
+            t.values.some((v) => isCriticalFlag(v.flag)),
+          ),
+          // Only values still critical stay listed, so one that's corrected and
+          // later turns critical again alerts again.
+          criticalAlerted: rows
+            .filter((r) => isCriticalFlag(r.flag))
+            .map((r) => r.key),
+          checks: checks.map(checkEntry),
+          draftedByName: actor.member.fullName,
+        },
+        $setOnInsert: { status: 'draft' },
+      },
+      { upsert: true, returnDocument: 'after' },
+    );
+    await this.recordEntries(actor, order, entered, overridden, reason);
+    if (
+      fresh.length &&
+      (await this.notifySettings.criticalOnEntry(actor.provider._id))
+    ) {
+      await this.alertCritical(actor, order, fresh);
+      // Straight to the ordering doctor too, before sign-off.
+      if (await this.critical.alertPhysician(actor, order, fresh)) {
+        result.criticalPhysicianAlertedAt = new Date();
+        await this.resultModel.updateOne(
+          { _id: result._id },
+          {
+            $set: {
+              criticalPhysicianAlertedAt: result.criticalPhysicianAlertedAt,
+            },
+          },
+        );
+      }
+    }
+
+    // Reagents and consumables for tests whose results are now complete come
+    // off the lab inventory automatically — once per order and test.
+    const finished = [
+      ...new Set(
+        tests
+          .filter(
+            (t) =>
+              t.testId &&
+              t.values.length > 0 &&
+              t.values.every((v) => v.value.trim()),
+          )
+          .map((t) => t.testId!.toString()),
+      ),
+    ].filter((id) => !(order.stockDeducted ?? []).includes(id));
+    if (finished.length) {
+      await this.inventory.consumeForTests(actor, order.orderNo, finished);
+      order.stockDeducted = [...(order.stockDeducted ?? []), ...finished];
+      await order.save();
+    }
+
+    // A complete draft is waiting for sign-off; a partial one is still in processing.
+    const complete = tests.every((t) => t.values.every((v) => v.value.trim()));
+    const target = complete
+      ? LabOrderStatus.REPORT_READY
+      : LabOrderStatus.PROCESSING;
+    if (
+      [
+        LabOrderStatus.ORDERED,
+        LabOrderStatus.SAMPLE_COLLECTED,
+        LabOrderStatus.PROCESSING,
+      ].includes(order.status) &&
+      order.status !== target
+    ) {
+      order.status = target;
+      order.statusHistory.push({
+        at: new Date(),
+        status: target,
+        byName: actor.member.fullName,
+        note: complete ? 'Results entered' : 'Results in progress',
+      });
+      await order.save();
+    }
+    // Critical counts, the pipeline and the Report Builder list move on every lab screen.
+    this.live.publish(actor.provider._id, 'lab');
+    return this.toResponse(result, order);
+  }
+
+  /** Pathologist sign-off: renders the PDF into the patient's vault and closes the order. */
+  async release(
+    actor: PartnerActor,
+    orderId: string,
+    dto: ReleaseResultDto = {},
+  ) {
+    const order = await this.orders.load(actor, orderId);
+    this.assertOpen(order);
+    const result = await this.resultModel.findOne({ orderId: order._id });
+    if (!result)
+      throw new BadRequestException(
+        'Enter the results before releasing the report',
+      );
+    if (!result.tests.some((t) => t.values.some((v) => v.value?.trim()))) {
+      throw new BadRequestException('The report has no values yet');
+    }
+    // A rejected control run (Westgard) that nobody has reviewed blocks release unless a
+    // signer gives a written rationale and re-confirms their identity.
+    const hold = await this.qcHold(actor, parameterNames(result.tests));
+    if (hold) await this.assertHoldOverride(actor, dto, hold);
+    // Flagged delta / contamination checks need a person to look before sign-off.
+    const checks = result.checks ?? [];
+    const note = dto.checksNote?.trim();
+    if (checks.length && !dto.acknowledgeChecks)
+      throw new BadRequestException(
+        'Review the result checks (unusual change or possible contamination) and confirm before releasing',
+      );
+    if (checks.some((c) => c.severity === 'hold') && (!note || note.length < 5))
+      throw new BadRequestException(
+        'A possible contamination is flagged — say what was done (e.g. recollected and confirmed) before releasing',
+      );
+    if (checks.length) {
+      result.checksAcknowledgedBy = actor.member.fullName;
+      result.checksNote = note || undefined;
+    }
+    result.set('tests', this.withFlags(result.toObject().tests));
+    result.critical = result.tests.some((t) =>
+      t.values.some((v) => isCriticalFlag(v.flag)),
+    );
+    result.status = 'released';
+    result.releasedAt = new Date();
+    result.releasedByName = actor.member.fullName;
+    // The patient's "results over time" page, linked from the report itself.
+    const trendLink = await this.trendLinks.create(actor, order);
+    const pdf = this.documents.labReportPdf(
+      order,
+      result,
+      actor.provider,
+      trendLink?.url,
+      await this.documents.brand(actor.provider),
+    );
+    const record = await this.deliver(
+      actor,
+      order,
+      pdf,
+      'application/pdf',
+      `Lab report ${order.orderNo} - ${actor.provider.name}.pdf`,
+    );
+    result.recordId = record._id;
+    await result.save();
+    const dispatch = await this.closeOrder(
+      actor,
+      order,
+      record._id,
+      result.critical,
+      {
+        ...(checks.length && {
+          checks: checks.map((c) => c.code),
+          checksNote: note ?? null,
+        }),
+        ...(hold && {
+          qcHoldOverride: dto.overrideRationale?.trim(),
+          qcHold: hold.runs,
+        }),
+      },
+    );
+    this.live.publish(actor.provider._id, 'lab');
+    return { ...this.toResponse(result, order), trendLink, dispatch };
+  }
+
+  /** Uploads a finished report file (PDF/image) straight to the patient's vault. */
+  async upload(
+    actor: PartnerActor,
+    orderId: string,
+    file: Express.Multer.File | undefined,
+    dto: UploadReportDto,
+  ) {
+    const order = await this.orders.load(actor, orderId);
+    this.assertOpen(order);
+    if (!file) throw new BadRequestException('Attach the report file');
+    if (!ALLOWED_RECORD_MIME_TYPES.includes(file.mimetype)) {
+      throw new BadRequestException(
+        `Reports must be PDF or an image (${ALLOWED_RECORD_MIME_TYPES.join(', ')})`,
+      );
+    }
+    const ext = file.originalname.includes('.')
+      ? file.originalname.slice(file.originalname.lastIndexOf('.'))
+      : '.pdf';
+    const record = await this.deliver(
+      actor,
+      order,
+      file.buffer,
+      file.mimetype,
+      `Lab report ${order.orderNo} - ${actor.provider.name}${ext}`,
+    );
+    const critical = dto.critical === true;
+    const result = await this.resultModel.findOneAndUpdate(
+      { orderId: order._id },
+      {
+        $set: {
+          providerId: actor.provider._id,
+          patientId: order.patientId,
+          status: 'released',
+          critical,
+          comments: dto.comments ?? '',
+          releasedAt: new Date(),
+          releasedByName: actor.member.fullName,
+          recordId: record._id,
+        },
+        $setOnInsert: { tests: [] },
+      },
+      { upsert: true, returnDocument: 'after' },
+    );
+    const dispatch = await this.closeOrder(
+      actor,
+      order,
+      record._id,
+      critical,
+    );
+    this.live.publish(actor.provider._id, 'lab');
+    return { ...this.toResponse(result, order), dispatch };
+  }
+
+  /** PDF preview of the current draft (or blank template) before release. */
+  async preview(actor: PartnerActor, orderId: string) {
+    const order = await this.orders.load(actor, orderId);
+    let result = await this.resultModel.findOne({ orderId: order._id }).exec();
+    if (!result) {
+      result = new this.resultModel({
+        providerId: actor.provider._id,
+        orderId: order._id,
+        patientId: order.patientId,
+        tests: await this.template(order),
+        status: 'draft',
+      });
+    }
+    return {
+      buffer: this.documents.labReportPdf(
+        order,
+        result,
+        actor.provider,
+        undefined,
+        await this.documents.brand(actor.provider),
+      ),
+      fileName: `Preview ${order.orderNo}.pdf`,
+    };
+  }
+
+  // ── helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * Security & Logs trail of who put the numbers in: one row per save that
+   * entered values, and one per value changed after it was entered.
+   */
+  private async recordEntries(
+    actor: PartnerActor,
+    order: LabOrderDocument,
+    entered: ResultRow[],
+    overridden: { row: ResultRow; from: string }[],
+    reason: string | undefined,
+  ) {
+    const meta = {
+      providerId: actor.provider.id,
+      patientId: order.patientId.toString(),
+      orderNo: order.orderNo,
+    };
+    if (entered.length) {
+      const names = entered.map((r) => r.name);
+      await this.audit.record({
+        actorId: actor.userId,
+        action: AuditAction.PARTNER_LAB_RESULT_ENTRY,
+        targetType: 'PartnerLabOrder',
+        targetId: order.id,
+        metadata: {
+          ...meta,
+          label: `${order.orderNo} · ${entered.length} value${entered.length === 1 ? '' : 's'}: ${names.slice(0, 4).join(', ')}${names.length > 4 ? '…' : ''}`,
+          count: entered.length,
+        },
+        ipAddress: actor.ip,
+      });
+    }
+    for (const { row, from } of overridden.slice(0, MAX_OVERRIDE_ROWS)) {
+      const unit = row.unit ? ` ${row.unit}` : '';
+      await this.audit.record({
+        actorId: actor.userId,
+        action: AuditAction.PARTNER_LAB_RESULT_OVERRIDE,
+        targetType: 'PartnerLabOrder',
+        targetId: order.id,
+        metadata: {
+          ...meta,
+          label: `${order.orderNo} · ${row.name}: ${from}${unit} → ${row.value ? `${row.value}${unit}` : '(cleared)'} — ${reason}`,
+          test: row.test,
+          parameter: row.name,
+          from,
+          to: row.value,
+          reason,
+        },
+        ipAddress: actor.ip,
+      });
+    }
+  }
+
+  /** "Panic value": tell the lab's managers at once, before sign-off, so they can call the ordering doctor. */
+  private async alertCritical(
+    actor: PartnerActor,
+    order: LabOrderDocument,
+    fresh: ResultRow[],
+  ) {
+    const values = fresh
+      .map(
+        (r) =>
+          `${r.name} ${r.value}${r.unit ? ` ${r.unit}` : ''} (${r.flag === 'critical_low' ? 'critically low' : 'critically high'})`,
+      )
+      .join(', ');
+    const doctor = order.referringDoctorName ?? 'the ordering doctor';
+    await this.notifier.emit(actor.provider._id, {
+      trigger: PartnerTrigger.CRITICAL_LAB_RESULT,
+      // Titles show on lock screens and desktop pop-ups, so they name no patient or value.
+      title: `CRITICAL value — ${order.orderNo}`,
+      message: `{patient}: ${values}. Call ${doctor} now and record the call-out in the Report Builder.`,
+      patientId: order.patientId.toString(),
+      safeMessage: `Order ${order.orderNo} has a critical (panic) value — call the ordering doctor now and record it in the Ayuva Partner Portal.`,
+      route: '/partner/lab/reports',
+      params: { orderId: order.id },
+      data: {
+        orderId: order.id,
+        orderNo: order.orderNo,
+        stage: 'entered',
+        criticalValues: fresh.length,
+      },
+      excludeUserId: actor.userId,
+    });
+  }
+
+  private assertOpen(order: LabOrderDocument) {
+    if (order.status === LabOrderStatus.DELIVERED)
+      throw new BadRequestException(
+        'This order’s report has already been delivered',
+      );
+    if (order.status === LabOrderStatus.CANCELLED)
+      throw new BadRequestException('This order was cancelled');
+  }
+
+  private withFlags(tests: ResultTestInput[]) {
+    return tests.map((t) => ({
+      ...(t.testId && { testId: new Types.ObjectId(t.testId.toString()) }),
+      name: t.name,
+      values: t.values.map((v) => ({
+        name: v.name,
+        value: (v.value ?? '').trim(),
+        unit: v.unit || undefined,
+        refLow: v.refLow ?? undefined,
+        refHigh: v.refHigh ?? undefined,
+        refText: v.refText || undefined,
+        criticalLow: v.criticalLow ?? undefined,
+        criticalHigh: v.criticalHigh ?? undefined,
+        flag: computeFlag(v),
+      })),
+    }));
+  }
+
+  /** One section per ordered test; a package expands into its component tests. */
+  private async template(order: LabOrderDocument) {
+    const ids = order.items.map((i) => i.testId);
+    const items = await this.catalogModel.find({ _id: { $in: ids } }).exec();
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const componentIds = items.flatMap((i) => (i.isPackage ? i.includes : []));
+    const components = componentIds.length
+      ? await this.catalogModel.find({ _id: { $in: componentIds } }).exec()
+      : [];
+    const compById = new Map(components.map((c) => [c.id, c]));
+    const section = (item: LabCatalogItemDocument) => {
+      const params: LabParameter[] = item.parameters.length
+        ? item.parameters
+        : [{ name: 'Result' }];
+      return {
+        testId: item.id,
+        name: item.name,
+        values: params.map((p) => ({
+          name: p.name,
+          value: '',
+          unit: p.unit ?? null,
+          refLow: p.refLow ?? null,
+          refHigh: p.refHigh ?? null,
+          refText: p.refText ?? null,
+          criticalLow: p.criticalLow ?? null,
+          criticalHigh: p.criticalHigh ?? null,
+          flag: 'none',
+        })),
+      };
+    };
+    const out: ReturnType<typeof section>[] = [];
+    for (const it of order.items) {
+      const item = byId.get(it.testId.toString());
+      if (!item) {
+        out.push({
+          testId: it.testId.toString(),
+          name: it.name,
+          values: [
+            {
+              name: 'Result',
+              value: '',
+              unit: null,
+              refLow: null,
+              refHigh: null,
+              refText: null,
+              criticalLow: null,
+              criticalHigh: null,
+              flag: 'none',
+            },
+          ],
+        });
+      } else if (item.isPackage) {
+        for (const cid of item.includes) {
+          const component = compById.get(cid.toString());
+          if (component) out.push(section(component));
+        }
+      } else {
+        out.push(section(item));
+      }
+    }
+    return out;
+  }
+
+  private deliver(
+    actor: PartnerActor,
+    order: LabOrderDocument,
+    buffer: Buffer,
+    mimeType: string,
+    fileName: string,
+  ) {
+    const imaging = order.items.every((i) =>
+      IMAGING_CATEGORIES.includes(i.category.toLowerCase()),
+    );
+    return this.documents.deliverToVault({
+      patientId: order.patientId,
+      buffer,
+      fileName,
+      mimeType,
+      type: imaging ? MedicalRecordType.SCAN : MedicalRecordType.LAB_REPORT,
+      providerName: actor.provider.name,
+      procedureType: nameTests(order.items.map((i) => i.name)),
+      attendingPhysician: order.referringDoctorName,
+      recordDate:
+        order.sampleCollection?.collectedAt ?? order.createdAt ?? new Date(),
+      tags: [
+        'lab-report',
+        ...order.items.map((i) => i.code.toLowerCase()),
+      ].slice(0, 12),
+      notification: {
+        trigger: 'report_available',
+        title: 'Your test report is ready',
+        message: `${actor.provider.name} added your report for ${order.items.map((i) => i.name).join(', ')} to your Medical Vault.`,
+        lockScreenText: 'A new document is in your vault',
+      },
+    });
+  }
+
+  private async closeOrder(
+    actor: PartnerActor,
+    order: LabOrderDocument,
+    recordId: Types.ObjectId,
+    critical: boolean,
+    extra: Record<string, unknown> = {},
+  ) {
+    const now = new Date();
+    order.status = LabOrderStatus.DELIVERED;
+    order.deliveredAt = now;
+    order.vaultRecordId = recordId;
+    order.statusHistory.push({
+      at: now,
+      status: LabOrderStatus.DELIVERED,
+      byName: actor.member.fullName,
+      note: critical
+        ? 'Released — CRITICAL value'
+        : 'Released to patient vault',
+    });
+    await order.save();
+
+    const tests = order.items.map((i) => i.name).join(', ');
+    const data = {
+      orderId: order.id,
+      orderNo: order.orderNo,
+      critical,
+      tests: order.items.map((i) => i.code),
+    };
+    if (order.referringProviderId) {
+      await this.notifier.emit(order.referringProviderId, {
+        trigger: critical
+          ? PartnerTrigger.CRITICAL_LAB_RESULT
+          : PartnerTrigger.LAB_RESULT_READY,
+        title: critical ? 'CRITICAL lab result' : 'Lab result ready',
+        message: `${actor.provider.name} released ${tests} for {patient}${critical ? ' — contains a CRITICAL value' : ''}. It shows on the patient's timeline if they share records with you.`,
+        patientId: order.patientId.toString(),
+        safeMessage: critical
+          ? 'A referred patient has a critical lab result — open the Ayuva Partner Portal now.'
+          : 'A lab report for a patient you referred is ready.',
+        route: `/partner/patients/${order.patientId.toString()}`,
+        data,
+      });
+    }
+    // Once the call-out is recorded the team has acted, so release doesn't alert them again.
+    if (critical && !order.criticalCallouts?.length) {
+      await this.notifier.emit(actor.provider._id, {
+        trigger: PartnerTrigger.CRITICAL_LAB_RESULT,
+        title: 'CRITICAL result released',
+        message: `${order.orderNo} for {patient} contains a critical value. Make sure the referring doctor or patient has been contacted.`,
+        patientId: order.patientId.toString(),
+        safeMessage: `Order ${order.orderNo} has a critical value — follow your critical-result call-out procedure.`,
+        route: '/partner/lab/queue',
+        params: { orderId: order.id },
+        data,
+        excludeUserId: actor.userId,
+      });
+    }
+    await this.audit.record({
+      actorId: actor.userId,
+      action: AuditAction.PARTNER_LAB_REPORT_RELEASE,
+      targetType: 'PartnerLabOrder',
+      targetId: order.id,
+      metadata: {
+        providerId: actor.provider.id,
+        patientId: order.patientId.toString(),
+        label: order.orderNo,
+        critical,
+        ...extra,
+      },
+      ipAddress: actor.ip,
+    });
+    // The report is approved: tell the patient over the app, WhatsApp and email.
+    return this.reportDispatch.reportApproved({
+      patientId: order.patientId,
+      recordId,
+      providerId: actor.provider._id,
+      actorUserId: actor.userId,
+      ip: actor.ip,
+    });
+  }
+
+  /**
+   * Patient results held by quality control: an unreviewed rejected control
+   * run (typed or pushed by an analyser) with no passing repeat holds reports
+   * that contain the same analyte — not every report in the lab — until it's
+   * reviewed or a repeat control passes. Without `parameters`, any hold counts.
+   */
+  async qcHold(actor: PartnerActor, parameters?: string[]) {
+    const holds = await this.qc.holds(actor.provider._id);
+    const relevant = parameters
+      ? holds.filter((h) =>
+          parameters.some((p) => this.qc.analyteMatches(h.analyte, p)),
+        )
+      : holds;
+    if (!relevant.length) return null;
+    return {
+      message:
+        'Automated flags detected. To release this report to the patient, input a manual clinical rationale validation string.',
+      runs: relevant.map((r) => ({
+        id: r.id,
+        analyte: r.analyte,
+        rules: r.rules,
+        at: r.at,
+      })),
+    };
+  }
+
+  private async assertHoldOverride(
+    actor: PartnerActor,
+    dto: ReleaseResultDto,
+    hold: { runs: unknown[] },
+  ) {
+    const why = dto.overrideRationale?.trim();
+    if (!why || why.length < 10)
+      throw new BadRequestException(
+        `A quality-control rejection is unreviewed (${hold.runs.length} run${hold.runs.length === 1 ? '' : 's'}). Review it in Quality Control, or enter a clinical rationale of at least 10 characters to release anyway`,
+      );
+    const user = await this.userModel.findById(actor.userId);
+    const ok =
+      !!dto.verificationPassword &&
+      !!user?.passwordHash &&
+      (await bcrypt.compare(dto.verificationPassword, user.passwordHash));
+    if (!ok)
+      throw new ForbiddenException(
+        'Enter your password to confirm the override',
+      );
+  }
+
+  /** The patient's earlier released results here (for delta checks), newest first. */
+  private async historyFor(order: LabOrderDocument): Promise<HistoryPoint[]> {
+    const since = new Date(Date.now() - HISTORY_DAYS * 86_400_000);
+    const earlier = await this.resultModel
+      .find({
+        providerId: order.providerId,
+        patientId: order.patientId,
+        orderId: { $ne: order._id },
+        status: 'released',
+        releasedAt: { $gte: since },
+      })
+      .select('tests releasedAt')
+      .sort({ releasedAt: -1 })
+      .limit(30)
+      .lean()
+      .exec();
+    return earlier.flatMap((r) =>
+      r.tests.flatMap((t) =>
+        t.values.flatMap((v) => {
+          const value = numericValue(v.value);
+          return value === null
+            ? []
+            : [
+                {
+                  name: v.name,
+                  unit: v.unit ?? null,
+                  value,
+                  at: r.releasedAt ?? new Date(0),
+                },
+              ];
+        }),
+      ),
+    );
+  }
+
+  toResponse(r: LabResultDocument, order: LabOrderDocument) {
+    return {
+      orderId: order.id,
+      status: r.status as 'draft' | 'released',
+      critical: r.critical,
+      comments: r.comments,
+      tests: r.tests.map((t) => ({
+        testId: t.testId?.toString() ?? null,
+        name: t.name,
+        values: t.values.map((v) => ({
+          name: v.name,
+          value: v.value,
+          unit: v.unit ?? null,
+          refLow: v.refLow ?? null,
+          refHigh: v.refHigh ?? null,
+          refText: v.refText ?? null,
+          criticalLow: v.criticalLow ?? null,
+          criticalHigh: v.criticalHigh ?? null,
+          flag: v.flag,
+        })),
+      })),
+      draftedByName: r.draftedByName ?? null,
+      checks: (r.checks ?? []).map((c) => ({
+        kind: c.kind,
+        code: c.code,
+        severity: c.severity,
+        parameters: c.parameters,
+        message: c.message,
+        previous:
+          c.previousValue !== undefined && c.previousAt
+            ? {
+                value: c.previousValue,
+                unit: c.previousUnit ?? null,
+                at: c.previousAt.toISOString(),
+              }
+            : null,
+      })),
+      criticalSince: r.criticalSince?.toISOString() ?? null,
+      criticalPhysicianAlertedAt:
+        r.criticalPhysicianAlertedAt?.toISOString() ?? null,
+      criticalEscalatedAt: r.criticalEscalatedAt?.toISOString() ?? null,
+      checksAcknowledgedBy: r.checksAcknowledgedBy ?? null,
+      checksNote: r.checksNote ?? null,
+      releasedByName: r.releasedByName ?? null,
+      releasedAt: r.releasedAt?.toISOString() ?? null,
+      recordId: r.recordId?.toString() ?? null,
+      updatedAt: (r.updatedAt ?? new Date()).toISOString(),
+    };
+  }
+}

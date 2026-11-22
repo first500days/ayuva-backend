@@ -33,6 +33,10 @@ export class AppointmentSlot {
 
   @Prop()
   blockedReason?: string;
+
+  /** Closed by hand from the partner portal — schedule regeneration leaves it closed. */
+  @Prop({ default: false })
+  manuallyBlocked?: boolean;
 }
 
 export const AppointmentSlotSchema =

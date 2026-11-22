@@ -9,6 +9,29 @@ import {
   SymptomEntry,
   SymptomEntrySchema,
 } from '../symptom-nav/schemas/symptom-entry.schema';
+import { NavIntent, NavIntentSchema } from '../nav-intent/schemas/nav-intent.schema';
+import {
+  Appointment,
+  AppointmentSchema,
+} from '../../core/appointments/schemas/appointment.schema';
+import {
+  AppointmentSlot,
+  AppointmentSlotSchema,
+} from '../../core/providers/schemas/appointment-slot.schema';
+import { Provider, ProviderSchema } from '../../core/providers/schemas/provider.schema';
+import {
+  Prescription,
+  PrescriptionSchema,
+} from '../../partner/clinical/schemas/prescription.schema';
+import {
+  MedicalRecord,
+  MedicalRecordSchema,
+} from '../../core/records/schemas/medical-record.schema';
+import { Dispense, DispenseSchema } from '../../partner/hospital/schemas/dispense.schema';
+import {
+  PartnerLabOrder,
+  PartnerLabOrderSchema,
+} from '../../partner/lab/schemas/lab-order.schema';
 import { CareJourneyController } from './care-journey.controller';
 import { CareJourneyService } from './care-journey.service';
 import { AuthModule } from '../../auth/auth.module';
@@ -26,6 +49,14 @@ import { AiInteractionLogModule } from '../ai-interaction-log/ai-interaction-log
       { name: CareJourney.name, schema: CareJourneySchema },
       { name: TriageResult.name, schema: TriageResultSchema },
       { name: SymptomEntry.name, schema: SymptomEntrySchema },
+      { name: NavIntent.name, schema: NavIntentSchema },
+      { name: Appointment.name, schema: AppointmentSchema },
+      { name: AppointmentSlot.name, schema: AppointmentSlotSchema },
+      { name: Provider.name, schema: ProviderSchema },
+      { name: Prescription.name, schema: PrescriptionSchema },
+      { name: MedicalRecord.name, schema: MedicalRecordSchema },
+      { name: Dispense.name, schema: DispenseSchema },
+      { name: PartnerLabOrder.name, schema: PartnerLabOrderSchema },
     ]),
   ],
   controllers: [CareJourneyController],

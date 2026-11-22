@@ -14,10 +14,32 @@ import { CreateSymptomEntryDto } from './dto/create-symptom-entry.dto';
 import { SymptomNavResponseDto } from './dto/symptom-nav-response.dto';
 import { AiInteractionLogService } from '../ai-interaction-log/ai-interaction-log.service';
 import { AiService } from '../ai-interaction-log/schemas/ai-interaction-log.schema';
+import { ClaudeService } from '../claude/claude.service';
 import { AiSource } from '../common/ai-source.enum';
 import { AI_DISCLAIMER } from '../common/ai-disclaimer.constant';
 
 const RULES_VERSION = 'mock-rules-v1';
+const REAL_RULES_VERSION = 'claude-v1+rules-floor';
+
+const URGENCY_ORDER = [Urgency.ROUTINE, Urgency.PRIORITY, Urgency.EMERGENCY];
+const RISK_ORDER = [RiskLevel.LOW, RiskLevel.MODERATE_HIGH, RiskLevel.HIGH];
+const CARE_ORDER = [
+  RecommendedCareLevel.SELF_CARE,
+  RecommendedCareLevel.GP,
+  RecommendedCareLevel.SPECIALIST,
+  RecommendedCareLevel.URGENT_CARE,
+  RecommendedCareLevel.EMERGENCY_ROOM,
+];
+
+// The model may escalate the rule-based result but can never lower it.
+function moreSevere<T>(order: T[], current: T, proposed: T | undefined): T {
+  if (proposed === undefined || !order.includes(proposed)) return current;
+  return order.indexOf(proposed) > order.indexOf(current) ? proposed : current;
+}
+
+const TRIAGE_SYSTEM_PROMPT = `You are a symptom-navigation assistant for a healthcare app. You do NOT diagnose. You extract the symptoms a user describes and suggest how urgently they should seek care and what type of care.
+Be conservative: when unsure, choose the higher urgency. Chest pain, trouble breathing, stroke signs, severe bleeding, suicidal thoughts, seizures and anaphylaxis are emergencies.
+JSON shape: {"extractedSymptoms":["short noun phrases, max 6"],"urgency":"routine|priority|emergency","riskLevel":"low|moderate_high|high","recommendedCareLevel":"self_care|gp|specialist|urgent_care|emergency_room"}`;
 
 // Deterministic keyword heuristics standing in for the real NLU + clinical
 // rules engine (TRD §5, §6) — never a diagnosis, only a navigation signal.
@@ -95,6 +117,7 @@ export class SymptomNavService {
     @InjectModel(HealthProfile.name)
     private readonly healthProfileModel: Model<HealthProfileDocument>,
     private readonly aiInteractionLogService: AiInteractionLogService,
+    private readonly claude: ClaudeService,
   ) {}
 
   async analyse(
@@ -109,12 +132,44 @@ export class SymptomNavService {
       .findOne({ userId: new Types.ObjectId(userId) })
       .exec();
 
-    const extractedSymptoms = this.extractSymptoms(dto.rawText);
-    const { urgency, riskLevel, recommendedCareLevel } = this.classify(
+    let extractedSymptoms = this.extractSymptoms(dto.rawText);
+    const rules = this.classify(
       dto.rawText,
       dto.durationDays,
       healthProfile?.conditions ?? [],
     );
+    let { urgency, riskLevel, recommendedCareLevel } = rules;
+    let source = AiSource.MOCK;
+    let rulesVersion = RULES_VERSION;
+
+    if (this.claude.isEnabled()) {
+      const ai = await this.claude.completeJson<{
+        extractedSymptoms?: string[];
+        urgency?: Urgency;
+        riskLevel?: RiskLevel;
+        recommendedCareLevel?: RecommendedCareLevel;
+      }>({
+        system: TRIAGE_SYSTEM_PROMPT,
+        user: JSON.stringify({
+          symptoms: dto.rawText,
+          durationDays: dto.durationDays,
+          age: healthProfile?.age,
+          existingConditions: healthProfile?.conditions ?? [],
+        }),
+      });
+      if (ai && Array.isArray(ai.extractedSymptoms)) {
+        const list = ai.extractedSymptoms
+          .filter((x) => typeof x === 'string' && x.trim())
+          .map((x) => x.trim().slice(0, 80))
+          .slice(0, 6);
+        if (list.length > 0) extractedSymptoms = list;
+        urgency = moreSevere(URGENCY_ORDER, urgency, ai.urgency);
+        riskLevel = moreSevere(RISK_ORDER, riskLevel, ai.riskLevel);
+        recommendedCareLevel = moreSevere(CARE_ORDER, recommendedCareLevel, ai.recommendedCareLevel);
+        source = AiSource.REAL;
+        rulesVersion = REAL_RULES_VERSION;
+      }
+    }
 
     const symptomEntry = await this.symptomEntryModel.create({
       userId: new Types.ObjectId(userId),
@@ -129,7 +184,7 @@ export class SymptomNavService {
       urgency,
       riskLevel,
       recommendedCareLevel,
-      rulesVersion: RULES_VERSION,
+      rulesVersion,
     });
 
     const response: SymptomNavResponseDto = {
@@ -140,8 +195,8 @@ export class SymptomNavService {
       urgency,
       riskLevel,
       recommendedCareLevel,
-      rulesVersion: RULES_VERSION,
-      source: AiSource.MOCK,
+      rulesVersion,
+      source,
       disclaimer: AI_DISCLAIMER,
     };
 
@@ -156,7 +211,7 @@ export class SymptomNavService {
         extractedSymptoms,
       },
       latencyMs: Date.now() - startedAt,
-      source: AiSource.MOCK,
+      source,
       flagged: riskLevel !== RiskLevel.LOW,
     });
 
@@ -188,7 +243,8 @@ export class SymptomNavService {
       riskLevel: triageResult.riskLevel,
       recommendedCareLevel: triageResult.recommendedCareLevel,
       rulesVersion: triageResult.rulesVersion,
-      source: AiSource.MOCK,
+      source:
+        triageResult.rulesVersion === REAL_RULES_VERSION ? AiSource.REAL : AiSource.MOCK,
       disclaimer: AI_DISCLAIMER,
     };
   }

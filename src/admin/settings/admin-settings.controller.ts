@@ -2,12 +2,14 @@ import { Body, Controller, Get, Param, Patch, Put, Req, UseGuards } from '@nestj
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AdminSettingsService } from './admin-settings.service';
 
 @Controller('admin/settings')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('settings')
 export class AdminSettingsController {
   constructor(private readonly settingsService: AdminSettingsService) {}
 

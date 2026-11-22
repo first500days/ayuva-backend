@@ -15,10 +15,24 @@ import { ReminderQueueService } from '../notifications/queue/reminder-queue.serv
 import { AppNotificationsService } from '../notifications/app-notifications.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/schemas/audit-log.schema';
+import { isSlotInPast } from '../common/utils/slot-time.util';
 import { PartnerContextService } from './partner-context.service';
 import { PartnerRecordsService } from './partner-records.service';
-import { PartnerAppointmentsQueryDto } from './dto/partner.dto';
+import { PartnerAppointmentsQueryDto, PartnerBookDto } from './dto/partner.dto';
 import { SharingService } from '../core/sharing/sharing.service';
+import { LiveBus } from '../common/live/live-bus.service';
+import {
+  MemberStatus,
+  PartnerMember,
+  PartnerMemberDocument,
+} from './staff/schemas/partner-member.schema';
+import { PartnerPatientsService } from './clinical/partner-patients.service';
+import type { PartnerActor } from './rbac/partner-perm.guard';
+import {
+  Referral,
+  ReferralDocument,
+  ReferralStatus,
+} from './referrals/schemas/referral.schema';
 
 /** P05 — appointment management. Slot/status changes are the same records the patient app and admin panel read, so they sync in real time. */
 @Injectable()
@@ -26,18 +40,22 @@ export class PartnerAppointmentsService {
   constructor(
     @InjectModel(Appointment.name) private readonly appointmentModel: Model<AppointmentDocument>,
     @InjectModel(AppointmentSlot.name) private readonly slotModel: Model<AppointmentSlotDocument>,
+    @InjectModel(PartnerMember.name) private readonly memberModel: Model<PartnerMemberDocument>,
+    @InjectModel(Referral.name) private readonly referralModel: Model<ReferralDocument>,
+    private readonly patients: PartnerPatientsService,
     private readonly context: PartnerContextService,
     private readonly records: PartnerRecordsService,
     private readonly reminders: ReminderQueueService,
     private readonly notifications: AppNotificationsService,
     private readonly audit: AuditLogService,
     private readonly sharing: SharingService,
+    private readonly live: LiveBus,
   ) {}
 
   async list(userId: string, query: PartnerAppointmentsQueryDto) {
-    const provider = await this.context.requireLive(userId);
+    const { provider, member } = await this.context.requireLiveContext(userId);
     const appointments = await this.appointmentModel
-      .find({ providerId: provider._id })
+      .find({ providerId: provider._id, ...(query.mine && { assignedMemberId: member._id }) })
       .sort({ createdAt: -1 })
       .exec();
     const slots = await this.slotModel
@@ -75,6 +93,40 @@ export class PartnerAppointmentsService {
     );
   }
 
+  /** Assigns the visit to a practitioner (and department) — hospital OPD / multi-doctor clinics. */
+  async assign(userId: string, id: string, memberId: string | null | undefined, department?: string) {
+    const { appointment, providerId } = await this.load(userId, id);
+    if (memberId === null) {
+      appointment.assignedMemberId = undefined;
+      appointment.assignedName = undefined;
+    } else if (memberId) {
+      const member = Types.ObjectId.isValid(memberId)
+        ? await this.memberModel.findOne({ _id: memberId, providerId, status: MemberStatus.ACTIVE })
+        : null;
+      if (!member) throw new BadRequestException('That staff member is not active in your organisation');
+      appointment.assignedMemberId = member._id;
+      appointment.assignedName = member.fullName;
+      if (!department && member.department) appointment.department = member.department;
+      if (member.userId.toString() !== userId) {
+        await this.notifications
+          .create(member.userId.toString(), {
+            trigger: 'partner_appointment_assignment',
+            category: 'general',
+            title: 'Appointment assigned to you',
+            message: 'A patient visit was assigned to you — open Appointments for details.',
+            lockScreenText: 'New assignment',
+            actionLabel: 'Open',
+            actionRoute: '/partner/appointments',
+            actionParams: { appointmentId: appointment.id },
+          })
+          .catch(() => undefined);
+      }
+    }
+    if (department !== undefined) appointment.department = department.trim() || undefined;
+    await appointment.save();
+    return this.one(userId, id, AuditAction.PARTNER_APPOINTMENT_UPDATE, 'assigned');
+  }
+
   async accept(userId: string, id: string) {
     const { appointment } = await this.load(userId, id);
     if (appointment.status !== AppointmentStatus.REQUESTED) {
@@ -96,6 +148,8 @@ export class PartnerAppointmentsService {
     appointment.rejectionReason = reason;
     await appointment.save();
     await this.releaseSlot(appointment.slotId);
+    // People on the waitlist hear about the freed time.
+    this.live.slotOpened(appointment.slotId.toString());
     await this.reminders.cancelAppointmentReminder(appointment.id);
     await this.reminders.cancelFollowUpReminder(appointment.id);
     // "This visit" record access ends with the visit.
@@ -122,6 +176,7 @@ export class PartnerAppointmentsService {
     appointment.slotId = newSlot._id;
     await appointment.save();
     await this.releaseSlot(oldSlotId);
+    this.live.slotOpened(oldSlotId.toString());
     await this.sharing.syncVisitExpiry(appointment.id);
 
     await this.reminders.cancelAppointmentReminder(appointment.id);
@@ -135,6 +190,34 @@ export class PartnerAppointmentsService {
     return this.one(userId, id, AuditAction.PARTNER_APPOINTMENT_UPDATE, 'rescheduled');
   }
 
+  /**
+   * The desk marks the patient as arrived: the patient's open app updates at
+   * once over its live connection, and a push says they're checked in.
+   */
+  async arrived(userId: string, id: string) {
+    const { appointment } = await this.load(userId, id);
+    if (appointment.status !== AppointmentStatus.CONFIRMED) {
+      throw new BadRequestException('Only a confirmed appointment can be checked in');
+    }
+    if (!appointment.arrivedAt) {
+      appointment.arrivedAt = new Date();
+      await appointment.save();
+    }
+    this.live.toPatient(appointment.patientId.toString(), {
+      t: 'visit',
+      appointmentId: appointment.id,
+      state: 'arrived',
+      at: appointment.arrivedAt.toISOString(),
+    });
+    await this.notify(
+      appointment,
+      'booking_changed',
+      'You’re checked in',
+      'The clinic has marked you as arrived. Please wait to be called.',
+    );
+    return this.one(userId, id, AuditAction.PARTNER_APPOINTMENT_UPDATE, 'arrived');
+  }
+
   async complete(userId: string, id: string) {
     const { appointment } = await this.load(userId, id);
     if (appointment.status !== AppointmentStatus.CONFIRMED) {
@@ -144,6 +227,71 @@ export class PartnerAppointmentsService {
     appointment.completedAt = new Date();
     await appointment.save();
     return this.one(userId, id, AuditAction.PARTNER_APPOINTMENT_UPDATE, 'completed');
+  }
+
+  /**
+   * Books a linked patient straight into an open slot: the inline scheduler in
+   * the referral and dashboard drawers. A referral the booking answers gets a
+   * "scheduled" entry in its history, which the referring doctor sees.
+   */
+  async book(actor: PartnerActor, dto: PartnerBookDto) {
+    const patient = await this.patients.assertLinked(actor, dto.patientId);
+    let referral: ReferralDocument | null = null;
+    if (dto.referralId) {
+      referral = Types.ObjectId.isValid(dto.referralId)
+        ? await this.referralModel.findOne({
+            _id: dto.referralId,
+            toProviderId: actor.provider._id,
+            patientId: patient._id,
+          })
+        : null;
+      if (!referral) throw new NotFoundException('Referral not found');
+      if (![ReferralStatus.SENT, ReferralStatus.ACCEPTED].includes(referral.status))
+        throw new BadRequestException(`This referral is ${referral.status}, so it can't be scheduled`);
+    }
+    let member: PartnerMemberDocument | null = null;
+    if (dto.memberId) {
+      member = await this.memberModel.findOne({
+        _id: dto.memberId,
+        providerId: actor.provider._id,
+        status: MemberStatus.ACTIVE,
+      });
+      if (!member) throw new BadRequestException('That staff member is not active in your organisation');
+    }
+    const slot = await this.claimSlot(actor.provider._id, dto.slotId);
+    let appointment: AppointmentDocument;
+    try {
+      appointment = await this.appointmentModel.create({
+        patientId: patient._id,
+        providerId: actor.provider._id,
+        slotId: slot._id,
+        status: AppointmentStatus.CONFIRMED,
+        ...(member && { assignedMemberId: member._id, assignedName: member.fullName }),
+        department: dto.department?.trim() || referral?.department || member?.department || undefined,
+      });
+    } catch (err) {
+      await this.releaseSlot(slot._id);
+      throw err;
+    }
+    const when = `${slot.date.toISOString().slice(0, 10)} at ${slot.time}`;
+    await this.notify(appointment, 'booking_confirmed', 'Appointment booked', `${actor.provider.name} booked you in for ${when}.`);
+    if (referral) {
+      referral.history.push({
+        at: new Date(),
+        status: 'scheduled',
+        byName: actor.member.fullName,
+        note: `Appointment booked for ${when}`,
+      });
+      await referral.save();
+      this.live.publish(referral.fromProviderId, 'referrals');
+      this.live.publish(actor.provider._id, 'referrals');
+    }
+    return this.one(
+      actor.userId,
+      appointment.id,
+      AuditAction.PARTNER_APPOINTMENT_UPDATE,
+      referral ? 'booked_from_referral' : 'booked',
+    );
   }
 
   async scheduleFollowUp(userId: string, id: string, slotId: string) {
@@ -190,6 +338,10 @@ export class PartnerAppointmentsService {
       { returnDocument: 'after' },
     );
     if (!slot) throw new ConflictException('That slot is no longer available');
+    if (isSlotInPast(slot.date, slot.time)) {
+      await this.releaseSlot(slot._id);
+      throw new BadRequestException('That time has already passed — pick a later slot');
+    }
     return slot;
   }
 
@@ -221,6 +373,7 @@ export class PartnerAppointmentsService {
     const appointment = await this.appointmentModel.findById(id);
     if (!appointment) throw new NotFoundException('Appointment not found');
     const slot = await this.slotModel.findById(appointment.slotId);
+    this.live.publish(provider._id, 'appointments');
     await this.audit.record({
       actorId: userId,
       action,

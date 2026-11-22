@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AppointmentStatus } from '../schemas/appointment.schema';
 
 export class AppointmentResponseDto {
@@ -25,4 +25,10 @@ export class AppointmentResponseDto {
 
   @ApiProperty({ example: false, description: 'FR-7.6 "Set reminder" state' })
   reminderEnabled: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'When the clinic checked the patient in on the day ("Arrived")',
+  })
+  arrivedAt?: string | null;
 }

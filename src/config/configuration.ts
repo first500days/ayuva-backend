@@ -46,9 +46,10 @@ export default () => ({
     iosClientId: process.env.GOOGLE_IOS_CLIENT_ID,
   },
   storage: {
-    // Local-disk stand-in for the S3-compatible object store (TRD §2/§6);
-    // swap StorageService's implementation for an S3 client later without
-    // touching callers, since MedicalRecord.fileRef is just an opaque key.
+    // AWS S3 holds every upload when S3_BUCKET is set (production). Unset
+    // means local-disk under UPLOAD_DIR, for development only.
+    s3Bucket: process.env.S3_BUCKET,
+    s3Region: process.env.AWS_REGION ?? 'ap-southeast-2',
     uploadDir: process.env.UPLOAD_DIR ?? './uploads',
     // 32-byte hex key for AES-256-GCM. The dev fallback below is committed to
     // source control, so it must never reach a production encryption op —
@@ -65,6 +66,8 @@ export default () => ({
     projectId: process.env.FCM_PROJECT_ID,
     clientEmail: process.env.FCM_CLIENT_EMAIL,
     privateKey: process.env.FCM_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    // Optional: only needed if the Expo project enforces push security.
+    expoAccessToken: process.env.EXPO_ACCESS_TOKEN,
     // Set to true to allow the log-only push sender even in production (e.g. a
     // free-tier staging deploy without real FCM). Unset/absent in production
     // still fails fast at boot when credentials are missing (fcm.provider.ts).
@@ -85,17 +88,48 @@ export default () => ({
   // Comma-separated allowed origins for CORS (main.ts) — unset in production
   // means "reject all cross-origin requests" (logged loudly), not "allow all".
   corsAllowedOrigins: process.env.CORS_ALLOWED_ORIGINS,
+  // Ayuva's cut of partner consultation payments, shown in the partner Billing
+  // split (the admin Payments screen quotes the same 15%).
+  payments: {
+    platformFeePercent: Number(process.env.PLATFORM_FEE_PERCENT ?? 15),
+  },
   mail: {
     from: process.env.MAIL_FROM ?? 'noreply@ayuva.com',
   },
   resend: {
     apiKey: process.env.RESEND_API_KEY,
   },
+  // Takes priority over Resend when set.
+  sendgrid: {
+    apiKey: process.env.SENDGRID_API_KEY,
+  },
+  // Meta's WhatsApp Cloud API. Takes priority over Twilio when set.
+  whatsappCloud: {
+    phoneNumberId: process.env.WHATSAPP_CLOUD_PHONE_NUMBER_ID,
+    accessToken: process.env.WHATSAPP_CLOUD_TOKEN,
+    apiVersion: process.env.WHATSAPP_CLOUD_API_VERSION ?? 'v23.0',
+    language: process.env.WHATSAPP_TEMPLATE_LANGUAGE ?? 'en',
+    reportTemplate:
+      process.env.WHATSAPP_TEMPLATE_REPORT ?? 'ayuva_report_ready',
+    noticeTemplate: process.env.WHATSAPP_TEMPLATE_NOTICE ?? 'ayuva_notice',
+  },
+  // Secure links sent by WhatsApp or email (held to 15–30 minutes in code).
+  reportLinks: {
+    secret: process.env.REPORT_LINK_SECRET,
+    ttlMinutes: Number(process.env.REPORT_LINK_TTL_MINUTES ?? 30),
+  },
+  audit: {
+    sealSecret: process.env.AUDIT_SEAL_SECRET,
+  },
   // OTP and reminder SMS (sms-sender.ts). Unset = log-only sender.
   sms: {
     twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
     twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
     from: process.env.SMS_FROM,
+    whatsappFrom: process.env.TWILIO_WHATSAPP_FROM,
+    whatsappContentSid: process.env.TWILIO_WHATSAPP_CONTENT_SID,
+    // Link in prescription notices (patient app download / open page).
+    patientAppUrl: process.env.PATIENT_APP_URL,
   },
   apple: {
     // Comma-separated audiences accepted on Apple identity tokens: the iOS

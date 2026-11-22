@@ -58,6 +58,9 @@ export class AdminDiagnosticTestResponseDto {
   @ApiProperty({ type: [String] })
   tags: string[];
 
+  @ApiProperty({ type: [String], example: ['Hemogram', 'CBC'] })
+  aliases: string[];
+
   @ApiPropertyOptional()
   description?: string;
 

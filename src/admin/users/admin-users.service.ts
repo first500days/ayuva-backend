@@ -30,7 +30,9 @@ import {
 import {
   MedicalRecord,
   MedicalRecordDocument,
+  recordSystemFileName,
 } from '../../core/records/schemas/medical-record.schema';
+import { patientAge } from '../../common/utils/age.util';
 import { QueryAdminUsersDto } from './dto/query-admin-users.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import {
@@ -95,8 +97,8 @@ export class AdminUsersService {
     const profiles = await this.healthProfileModel
       .find({ userId: { $in: users.map((u) => u._id) } })
       .exec();
-    const ageByUserId = new Map(
-      profiles.map((p) => [p.userId.toString(), p.age]),
+    const profileByUserId = new Map(
+      profiles.map((p) => [p.userId.toString(), p]),
     );
 
     const activityCountByUserId = await this.getActivityCounts(
@@ -106,7 +108,7 @@ export class AdminUsersService {
     return users.map((u) =>
       this.toResponse(
         u,
-        ageByUserId.get(u.id),
+        profileByUserId.get(u.id),
         activityCountByUserId.get(u.id) ?? 0,
       ),
     );
@@ -132,7 +134,7 @@ export class AdminUsersService {
     const activityCountByUserId = await this.getActivityCounts([user._id]);
     return this.toResponse(
       user,
-      profile?.age,
+      profile ?? undefined,
       activityCountByUserId.get(user.id) ?? 0,
     );
   }
@@ -201,7 +203,7 @@ export class AdminUsersService {
 
     const recordItems: AdminUserActivityItemDto[] = records.map((r) => ({
       type: 'record',
-      label: `${r.originalFileName} (${r.type})`,
+      label: `${recordSystemFileName(r)} (${r.type})`,
       occurredAt: (r.uploadedAt ?? new Date(0)).toISOString(),
     }));
 
@@ -261,14 +263,17 @@ export class AdminUsersService {
 
   private toResponse(
     user: UserDocument,
-    age: number | undefined,
+    profile: HealthProfileDocument | undefined,
     activityCount: number,
   ): AdminUserResponseDto {
+    const { age, source } = patientAge(profile);
     return {
       id: user.id,
       fullName: user.fullName,
       email: user.email,
       age,
+      ageSource: source,
+      dateOfBirth: profile?.dateOfBirth?.toISOString().slice(0, 10),
       role: user.role,
       status: user.status,
       joinedAt: (user.createdAt ?? new Date(0)).toISOString(),

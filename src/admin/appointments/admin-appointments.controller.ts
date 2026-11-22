@@ -8,6 +8,7 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AdminArea } from '../../common/decorators/admin-area.decorator';
 import { UserRole } from '../../core/users/schemas/user.schema';
 import { AppointmentsService } from '../../core/appointments/appointments.service';
 import { PatchAppointmentDto } from '../../core/appointments/dto/patch-appointment.dto';
@@ -18,6 +19,7 @@ import { QueryAdminAppointmentsDto } from './dto/query-admin-appointments.dto';
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
+@AdminArea('appointments')
 @Controller('admin/appointments')
 export class AdminAppointmentsController {
   constructor(private readonly appointmentsService: AppointmentsService) {}

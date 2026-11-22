@@ -3,6 +3,7 @@ import { AssistantController, MobileAiController } from './assistant.controller'
 import { AssistantService } from './assistant.service';
 import { AuthModule } from '../../auth/auth.module';
 import { AiInteractionLogModule } from '../ai-interaction-log/ai-interaction-log.module';
+import { ClaudeModule } from '../claude/claude.module';
 
 /**
  * POST /assistant/chat (TRD §4, §5) — MOCK conversational responses
@@ -11,7 +12,7 @@ import { AiInteractionLogModule } from '../ai-interaction-log/ai-interaction-log
  * Also serves POST /ai/chat alias for the mobile client.
  */
 @Module({
-  imports: [AuthModule, AiInteractionLogModule],
+  imports: [AuthModule, AiInteractionLogModule, ClaudeModule],
   controllers: [AssistantController, MobileAiController],
   providers: [AssistantService],
 })

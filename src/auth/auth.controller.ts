@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, HttpCode, HttpStatus, Post, Put, UseGuards } from '@nestjs/common';
+import { ClientIp } from '../common/request-context/client-ip.decorator';
+import {
+  Body,
+  Controller,
+  Delete,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Put,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -9,6 +20,7 @@ import {
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { UnlockDto } from './dto/unlock.dto';
 import { GoogleOAuthDto } from './dto/google-oauth.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ConsentDto } from './dto/consent.dto';
@@ -17,16 +29,21 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AuthTokensResponseDto } from './dto/auth-tokens-response.dto';
 import { RefreshTokenResponseDto } from './dto/refresh-token-response.dto';
 import { ConsentStatusResponseDto } from './dto/consent-status-response.dto';
+import { AdminMfaChallengeDto, VerifyMfaDto } from './dto/admin-mfa.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { PortalAuthInterceptor } from '../common/interceptors/portal-auth.interceptor';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from './interfaces/jwt-payload.interface';
+import { CodeLimit, RefreshLimit, SignInLimit } from './auth-throttle';
 
 @ApiTags('Auth')
+@UseInterceptors(PortalAuthInterceptor)
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @SignInLimit()
   @ApiOperation({ summary: 'Email/password sign-up (FR-1.2, FR-1.5)' })
   @ApiCreatedResponse({ type: AuthTokensResponseDto })
   register(@Body() dto: RegisterDto): Promise<AuthTokensResponseDto> {
@@ -34,22 +51,78 @@ export class AuthController {
   }
 
   @Post('login')
+  @SignInLimit()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Email/password login (FR-1.1)' })
+  @ApiOperation({
+    summary:
+      'Email/password login (FR-1.1). Admins get an MFA challenge instead of tokens — finish with POST /auth/mfa/verify',
+  })
   @ApiOkResponse({ type: AuthTokensResponseDto })
-  login(@Body() dto: LoginDto): Promise<AuthTokensResponseDto> {
-    return this.authService.login(dto);
+  login(
+    @Body() dto: LoginDto,
+    @ClientIp() ip: string | undefined,
+  ): Promise<AuthTokensResponseDto | AdminMfaChallengeDto> {
+    return this.authService.login(dto, ip);
+  }
+
+  @Post('logout')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'End this Partner Portal session on the server' })
+  logout(@CurrentUser() user: JwtPayload): Promise<void> {
+    return this.authService.logout(user);
+  }
+
+  @Post('activity')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary:
+      'Partner Portal: someone is at the keyboard (sent at most once a minute). Sessions end after 10 minutes without it',
+  })
+  activity(@CurrentUser() user: JwtPayload): Promise<void> {
+    return this.authService.noteActivity(user);
+  }
+
+  @Post('unlock')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Password check for the Partner Portal idle lock' })
+  unlock(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UnlockDto,
+  ): Promise<void> {
+    return this.authService.unlock(user, dto.password);
+  }
+
+  @Post('mfa/verify')
+  @CodeLimit()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Admin sign-in step 2: the authenticator code (first use also enrols the app). Mandatory for every admin.',
+  })
+  @ApiOkResponse({ type: AuthTokensResponseDto })
+  verifyMfa(@Body() dto: VerifyMfaDto): Promise<AuthTokensResponseDto> {
+    return this.authService.verifyAdminMfa(dto);
   }
 
   @Post('oauth/google')
+  @SignInLimit()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Google OAuth sign-up/sign-in (FR-1.3)' })
   @ApiOkResponse({ type: AuthTokensResponseDto })
-  oauthGoogle(@Body() dto: GoogleOAuthDto): Promise<AuthTokensResponseDto> {
+  oauthGoogle(
+    @Body() dto: GoogleOAuthDto,
+  ): Promise<AuthTokensResponseDto | AdminMfaChallengeDto> {
     return this.authService.oauthGoogle(dto);
   }
 
   @Post('refresh')
+  @RefreshLimit()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Exchange a refresh token for a new token pair' })
   @ApiOkResponse({ type: RefreshTokenResponseDto })
@@ -58,6 +131,7 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @CodeLimit()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request a password reset email' })
   async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<void> {
@@ -65,6 +139,7 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  @CodeLimit()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password using a reset token' })
   async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
@@ -92,7 +167,7 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:
-      'Permanently delete the authenticated user\'s account and anonymise all PII (DPDP / GDPR right to erasure). Required by Google Play Store data deletion policy.',
+      "Permanently delete the authenticated user's account and anonymise all PII (DPDP / GDPR right to erasure). Required by Google Play Store data deletion policy.",
   })
   async deleteAccount(@CurrentUser() user: JwtPayload): Promise<void> {
     return this.authService.deleteAccount(user.sub);

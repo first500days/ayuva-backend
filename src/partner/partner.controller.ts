@@ -1,8 +1,14 @@
+import { parseCv } from './cv-parse';
+import { readDocumentText } from '../core/records/document-text';
+import { PartnerDigestService } from './clinical/partner-digest.service';
+import { RecordViewKeysService } from './record-view-keys.service';
+import { PartnerPreVisitService } from './clinical/partner-pre-visit.service';
 import {
   Body,
   Controller,
   Delete,
   Get,
+  BadRequestException,
   HttpCode,
   Param,
   Patch,
@@ -10,11 +16,30 @@ import {
   Put,
   Query,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiCreatedResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Response } from 'express';
+import { memoryStorage } from 'multer';
+import { CredentialDocType } from '../core/providers/schemas/provider.schema';
+import {
+  MAX_CREDENTIAL_BYTES,
+  UploadCredentialDto,
+} from '../admin/providers/dto/provider-credentials.dto';
+import { AuditLogInterceptor } from '../audit-log/interceptors/audit-log.interceptor';
+import { AuditEvent } from '../audit-log/decorators/audit-event.decorator';
+import { AuditAction } from '../audit-log/schemas/audit-log.schema';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SignInLimit } from '../auth/auth-throttle';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -28,8 +53,21 @@ import { PartnerProfileService } from './partner-profile.service';
 import { PartnerAppointmentsService } from './partner-appointments.service';
 import { PartnerRecordsService } from './partner-records.service';
 import { PartnerPaymentsService } from './partner-payments.service';
+import { PartnerStaffService } from './staff/partner-staff.service';
+import { AcceptInviteDto } from './staff/dto/staff.dto';
 import {
+  PartnerCtx,
+  PartnerPermGuard,
+  RequirePerm,
+} from './rbac/partner-perm.guard';
+import type { PartnerActor } from './rbac/partner-perm.guard';
+import { Perm } from './rbac/partner-permissions';
+import {
+  AssignAppointmentDto,
   PartnerAppointmentsQueryDto,
+  PartnerBlockSlotDto,
+  PartnerBookDto,
+  PartnerDaySlotsQueryDto,
   PartnerFollowUpDto,
   PartnerPaymentsQueryDto,
   PartnerRegisterDto,
@@ -39,20 +77,51 @@ import {
   UpdatePartnerProfileDto,
 } from './dto/partner.dto';
 
-/** P01 — public partner sign-up. Login itself reuses POST /auth/login (role "partner" in the JWT). */
+/** P01 — public partner sign-up and staff invitations. Login itself reuses POST /auth/login (role "partner" in the JWT). */
 @ApiTags('Partner - Auth')
 @Controller('partner/auth')
 export class PartnerAuthController {
-  constructor(private readonly authService: PartnerAuthService) {}
+  constructor(
+    private readonly authService: PartnerAuthService,
+    private readonly staff: PartnerStaffService,
+  ) {}
 
   @Post('register')
-  @ApiOperation({ summary: 'Register a partner; account stays pending until an admin verifies it (P01)' })
+  @SignInLimit()
+  @ApiOperation({
+    summary:
+      'Register a partner; account stays pending until an admin verifies it (P01)',
+  })
   @ApiCreatedResponse({ type: AuthTokensResponseDto })
   register(@Body() dto: PartnerRegisterDto): Promise<AuthTokensResponseDto> {
     return this.authService.register(dto);
   }
+
+  @Get('invite/:token')
+  @ApiOperation({
+    summary:
+      'Who an invitation is for (organisation, role) before it is accepted',
+  })
+  invite(@Param('token') token: string) {
+    return this.staff.describeInvite(token);
+  }
+
+  @Post('accept-invite')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Accept a staff invitation: set a password, accept terms, sign in',
+  })
+  @ApiCreatedResponse({ type: AuthTokensResponseDto })
+  acceptInvite(@Body() dto: AcceptInviteDto): Promise<AuthTokensResponseDto> {
+    return this.staff.acceptInvite(dto);
+  }
 }
 
+/**
+ * P02–P06. Every route except GET /me needs a live (verified) organisation
+ * and the permission named on it; staff resolve to the organisation they
+ * were invited into.
+ */
 @ApiTags('Partner')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -64,66 +133,228 @@ export class PartnerController {
     private readonly appointments: PartnerAppointmentsService,
     private readonly records: PartnerRecordsService,
     private readonly payments: PartnerPaymentsService,
+    private readonly preVisitBundles: PartnerPreVisitService,
+    private readonly viewKeys: RecordViewKeysService,
+    private readonly digests: PartnerDigestService,
   ) {}
 
   // ── P01/P02 profile, verification status, availability ─────────────────────
   @Get('me')
-  @ApiOperation({ summary: 'Own provider profile incl. verification status (available while pending)' })
+  @ApiOperation({
+    summary:
+      'Own organisation profile, verification status and my role/permissions (available while pending)',
+  })
   me(@CurrentUser() u: JwtPayload) {
     return this.profile.getMe(u.sub);
   }
 
+  @Get('credentials')
+  @ApiOperation({
+    summary:
+      'Licence / registration documents submitted for verification (available while pending)',
+  })
+  credentials(@CurrentUser() u: JwtPayload) {
+    return this.profile.credentials(u.sub);
+  }
+
+  @Post('credentials')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary:
+      'Upload a licence / registration document for the verification review (organisation admins, available while pending)',
+  })
+  @AuditEvent(AuditAction.PARTNER_CREDENTIAL_UPLOAD, 'Provider')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_CREDENTIAL_BYTES },
+    }),
+    AuditLogInterceptor,
+  )
+  addCredential(
+    @CurrentUser() u: JwtPayload,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() dto: UploadCredentialDto,
+  ) {
+    return this.profile.addCredential(
+      u.sub,
+      file,
+      dto.docType ?? CredentialDocType.MEDICAL_LICENSE,
+    );
+  }
+
+  @Post('profile/parse-cv')
+  @HttpCode(200)
+  @ApiConsumes('multipart/form-data')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.ORG_SETTINGS)
+  @ApiOperation({
+    summary:
+      'Read a CV or credential (PDF or text) and suggest qualifications, specialties, experience, registration number and languages for the profile form. Nothing is saved.',
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_CREDENTIAL_BYTES },
+    }),
+  )
+  async parseCv(@UploadedFile() file: Express.Multer.File | undefined) {
+    if (!file) throw new BadRequestException('Attach a CV or credential');
+    const text = await readDocumentText(file.buffer, file.mimetype).catch(
+      () => '',
+    );
+    return parseCv(text);
+  }
+
   @Patch('profile')
-  @ApiOperation({ summary: 'Update qualifications, specialty, fee, languages, locations (P02)' })
-  updateProfile(@CurrentUser() u: JwtPayload, @Body() dto: UpdatePartnerProfileDto) {
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.ORG_SETTINGS)
+  @ApiOperation({
+    summary:
+      'Update qualifications, specialty, fee, languages, locations, departments (P02)',
+  })
+  updateProfile(
+    @CurrentUser() u: JwtPayload,
+    @Body() dto: UpdatePartnerProfileDto,
+  ) {
     return this.profile.updateProfile(u.sub, dto);
   }
 
   @Put('schedule')
-  @ApiOperation({ summary: 'Set working days/hours/slot length; regenerates slots (P02)' })
-  updateSchedule(@CurrentUser() u: JwtPayload, @Body() dto: ProviderScheduleDto) {
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.ORG_SETTINGS)
+  @ApiOperation({
+    summary: 'Set working days/hours/slot length; regenerates slots (P02)',
+  })
+  updateSchedule(
+    @CurrentUser() u: JwtPayload,
+    @Body() dto: ProviderScheduleDto,
+  ) {
     return this.profile.updateSchedule(u.sub, dto);
   }
 
   @Post('blocked-dates')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
   @ApiOperation({ summary: 'Block a date (P02)' })
   addBlockedDate(@CurrentUser() u: JwtPayload, @Body() dto: BlockedDateDto) {
     return this.profile.addBlockedDate(u.sub, dto);
   }
 
   @Delete('blocked-dates/:date')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
   @ApiOperation({ summary: 'Unblock a date (P02)' })
   removeBlockedDate(@CurrentUser() u: JwtPayload, @Param('date') date: string) {
     return this.profile.removeBlockedDate(u.sub, date);
   }
 
   @Get('slots')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_VIEW)
   @ApiOperation({ summary: 'Open slots, for rescheduling and follow-ups' })
   slots(@CurrentUser() u: JwtPayload, @Query() q: PartnerSlotsQueryDto) {
     return this.profile.openSlots(u.sub, q.from);
   }
 
+  @Get('slots/day')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_VIEW)
+  @ApiOperation({ summary: 'All slots on one day (open, booked, blocked)' })
+  daySlots(@CurrentUser() u: JwtPayload, @Query() q: PartnerDaySlotsQueryDto) {
+    return this.profile.daySlots(u.sub, q.date);
+  }
+
+  @Post('slots/:id/block')
+  @HttpCode(200)
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  @ApiOperation({ summary: 'Close one open slot to new bookings' })
+  blockSlot(
+    @CurrentUser() u: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: PartnerBlockSlotDto,
+  ) {
+    return this.profile.setSlotBlocked(u.sub, id, true, dto.reason);
+  }
+
+  @Post('slots/:id/unblock')
+  @HttpCode(200)
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  @ApiOperation({ summary: 'Reopen a slot that was closed' })
+  unblockSlot(@CurrentUser() u: JwtPayload, @Param('id') id: string) {
+    return this.profile.setSlotBlocked(u.sub, id, false);
+  }
+
   // ── P03 dashboard ──────────────────────────────────────────────────────────
   @Get('dashboard')
-  @ApiOperation({ summary: "Today's appointments, pending items, recent shared reports (P03)" })
-  dashboard(@CurrentUser() u: JwtPayload) {
-    return this.profile.dashboard(u.sub);
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.DASHBOARD)
+  @ApiOperation({
+    summary: "Today's appointments, pending items, recent shared reports (P03)",
+  })
+  async dashboard(@PartnerCtx() actor: PartnerActor) {
+    const data = await this.profile.dashboard(actor.userId);
+    // Revenue is for roles that see billing; shares need patient access.
+    return {
+      ...data,
+      kpis: {
+        ...data.kpis,
+        revenueThisMonth: actor.permissions.includes(Perm.BILLING_VIEW)
+          ? data.kpis.revenueThisMonth
+          : null,
+      },
+      todaysAppointments: actor.permissions.includes(Perm.APPOINTMENTS_VIEW)
+        ? data.todaysAppointments
+        : [],
+      pendingRequests: actor.permissions.includes(Perm.APPOINTMENTS_VIEW)
+        ? data.pendingRequests
+        : [],
+      recentSharedReports: actor.permissions.includes(Perm.PATIENTS_VIEW)
+        ? data.recentSharedReports
+        : [],
+    };
   }
 
   // ── P04 shared records & access log ────────────────────────────────────────
   @Get('shared-records')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.PATIENTS_VIEW)
   @ApiOperation({ summary: 'Active patient-approved shares (P04)' })
   shares(@CurrentUser() u: JwtPayload) {
     return this.records.listShares(u.sub);
   }
 
   @Get('shared-records/:grantId')
-  @ApiOperation({ summary: 'Records inside one share — logged as a view against the partner (P04)' })
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.RECORDS_VIEW)
+  @ApiOperation({
+    summary:
+      'Records inside one share — logged as a view against the partner (P04)',
+  })
   share(@CurrentUser() u: JwtPayload, @Param('grantId') grantId: string) {
     return this.records.getShare(u.sub, grantId);
   }
 
+  @Post('shared-records/:grantId/records/:recordId/view-key')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.RECORDS_VIEW)
+  @ApiOperation({
+    summary:
+      'A single-use signed key (60 s) to open one shared record; dies at once if the patient revokes the share',
+  })
+  viewKey(
+    @CurrentUser() u: JwtPayload,
+    @Param('grantId') grantId: string,
+    @Param('recordId') recordId: string,
+  ) {
+    return this.viewKeys.issue(u.sub, grantId, recordId);
+  }
+
   @Get('shared-records/:grantId/records/:recordId/file')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.RECORDS_VIEW)
   @ApiOperation({ summary: 'Download a shared record file — logged (P04)' })
   async file(
     @CurrentUser() u: JwtPayload,
@@ -131,13 +362,22 @@ export class PartnerController {
     @Param('recordId') recordId: string,
     @Res() res: Response,
   ) {
-    const { buffer, fileName } = await this.records.downloadRecord(u.sub, grantId, recordId);
+    const { buffer, fileName } = await this.records.downloadRecord(
+      u.sub,
+      grantId,
+      recordId,
+    );
     res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName.replace(/"/g, '')}"`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${fileName.replace(/"/g, '')}"`,
+    );
     res.send(buffer);
   }
 
   @Get('access-log')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.SECURITY_AUDIT)
   @ApiOperation({ summary: 'Every view attributable to a partner login (P04)' })
   accessLog(@CurrentUser() u: JwtPayload) {
     return this.records.accessLog(u.sub);
@@ -145,49 +385,144 @@ export class PartnerController {
 
   // ── P05 appointments ───────────────────────────────────────────────────────
   @Get('appointments')
-  @ApiOperation({ summary: 'incoming | today | upcoming | completed (P05)' })
-  listAppointments(@CurrentUser() u: JwtPayload, @Query() q: PartnerAppointmentsQueryDto) {
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_VIEW)
+  @ApiOperation({
+    summary:
+      'incoming | today | upcoming | completed; mine=true for my assignments (P05)',
+  })
+  listAppointments(
+    @CurrentUser() u: JwtPayload,
+    @Query() q: PartnerAppointmentsQueryDto,
+  ) {
     return this.appointments.list(u.sub, q);
+  }
+
+  @Post('appointments')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  @ApiOperation({
+    summary:
+      'Book a linked patient into an open slot (inline scheduler in the referral / dashboard drawers)',
+  })
+  book(@PartnerCtx() actor: PartnerActor, @Body() dto: PartnerBookDto) {
+    return this.appointments.book(actor, dto);
+  }
+
+  @Post('appointments/:id/assign')
+  @HttpCode(200)
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  @ApiOperation({
+    summary: 'Assign the visit to a practitioner and/or department',
+  })
+  assign(
+    @CurrentUser() u: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: AssignAppointmentDto,
+  ) {
+    return this.appointments.assign(u.sub, id, dto.memberId, dto.department);
   }
 
   @Post('appointments/:id/accept')
   @HttpCode(200)
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
   accept(@CurrentUser() u: JwtPayload, @Param('id') id: string) {
     return this.appointments.accept(u.sub, id);
   }
 
+  @Get('appointments/:id/pre-visit')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_VIEW)
+  @ApiOperation({
+    summary:
+      "The patient's pre-visit bundle (symptom notes, questions, medicines, chosen documents) when they chose to send it",
+  })
+  preVisit(@PartnerCtx() actor: PartnerActor, @Param('id') id: string) {
+    return this.preVisitBundles.forAppointment(actor, id);
+  }
+
+  @Get('appointments/:id/digest')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_VIEW)
+  @ApiOperation({
+    summary:
+      'Executive Digest for a confirmed booking: pre-visit notes (if sent), shared documents and latest shared lab values in one view',
+  })
+  digest(@PartnerCtx() actor: PartnerActor, @Param('id') id: string) {
+    return this.digests.forAppointment(actor, id);
+  }
+
+  @Post('appointments/:id/arrived')
+  @HttpCode(200)
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  arrived(@CurrentUser() u: JwtPayload, @Param('id') id: string) {
+    return this.appointments.arrived(u.sub, id);
+  }
+
   @Post('appointments/:id/reject')
   @HttpCode(200)
-  reject(@CurrentUser() u: JwtPayload, @Param('id') id: string, @Body() dto: RejectAppointmentDto) {
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  reject(
+    @CurrentUser() u: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: RejectAppointmentDto,
+  ) {
     return this.appointments.reject(u.sub, id, dto.reason);
   }
 
   @Post('appointments/:id/reschedule')
   @HttpCode(200)
-  reschedule(@CurrentUser() u: JwtPayload, @Param('id') id: string, @Body() dto: PartnerRescheduleDto) {
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  reschedule(
+    @CurrentUser() u: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: PartnerRescheduleDto,
+  ) {
     return this.appointments.reschedule(u.sub, id, dto.newSlotId);
   }
 
   @Post('appointments/:id/complete')
   @HttpCode(200)
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
   complete(@CurrentUser() u: JwtPayload, @Param('id') id: string) {
     return this.appointments.complete(u.sub, id);
   }
 
   @Post('appointments/:id/follow-up')
-  @ApiOperation({ summary: 'Schedule a follow-up from a completed visit (P05)' })
-  followUp(@CurrentUser() u: JwtPayload, @Param('id') id: string, @Body() dto: PartnerFollowUpDto) {
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.APPOINTMENTS_MANAGE)
+  @ApiOperation({
+    summary: 'Schedule a follow-up from a completed visit (P05)',
+  })
+  followUp(
+    @CurrentUser() u: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: PartnerFollowUpDto,
+  ) {
     return this.appointments.scheduleFollowUp(u.sub, id, dto.slotId);
   }
 
   // ── P06 payments ───────────────────────────────────────────────────────────
   @Get('payments')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.BILLING_VIEW)
   @ApiOperation({ summary: 'Fee, collections, payout status, history (P06)' })
-  paymentsOverview(@CurrentUser() u: JwtPayload, @Query() q: PartnerPaymentsQueryDto) {
+  paymentsOverview(
+    @CurrentUser() u: JwtPayload,
+    @Query() q: PartnerPaymentsQueryDto,
+  ) {
     return this.payments.overview(u.sub, q);
   }
 
   @Get('payments/:id/receipt')
+  @UseGuards(PartnerPermGuard)
+  @RequirePerm(Perm.BILLING_VIEW)
   @ApiOperation({ summary: 'Receipt for one transaction (P06)' })
   receipt(@CurrentUser() u: JwtPayload, @Param('id') id: string) {
     return this.payments.receipt(u.sub, id);

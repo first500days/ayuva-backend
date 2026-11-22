@@ -16,6 +16,7 @@ import { SymptomNavController } from './symptom-nav.controller';
 import { SymptomNavService } from './symptom-nav.service';
 import { AuthModule } from '../../auth/auth.module';
 import { AiInteractionLogModule } from '../ai-interaction-log/ai-interaction-log.module';
+import { ClaudeModule } from '../claude/claude.module';
 
 /**
  * POST /symptom-nav/analyse (TRD §4.2, §5.1) — MOCK NLU extraction + rules
@@ -26,6 +27,7 @@ import { AiInteractionLogModule } from '../ai-interaction-log/ai-interaction-log
   imports: [
     AuthModule,
     AiInteractionLogModule,
+    ClaudeModule,
     MongooseModule.forFeature([
       { name: SymptomEntry.name, schema: SymptomEntrySchema },
       { name: TriageResult.name, schema: TriageResultSchema },

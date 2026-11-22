@@ -7,6 +7,7 @@ export enum ReminderJobName {
   REFILL = 'refill-reminder',
   DOCUMENT_UPLOAD = 'document-upload-confirmation',
   FOLLOW_UP = 'follow-up-reminder',
+  CARE_FOLLOW_UP = 'care-follow-up-reminder',
 }
 
 export interface MedicationReminderJobData {
@@ -49,12 +50,23 @@ export interface FollowUpReminderJobData {
   providerName: string;
 }
 
+/** A follow-up date a doctor set on a prescription, approaching on the journey map. */
+export interface CareFollowUpJobData {
+  type: ReminderJobName.CARE_FOLLOW_UP;
+  prescriptionId: string;
+  userId: string;
+  doctorName: string;
+  /** Already formatted for the patient, e.g. "20 Nov". */
+  dateLabel: string;
+}
+
 export type ReminderJobData =
   | MedicationReminderJobData
   | AppointmentReminderJobData
   | RefillReminderJobData
   | DocumentUploadJobData
-  | FollowUpReminderJobData;
+  | FollowUpReminderJobData
+  | CareFollowUpJobData;
 
 export function medicationReminderJobId(
   medicationId: string,
@@ -82,4 +94,8 @@ export function documentUploadJobId(recordId: string): string {
 
 export function followUpReminderJobId(appointmentId: string): string {
   return `followup-${appointmentId}`;
+}
+
+export function careFollowUpJobId(prescriptionId: string): string {
+  return `care-followup-${prescriptionId}`;
 }

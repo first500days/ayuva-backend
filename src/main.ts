@@ -1,20 +1,48 @@
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import type { NextFunction, Request, Response } from 'express';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { apiReference } from '@scalar/nestjs-api-reference';
-import { WsAdapter } from '@nestjs/platform-ws';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppLogger } from './common/logger/app-logger.service';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { requestContextMiddleware } from './common/request-context/client-ip';
+import { requestMetricsMiddleware } from './common/observability/request-metrics';
 import { scalarCustomCss } from './docs/scalar-theme';
+import {
+  isOriginAllowed,
+  originGuardMiddleware,
+  parseAllowedOrigins,
+} from './common/security/allowed-origins';
 
 const API_PREFIX = 'api/v1';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { logger: new AppLogger() });
-  app.useWebSocketAdapter(new WsAdapter(app));
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    logger: new AppLogger(),
+  });
   const config = app.get(ConfigService);
+
+  // Hosted behind a proxy: without this every request.ip (audit log, security
+  // flags) is the proxy's. TRUST_PROXY_HOPS is the number of proxies in front.
+  app.set('trust proxy', Number(config.get<string>('TRUST_PROXY_HOPS') ?? 1));
+
+  app.use(requestContextMiddleware);
+  // Rolling traffic numbers for the Admin Panel's live system graph.
+  app.use(requestMetricsMiddleware);
+
+  // Security headers. The portal on another origin reads files from this API,
+  // and the /docs page runs its own scripts.
+  const apiHeaders = helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  });
+  const docsHeaders = helmet({ contentSecurityPolicy: false });
+  app.use((req: Request, res: Response, next: NextFunction) =>
+    (req.path.startsWith('/docs') ? docsHeaders : apiHeaders)(req, res, next),
+  );
 
   // /health and /docs stay unprefixed/unversioned; all feature routes live under /api/v1 (TRD §4).
   app.setGlobalPrefix(API_PREFIX, {
@@ -29,16 +57,19 @@ async function bootstrap() {
   const nodeEnv = config.get<string>('nodeEnv');
   const corsAllowedOrigins = config.get<string>('corsAllowedOrigins');
   if (nodeEnv === 'production') {
-    const origins = corsAllowedOrigins
-      ?.split(',')
-      .map((o) => o.trim())
-      .filter(Boolean);
-    if (!origins || origins.length === 0) {
+    const origins = parseAllowedOrigins(corsAllowedOrigins);
+    if (origins.length === 0) {
       new Logger('Bootstrap').warn(
         'CORS_ALLOWED_ORIGINS is not set in production — rejecting all cross-origin requests. Set it to a comma-separated list of allowed origins (e.g. the admin portal domain).',
       );
     }
-    app.enableCors({ origin: origins ?? false, credentials: true });
+    // Hard block first (stops the request itself), then CORS for the rest.
+    app.use(originGuardMiddleware(origins));
+    app.enableCors({
+      origin: (origin, cb) =>
+        cb(null, !origin || isOriginAllowed(origin, origins)),
+      credentials: true,
+    });
   } else {
     app.enableCors({ origin: true, credentials: true });
   }

@@ -12,6 +12,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { PlanTier, SubscriptionStatus } from '../schemas/subscription.schema';
+import { ALL_FEATURE_FLAGS } from '../../../common/feature-flags';
 
 export class CreatePlanDto {
   @ApiProperty() @IsString() @MinLength(2) name: string;
@@ -31,6 +32,16 @@ export class CreatePlanDto {
   limits?: Record<string, number | null>;
 
   @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    enum: ALL_FEATURE_FLAGS,
+    description: 'Features this tier switches off; the app and Partner Portal show an upgrade prompt instead',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsIn(ALL_FEATURE_FLAGS, { each: true })
+  disabledFeatures?: string[];
 }
 
 export class UpdatePlanDto {
@@ -49,6 +60,16 @@ export class UpdatePlanDto {
   limits?: Record<string, number | null>;
 
   @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    enum: ALL_FEATURE_FLAGS,
+    description: 'Features this tier switches off; the app and Partner Portal show an upgrade prompt instead',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsIn(ALL_FEATURE_FLAGS, { each: true })
+  disabledFeatures?: string[];
 }
 
 export class QuerySubscriptionsDto {

@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { PartnerPreVisitService } from './clinical/partner-pre-visit.service';
+import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ShareGrant, ShareGrantDocument } from '../core/sharing/schemas/share-grant.schema';
@@ -11,6 +12,8 @@ import { AccessLog, AccessLogDocument } from '../core/sharing/schemas/access-log
 import {
   MedicalRecord,
   MedicalRecordDocument,
+  recordSystemFileName,
+  recordTitle,
 } from '../core/records/schemas/medical-record.schema';
 import { User, UserDocument } from '../core/users/schemas/user.schema';
 import {
@@ -38,6 +41,8 @@ export class PartnerRecordsService {
     private readonly storage: StorageService,
     private readonly audit: AuditLogService,
     private readonly context: PartnerContextService,
+    // Optional for hand-built test modules.
+    @Optional() private readonly preVisitSvc?: PartnerPreVisitService,
   ) {}
 
   async listShares(userId: string) {
@@ -81,7 +86,8 @@ export class PartnerRecordsService {
       recordCount: records.length,
       records: records.map((r) => ({
         id: r.id,
-        title: r.originalFileName,
+        // Partners see the system name; the device filename stays in the patient's vault.
+        title: recordSystemFileName(r),
         type: r.type,
         kind: r.kind,
         providerName: r.providerName,
@@ -91,8 +97,8 @@ export class PartnerRecordsService {
     };
   }
 
-  /** Decrypts and returns one granted record file; logged as a download. */
-  async downloadRecord(userId: string, grantId: string, recordId: string) {
+  /** The record, if it falls inside this login's active share now (for issuing a view key). */
+  async assertRecordInShare(userId: string, grantId: string, recordId: string) {
     const provider = await this.context.requireLive(userId);
     const grant = await this.getActiveGrantOrThrow(provider.id, grantId);
     // The record must fall inside the grant's scope now (rolling windows move, records get deleted).
@@ -102,6 +108,12 @@ export class PartnerRecordsService {
         })
       : null;
     if (!record) throw new ForbiddenException('This record was not shared with you');
+    return { grant, record };
+  }
+
+  /** Decrypts and returns one granted record file; logged as a download. */
+  async downloadRecord(userId: string, grantId: string, recordId: string) {
+    const { grant, record } = await this.assertRecordInShare(userId, grantId, recordId);
     const partner = await this.userModel.findById(userId).select('fullName').exec();
 
     const buffer = await this.storage.read(record.fileRef);
@@ -109,7 +121,7 @@ export class PartnerRecordsService {
       userId: grant.userId,
       grantId: grant.id,
       organisationName: grant.organisationName,
-      recordTitle: record.originalFileName,
+      recordTitle: recordTitle(record),
       action: 'downloaded',
       viewerUserId: new Types.ObjectId(userId),
       viewerName: partner?.fullName,
@@ -121,7 +133,7 @@ export class PartnerRecordsService {
       targetId: recordId,
       metadata: { grantId, download: true },
     });
-    return { buffer, fileName: record.originalFileName };
+    return { buffer, fileName: recordSystemFileName(record) };
   }
 
   /** Access log: every view attributable to a partner login on this provider's organisations. */
@@ -168,6 +180,9 @@ export class PartnerRecordsService {
         status: 'active',
       })
       .exec();
+    const preVisit = this.preVisitSvc
+      ? await this.preVisitSvc.submittedIds(appointments.map((a) => a.id))
+      : new Set<string>();
     const sharedByPatient = new Map<string, number>();
     for (const g of grants) {
       if (g.expiresAt && g.expiresAt < new Date()) continue;
@@ -189,6 +204,11 @@ export class PartnerRecordsService {
         followUpOfId: a.followUpOfId?.toString(),
         rejectionReason: a.rejectionReason,
         sharedRecordCount: sharedByPatient.get(a.patientId.toString()) ?? 0,
+        assignedMemberId: a.assignedMemberId?.toString() ?? null,
+        assignedName: a.assignedName ?? null,
+        department: a.department ?? null,
+        arrivedAt: a.arrivedAt?.toISOString() ?? null,
+        preVisit: preVisit.has(a.id),
       };
     });
   }

@@ -1,0 +1,224 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  Equals,
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsIn,
+  IsMongoId,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
+import { WorkingDay } from '../../../core/providers/schemas/provider.schema';
+import { IsStrongPassword } from '../../../common/validators/is-strong-password.decorator';
+import { StaffRole } from '../../rbac/partner-permissions';
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+export class DutyBlockDto {
+  @ApiProperty({ enum: WorkingDay }) @IsEnum(WorkingDay) day: WorkingDay;
+  @ApiProperty({ example: '09:00' })
+  @Matches(HHMM, { message: 'start must be HH:mm' })
+  start: string;
+  @ApiProperty({ example: '17:00' })
+  @Matches(HHMM, { message: 'end must be HH:mm' })
+  end: string;
+}
+
+export class InviteStaffDto {
+  @ApiProperty({ example: 'Dr. Arjun Rao' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  fullName: string;
+
+  @ApiProperty() @IsEmail() email: string;
+
+  @ApiProperty({ enum: StaffRole }) @IsEnum(StaffRole) role: StaffRole;
+
+  @ApiPropertyOptional({ example: 'Consultant Cardiologist' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  title?: string;
+
+  @ApiPropertyOptional({
+    example: 'Cardiology',
+    description:
+      "Primary department, from the organisation's list — required for hospitals",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  department?: string;
+
+  @ApiPropertyOptional({
+    description: 'E.164, used for SMS alerts',
+    example: '+919876543210',
+  })
+  @IsOptional()
+  @Matches(/^\+[1-9]\d{6,14}$/, {
+    message: 'phone must be in E.164 format, e.g. +919876543210',
+  })
+  phone?: string;
+
+  @ApiPropertyOptional({
+    description: 'Medical council registration — printed on e-prescriptions',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  registrationNumber?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Diagnostic centres: role type Field collector — collects samples at patients' homes (phlebotomists and technicians)",
+  })
+  @IsOptional()
+  @IsBoolean()
+  fieldCollector?: boolean;
+}
+
+export class UpdateStaffDto {
+  @ApiPropertyOptional({ enum: StaffRole })
+  @IsOptional()
+  @IsEnum(StaffRole)
+  role?: StaffRole;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  title?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  department?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Matches(/^(\+[1-9]\d{6,14})?$/, {
+    message: 'phone must be in E.164 format, e.g. +919876543210',
+  })
+  phone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  registrationNumber?: string;
+
+  @ApiPropertyOptional({ type: [DutyBlockDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(21)
+  @ValidateNested({ each: true })
+  @Type(() => DutyBlockDto)
+  dutySchedule?: DutyBlockDto[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 60,
+    description:
+      "Doctor's % of the consultation revenue they generate, after Ayuva's platform fee (null clears it)",
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  revenueSharePercent?: number | null;
+
+  @ApiPropertyOptional({
+    description: 'Diagnostic centres: role type Field collector',
+  })
+  @IsOptional()
+  @IsBoolean()
+  fieldCollector?: boolean;
+}
+
+/** On-duty check-in / check-out. */
+export class DutyStatusDto {
+  @ApiProperty() @IsBoolean() onDuty: boolean;
+}
+
+/** Who takes over when someone goes off duty. Left out: shared among those on duty. */
+export class HandoffDto {
+  @ApiPropertyOptional() @IsOptional() @IsMongoId() toMemberId?: string;
+}
+
+/** Portal features that keep per-member preferences. */
+export const PREFERENCE_KEYS = [
+  'imaging',
+  'clinical',
+  'sidebar',
+  'lab',
+] as const;
+
+export class SavePreferenceDto {
+  @ApiProperty({ enum: PREFERENCE_KEYS })
+  @IsIn(PREFERENCE_KEYS)
+  key: (typeof PREFERENCE_KEYS)[number];
+
+  @ApiProperty({
+    description: 'The whole preference object for that feature (max 16 KB)',
+  })
+  @IsObject()
+  value: Record<string, unknown>;
+}
+
+/** What a member may change about themselves (no role or department changes). */
+export class UpdateOwnStaffProfileDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Matches(/^(\+[1-9]\d{6,14})?$/, {
+    message: 'phone must be in E.164 format, e.g. +919876543210',
+  })
+  phone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  registrationNumber?: string;
+
+  @ApiPropertyOptional({
+    type: [DutyBlockDto],
+    description:
+      'My own weekly working hours (e.g. a doctor setting their clinic hours)',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(21)
+  @ValidateNested({ each: true })
+  @Type(() => DutyBlockDto)
+  dutySchedule?: DutyBlockDto[];
+}
+
+export class AcceptInviteDto {
+  @ApiProperty() @IsString() @MinLength(20) token: string;
+  @ApiProperty() @IsStrongPassword() password: string;
+
+  @ApiProperty({ description: 'Must be true' })
+  @IsBoolean()
+  @Equals(true, {
+    message: 'Terms of Service and Privacy Policy must be accepted',
+  })
+  termsAccepted: boolean;
+}
