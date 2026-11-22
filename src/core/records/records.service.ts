@@ -566,9 +566,13 @@ export class RecordsService {
 
   private toResponse(record: MedicalRecordDocument): MedicalRecordResponseDto {
     const uploadedAt = (record.uploadedAt ?? new Date()).toISOString();
+    const fileName = record.originalFileName;
+    const mimeType = record.mimeType ?? guessMimeType(fileName);
     return {
       id: record.id,
       title: recordTitle(record),
+      fileName,
+      mimeType,
       procedureType: record.procedureType,
       attendingPhysician: record.attendingPhysician,
       type: record.type,

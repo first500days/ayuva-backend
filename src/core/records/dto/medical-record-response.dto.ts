@@ -15,6 +15,12 @@ export class MedicalRecordResponseDto {
   })
   title: string;
 
+  @ApiPropertyOptional({ example: 'Lipid panel — full.pdf' })
+  fileName?: string;
+
+  @ApiPropertyOptional({ example: 'application/pdf' })
+  mimeType?: string;
+
   @ApiPropertyOptional({ example: 'MRI Brain' })
   procedureType?: string;
 
