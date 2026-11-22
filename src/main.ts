@@ -3,6 +3,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { apiReference } from '@scalar/nestjs-api-reference';
+import { WsAdapter } from '@nestjs/platform-ws';
 import { AppModule } from './app.module';
 import { AppLogger } from './common/logger/app-logger.service';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -12,6 +13,7 @@ const API_PREFIX = 'api/v1';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { logger: new AppLogger() });
+  app.useWebSocketAdapter(new WsAdapter(app));
   const config = app.get(ConfigService);
 
   // /health and /docs stay unprefixed/unversioned; all feature routes live under /api/v1 (TRD §4).

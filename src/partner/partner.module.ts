@@ -20,13 +20,18 @@ import {
 } from '../core/sharing/schemas/share-organisation.schema';
 import { AccessLog, AccessLogSchema } from '../core/sharing/schemas/access-log.schema';
 import { MedicalRecord, MedicalRecordSchema } from '../core/records/schemas/medical-record.schema';
+import { Ward, WardSchema } from '../core/hospital/schemas/ward.schema';
+import { Admission, AdmissionSchema } from '../core/hospital/schemas/admission.schema';
 import { PartnerAuthController, PartnerController } from './partner.controller';
+import { PartnerWardsController } from './partner-wards.controller';
+import { PartnerWardsService } from './partner-wards.service';
 import { PartnerContextService } from './partner-context.service';
 import { PartnerAuthService } from './partner-auth.service';
 import { PartnerProfileService } from './partner-profile.service';
 import { PartnerAppointmentsService } from './partner-appointments.service';
 import { PartnerRecordsService } from './partner-records.service';
 import { PartnerPaymentsService } from './partner-payments.service';
+import { PartnerLiveGateway } from './partner-live.gateway';
 
 /** Partner Portal API (Product Journey §2, wireframes P01–P06). */
 @Module({
@@ -46,9 +51,11 @@ import { PartnerPaymentsService } from './partner-payments.service';
       { name: ShareOrganisation.name, schema: ShareOrganisationSchema },
       { name: AccessLog.name, schema: AccessLogSchema },
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
+      { name: Ward.name, schema: WardSchema },
+      { name: Admission.name, schema: AdmissionSchema },
     ]),
   ],
-  controllers: [PartnerAuthController, PartnerController],
+  controllers: [PartnerAuthController, PartnerController, PartnerWardsController],
   providers: [
     PartnerContextService,
     PartnerAuthService,
@@ -56,6 +63,9 @@ import { PartnerPaymentsService } from './partner-payments.service';
     PartnerAppointmentsService,
     PartnerRecordsService,
     PartnerPaymentsService,
+    PartnerLiveGateway,
+    PartnerWardsService,
   ],
+  exports: [PartnerLiveGateway],
 })
 export class PartnerModule {}
