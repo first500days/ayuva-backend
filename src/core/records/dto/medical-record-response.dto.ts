@@ -11,6 +11,12 @@ export class MedicalRecordResponseDto {
   @ApiProperty({ example: 'Lipid panel — full.pdf' })
   title: string;
 
+  @ApiPropertyOptional({ example: 'Lipid panel — full.pdf' })
+  fileName?: string;
+
+  @ApiPropertyOptional({ example: 'application/pdf' })
+  mimeType?: string;
+
   @ApiProperty({ enum: MedicalRecordType })
   type: MedicalRecordType;
 
