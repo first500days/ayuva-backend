@@ -209,7 +209,7 @@ export class ProvidersService {
         date: { $gte: from, $lt: to },
       })
       .exec();
-    return ids as Types.ObjectId[];
+    return ids;
   }
 
   private async getActiveProviderOrThrow(
