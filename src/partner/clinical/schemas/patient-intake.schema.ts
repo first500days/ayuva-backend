@@ -37,6 +37,19 @@ export class PartnerPatientIntake {
   @Prop() scannedByName?: string;
 
   @Prop({ required: true }) scannedAt: Date;
+
+  // How they joined: 'qr' (their app's code) or 'desk' (typed in, no app yet).
+  @Prop({ default: 'qr' }) source: string;
+
+  // This organisation's own patient number (UHID), e.g. OBH-000123.
+  @Prop() hospitalNo?: string;
+
+  // Desk details. The phone is kept here, not on the account.
+  @Prop({ trim: true }) phone?: string;
+  @Prop({ trim: true }) address?: string;
+
+  // When a desk record was moved onto the patient's app account.
+  @Prop() linkedAppAt?: Date;
 }
 
 export type PartnerPatientIntakeDocument =
@@ -46,4 +59,10 @@ export const PartnerPatientIntakeSchema =
 PartnerPatientIntakeSchema.index(
   { providerId: 1, patientId: 1 },
   { unique: true },
+);
+PartnerPatientIntakeSchema.index({ providerId: 1, phone: 1 });
+// Partial, not sparse: providerId is always set, so sparse would still index QR intakes.
+PartnerPatientIntakeSchema.index(
+  { providerId: 1, hospitalNo: 1 },
+  { unique: true, partialFilterExpression: { hospitalNo: { $type: 'string' } } },
 );

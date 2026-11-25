@@ -55,7 +55,8 @@ export type PatientLinkSource =
   | 'lab_order'
   | 'admission'
   // Registered at the desk by scanning the patient's AYUVA profile QR.
-  | 'registration';
+  | 'registration'
+  | 'desk';
 
 const LIVE_APPOINTMENT = [
   AppointmentStatus.CONFIRMED,
@@ -217,21 +218,50 @@ export class PartnerPatientsService {
     referrals.forEach((r) => add(r.patientId, 'referral'));
     orders.forEach((o) => add(o.patientId, 'lab_order'));
     admissions.forEach((a) => add(a.patientId, 'admission'));
-    if (!q.mine && this.intakeModel) {
+    // Hospital numbers given at the desk, shown under the name.
+    const hospitalNo = new Map<string, string>();
+    if (this.intakeModel) {
       const intakes = await this.intakeModel
         .find({ providerId })
-        .select('patientId')
+        .select('patientId source hospitalNo')
         .lean()
         .exec();
-      intakes.forEach((i) => add(i.patientId, 'registration'));
+      intakes.forEach((i) => {
+        if (i.hospitalNo) hospitalNo.set(i.patientId.toString(), i.hospitalNo);
+        if (!q.mine)
+          add(i.patientId, i.source === 'desk' ? 'desk' : 'registration');
+      });
     }
 
     const ids = [...sources.keys()].map((id) => new Types.ObjectId(id));
-    const nameFilter = q.q?.trim()
-      ? { fullName: buildSafeRegex(q.q.trim()) }
-      : {};
+    // The desk searches by name, hospital number or phone.
+    const term = q.q?.trim();
+    let nameFilter: Record<string, unknown> = {};
+    if (term) {
+      const digits = term.replace(/[^0-9]/g, '');
+      const byDesk = this.intakeModel
+        ? await this.intakeModel
+            .find({
+              providerId,
+              $or: [
+                { hospitalNo: buildSafeRegex(term) },
+                ...(digits.length >= 4 ? [{ phone: buildSafeRegex(digits) }] : []),
+              ],
+            })
+            .select('patientId')
+            .lean()
+            .exec()
+        : [];
+      nameFilter = {
+        $or: [
+          { fullName: buildSafeRegex(term) },
+          { _id: { $in: byDesk.map((i) => i.patientId) } },
+        ],
+      };
+    }
     const users = await this.userModel
-      .find({ _id: { $in: ids }, ...nameFilter })
+      // Desk records already moved onto an app account are left out.
+      .find({ _id: { $in: ids }, mergedIntoId: { $exists: false }, ...nameFilter })
       .select('fullName')
       .limit(500)
       .lean()
@@ -288,6 +318,7 @@ export class PartnerPatientsService {
         return {
           id,
           name: u.fullName,
+          hospitalNo: hospitalNo.get(id) ?? null,
           sources: [...(sources.get(id) ?? [])],
           appointmentCount: stats?.count ?? 0,
           lastVisit: stats?.last?.toISOString().slice(0, 10) ?? null,

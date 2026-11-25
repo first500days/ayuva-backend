@@ -55,7 +55,9 @@ import { UpdateNotificationSettingsDto } from './notify/dto/notify.dto';
 import { PartnerPatientsService } from './clinical/partner-patients.service';
 import { PartnerIntakeService } from './clinical/partner-intake.service';
 import { PlanUpdatesService } from '../core/plans/plan-updates.service';
-import { IntakeScanDto } from './clinical/dto/intake.dto';
+import { DeskRegisterDto, IntakeScanDto } from './clinical/dto/intake.dto';
+import { PartnerDeskService } from './clinical/partner-desk.service';
+import { Types } from 'mongoose';
 import { PartnerTimelineService } from './clinical/partner-timeline.service';
 import { PartnerNotesService } from './clinical/partner-notes.service';
 import { PartnerPrescriptionsService } from './clinical/partner-prescriptions.service';
@@ -439,6 +441,7 @@ export class PartnerClinicalController {
     private readonly rx: PartnerPrescriptionsService,
     private readonly intakeSvc: PartnerIntakeService,
     private readonly planUpdates: PlanUpdatesService,
+    private readonly desk: PartnerDeskService,
   ) {}
 
   @Get('patients')
@@ -473,10 +476,38 @@ export class PartnerClinicalController {
     return this.intakeSvc.scan(a, dto.code);
   }
 
+  @Post('patients/register')
+  @RequirePerm(Perm.PATIENTS_VIEW)
+  @ApiOperation({
+    summary:
+      'Register a patient at the desk without the app: gets a hospital number and joins this patient list (409 if the phone is already registered here)',
+  })
+  registerAtDesk(@PartnerCtx() a: PartnerActor, @Body() dto: DeskRegisterDto) {
+    return this.desk.register(a, dto);
+  }
+
+  @Post('patients/:id/link-app')
+  @RequirePerm(Perm.PATIENTS_VIEW)
+  @ApiOperation({
+    summary:
+      "Link a desk-registered patient to their AYUVA account by scanning the app's registration QR; this organisation's records move to the account",
+  })
+  linkApp(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: IntakeScanDto,
+  ) {
+    return this.desk.linkApp(a, id, dto.code);
+  }
+
   @Get('patients/:id')
   @RequirePerm(Perm.PATIENTS_VIEW)
-  patient(@PartnerCtx() a: PartnerActor, @Param('id') id: string) {
-    return this.patients.summary(a, id);
+  async patient(@PartnerCtx() a: PartnerActor, @Param('id') id: string) {
+    const summary = await this.patients.summary(a, id);
+    return {
+      ...summary,
+      desk: await this.desk.details(a.provider._id, new Types.ObjectId(summary.id)),
+    };
   }
 
   @Get('patients/:id/timeline')

@@ -72,6 +72,11 @@ import { PartnerDocumentsService } from './documents/partner-documents.service';
 import { PartnerLetterheadService } from './documents/partner-letterhead.service';
 import { PartnerLetterheadController } from './documents/partner-letterhead.controller';
 import { PartnerRxPadService } from './clinical/partner-rx-pad.service';
+import { PartnerDeskService } from './clinical/partner-desk.service';
+import {
+  PartnerCounter,
+  PartnerCounterSchema,
+} from './clinical/schemas/partner-counter.schema';
 import { PartnerRxPadController } from './clinical/partner-rx-pad.controller';
 import {
   ConsultationNote,
@@ -290,6 +295,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
       { name: ShareOrganisation.name, schema: ShareOrganisationSchema },
       { name: AccessLog.name, schema: AccessLogSchema },
       { name: PartnerPatientIntake.name, schema: PartnerPatientIntakeSchema },
+      { name: PartnerCounter.name, schema: PartnerCounterSchema },
       { name: MedicalRecord.name, schema: MedicalRecordSchema },
       { name: AuditLog.name, schema: AuditLogSchema },
       { name: PartnerMember.name, schema: PartnerMemberSchema },
@@ -380,6 +386,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerDocumentsService,
     PartnerLetterheadService,
     PartnerRxPadService,
+    PartnerDeskService,
     PartnerPatientsService,
     PartnerTimelineService,
     PartnerNotesService,

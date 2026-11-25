@@ -170,6 +170,18 @@ export class User {
   @Prop({ type: SchemaTypes.ObjectId, ref: 'User', index: true, sparse: true })
   managedBy?: Types.ObjectId;
 
+  /**
+   * Registered at a hospital's desk without the app: the organisation that
+   * keeps this record. No sign-in; the phone stays on the hospital's intake
+   * (not `phone`), so the person can still sign up in the app with it.
+   */
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Provider', index: true, sparse: true })
+  managedByProviderId?: Types.ObjectId;
+
+  /** A desk record whose care was moved onto the person's app account. */
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
+  mergedIntoId?: Types.ObjectId;
+
   /** How they're related to the guardian: child, parent, spouse… */
   @Prop()
   relation?: string;
