@@ -130,6 +130,15 @@ export class UpdatePartnerProfileDto {
 
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) experienceYears?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) consultationFee?: number;
+  @ApiPropertyOptional({ description: 'Offer video consultations (the app shows them)' })
+  @IsOptional()
+  @IsBoolean()
+  videoConsultEnabled?: boolean;
+  @ApiPropertyOptional({ description: 'Video consultation fee (INR); the in-person fee if left empty' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  videoConsultFee?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() bio?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() phone?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() profileImageUrl?: string;

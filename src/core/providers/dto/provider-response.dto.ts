@@ -47,6 +47,12 @@ export class ProviderResponseDto {
   @ApiPropertyOptional({ example: 50 })
   consultationFee?: number;
 
+  @ApiPropertyOptional({ example: 400, description: 'Set when the provider offers video consultations' })
+  videoConsultFee?: number;
+
+  @ApiPropertyOptional({ example: true })
+  videoConsult?: boolean;
+
   @ApiProperty({
     example: true,
     description:

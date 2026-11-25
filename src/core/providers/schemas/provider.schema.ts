@@ -171,6 +171,14 @@ export class Provider {
   @Prop()
   consultationFee?: number;
 
+  // Video consultations (Partner Portal → Settings → Organisation); the app's
+  // "Online consultation available" filter and the video fee come from these.
+  @Prop({ default: false })
+  videoConsultEnabled?: boolean;
+
+  @Prop({ min: 0 })
+  videoConsultFee?: number;
+
   // Insurers this provider is empanelled with, for out-of-pocket estimates in discovery.
   @Prop({ type: [Object], default: [] })
   insurancePanel: {

@@ -14,6 +14,7 @@ import {
 import {
   AppointmentSlot,
   AppointmentSlotDocument,
+  AppointmentSlotStatus,
 } from './schemas/appointment-slot.schema';
 import {
   QueryProvidersDto,
@@ -64,6 +65,15 @@ export class ProvidersService {
       });
     }
     if (query.insurer) and.push({ 'insurancePanel.insurer': query.insurer });
+    if (query.onlineConsultation) and.push({ videoConsultEnabled: true });
+    if (query.instantConfirmation) and.push({ requiresApproval: { $ne: true } });
+    if (query.maxFee !== undefined)
+      and.push({ consultationFee: { $lte: query.maxFee } });
+    if (query.availability) {
+      const ids = await this.providersWithOpenSlots(query.availability);
+      and.push({ _id: { $in: ids } });
+    }
+    // femaleOnly is accepted but can't filter: providers have no recorded gender yet.
     if (query.location) {
       const re = buildSafeRegex(query.location);
       and.push({
@@ -78,7 +88,9 @@ export class ProvidersService {
     const sort: Record<string, 1 | -1> =
       query.sort === ProviderSortOption.WAIT
         ? { avgWaitMinutes: 1 }
-        : { rating: -1 };
+        : query.sort === ProviderSortOption.FEE
+          ? { consultationFee: 1, rating: -1 }
+          : { rating: -1 };
 
     const providers = await this.providerModel.find(filter).sort(sort).exec();
     return providers.map((p) => this.toResponse(p, userId, query.insurer));
@@ -178,6 +190,28 @@ export class ProvidersService {
     }));
   }
 
+  /**
+   * Providers with an open slot today, tomorrow or in the next 7 days, by
+   * calendar day in the slots' time zone (slots are stored per calendar day).
+   */
+  private async providersWithOpenSlots(
+    window: 'today' | 'tomorrow' | 'this_week',
+  ): Promise<Types.ObjectId[]> {
+    const zone = process.env.SLOT_TIMEZONE || 'Asia/Kolkata';
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: zone }).format(new Date());
+    const day = (offset: number) =>
+      new Date(Date.parse(`${today}T00:00:00.000Z`) + offset * 86_400_000);
+    const [from, to] =
+      window === 'today' ? [day(0), day(1)] : window === 'tomorrow' ? [day(1), day(2)] : [day(0), day(7)];
+    const ids = await this.slotModel
+      .distinct('providerId', {
+        status: AppointmentSlotStatus.OPEN,
+        date: { $gte: from, $lt: to },
+      })
+      .exec();
+    return ids as Types.ObjectId[];
+  }
+
   private async getActiveProviderOrThrow(
     id: string,
   ): Promise<ProviderDocument> {
@@ -215,6 +249,10 @@ export class ProvidersService {
       rating: provider.rating,
       avgWaitMinutes: provider.avgWaitMinutes,
       consultationFee: provider.consultationFee,
+      ...(provider.videoConsultEnabled && {
+        videoConsult: true,
+        videoConsultFee: provider.videoConsultFee ?? provider.consultationFee,
+      }),
       saved: provider.savedByUserIds.some((u) => u.toString() === userId),
       acceptedInsurers: (provider.insurancePanel ?? []).map((p) => p.insurer),
       ...(insurer && {
