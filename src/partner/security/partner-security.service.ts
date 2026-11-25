@@ -143,6 +143,10 @@ const ACTION_META: Partial<
     category: 'clinical',
     label: 'Analyser interface',
   },
+  [AuditAction.PARTNER_TELECONSULT]: {
+    category: 'clinical',
+    label: 'Video consultation',
+  },
   [AuditAction.PARTNER_VAULT_TRANSFER]: {
     category: 'record_access',
     label: "Doctor's Vault export / import",

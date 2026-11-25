@@ -75,6 +75,13 @@ import { PartnerRxPadService } from './clinical/partner-rx-pad.service';
 import { PartnerDeskService } from './clinical/partner-desk.service';
 import { PartnerChargesService } from './hospital/partner-charges.service';
 import { PartnerVaultService } from './vault/partner-vault.service';
+import { PartnerTeleconsultService } from './teleconsult/partner-teleconsult.service';
+import { TeleconsultGateway } from './teleconsult/teleconsult.gateway';
+import {
+  PartnerTeleconsultController,
+  PublicTeleconsultController,
+} from './teleconsult/partner-teleconsult.controller';
+import { Teleconsult, TeleconsultSchema } from './teleconsult/schemas/teleconsult.schema';
 import { PartnerVaultController } from './vault/partner-vault.controller';
 import { VaultNote, VaultNoteSchema } from './vault/schemas/vault-note.schema';
 import { VaultFile, VaultFileSchema } from './vault/schemas/vault-file.schema';
@@ -328,6 +335,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
       { name: PartnerBillPayment.name, schema: PartnerBillPaymentSchema },
       { name: PartnerServicePrice.name, schema: PartnerServicePriceSchema },
       { name: VaultNote.name, schema: VaultNoteSchema },
+      { name: Teleconsult.name, schema: TeleconsultSchema },
       { name: VaultFile.name, schema: VaultFileSchema },
       { name: PartnerAdmissionCharge.name, schema: PartnerAdmissionChargeSchema },
       { name: StockItem.name, schema: StockItemSchema },
@@ -367,6 +375,8 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerLetterheadController,
     PartnerRxPadController,
     PartnerVaultController,
+    PartnerTeleconsultController,
+    PublicTeleconsultController,
     PartnerClinicalController,
     PartnerReferralsController,
     PartnerPriorAuthController,
@@ -407,6 +417,8 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerDeskService,
     PartnerChargesService,
     PartnerVaultService,
+    PartnerTeleconsultService,
+    TeleconsultGateway,
     PartnerPatientsService,
     PartnerTimelineService,
     PartnerNotesService,

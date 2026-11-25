@@ -132,6 +132,8 @@ export enum AuditAction {
   PARTNER_LAB_ANALYSER = 'partner_lab_analyser',
   // A doctor exporting or importing their own vault (notes and files leave or arrive).
   PARTNER_VAULT_TRANSFER = 'partner_vault_transfer',
+  // A video consultation opened or ended (no audio or video is kept).
+  PARTNER_TELECONSULT = 'partner_teleconsult',
   FAMILY_PROFILE_UPDATE = 'family_profile_update',
   // An approved report going to the patient, and the patient opening its secure link.
   REPORT_DISPATCHED = 'report_dispatched',

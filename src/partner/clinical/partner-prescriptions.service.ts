@@ -51,6 +51,8 @@ import { OrgType } from '../rbac/partner-permissions';
 import { LiveBus } from '../../common/live/live-bus.service';
 import { blocksSigning } from './rx-safety';
 import { padLine } from './partner-rx-pad.service';
+import { PartnerTeleconsultService } from '../teleconsult/partner-teleconsult.service';
+import { prohibitedForTeleconsult } from '../teleconsult/teleconsult-rules';
 import { resolveDiagnosisCodes } from './diagnosis-codes';
 import {
   registrationStateOf,
@@ -83,6 +85,7 @@ export class PartnerPrescriptionsService {
     private readonly live: LiveBus,
     // Optional for hand-built test modules.
     @Optional() private readonly refills?: RxRefillService,
+    @Optional() private readonly teleconsults?: PartnerTeleconsultService,
   ) {}
 
   async list(actor: PartnerActor, q: PrescriptionsQueryDto) {
@@ -210,6 +213,18 @@ export class PartnerPrescriptionsService {
       );
     }
     const regNo = registration.number;
+    // Telemedicine Practice Guidelines 2020: after a video consultation, no
+    // Schedule X or NDPS medicines (the patient has to be seen in person).
+    if (
+      this.teleconsults &&
+      (await this.teleconsults.recentFor(actor.provider._id, rx.patientId, actor.member._id))
+    ) {
+      const banned = prohibitedForTeleconsult(rx.items);
+      if (banned.length)
+        throw new BadRequestException(
+          `${banned.map((b) => b.medicine).join(', ')} can't be prescribed after a video consultation: Schedule X and NDPS medicines are on the Telemedicine Practice Guidelines' prohibited list. See the patient in person for these.`,
+        );
+    }
     // Allergy / interaction / duplicate checks: serious ones must be acknowledged.
     const review = await this.safety.review(
       actor,
