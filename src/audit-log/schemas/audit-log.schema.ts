@@ -130,6 +130,8 @@ export enum AuditAction {
   PARTNER_COLD_CHAIN = 'partner_cold_chain',
   PARTNER_LAB_QC = 'partner_lab_qc',
   PARTNER_LAB_ANALYSER = 'partner_lab_analyser',
+  // A doctor exporting or importing their own vault (notes and files leave or arrive).
+  PARTNER_VAULT_TRANSFER = 'partner_vault_transfer',
   FAMILY_PROFILE_UPDATE = 'family_profile_update',
   // An approved report going to the patient, and the patient opening its secure link.
   REPORT_DISPATCHED = 'report_dispatched',

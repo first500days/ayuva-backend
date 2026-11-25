@@ -143,6 +143,10 @@ const ACTION_META: Partial<
     category: 'clinical',
     label: 'Analyser interface',
   },
+  [AuditAction.PARTNER_VAULT_TRANSFER]: {
+    category: 'record_access',
+    label: "Doctor's Vault export / import",
+  },
   [AuditAction.PARTNER_ER_UPDATE]: {
     category: 'clinical',
     label: 'Updated emergency visit',

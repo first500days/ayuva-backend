@@ -74,6 +74,10 @@ import { PartnerLetterheadController } from './documents/partner-letterhead.cont
 import { PartnerRxPadService } from './clinical/partner-rx-pad.service';
 import { PartnerDeskService } from './clinical/partner-desk.service';
 import { PartnerChargesService } from './hospital/partner-charges.service';
+import { PartnerVaultService } from './vault/partner-vault.service';
+import { PartnerVaultController } from './vault/partner-vault.controller';
+import { VaultNote, VaultNoteSchema } from './vault/schemas/vault-note.schema';
+import { VaultFile, VaultFileSchema } from './vault/schemas/vault-file.schema';
 import {
   PartnerServicePrice,
   PartnerServicePriceSchema,
@@ -323,6 +327,8 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
       { name: InsuranceClaim.name, schema: InsuranceClaimSchema },
       { name: PartnerBillPayment.name, schema: PartnerBillPaymentSchema },
       { name: PartnerServicePrice.name, schema: PartnerServicePriceSchema },
+      { name: VaultNote.name, schema: VaultNoteSchema },
+      { name: VaultFile.name, schema: VaultFileSchema },
       { name: PartnerAdmissionCharge.name, schema: PartnerAdmissionChargeSchema },
       { name: StockItem.name, schema: StockItemSchema },
       { name: StockMove.name, schema: StockMoveSchema },
@@ -360,6 +366,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerNotifyController,
     PartnerLetterheadController,
     PartnerRxPadController,
+    PartnerVaultController,
     PartnerClinicalController,
     PartnerReferralsController,
     PartnerPriorAuthController,
@@ -399,6 +406,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerRxPadService,
     PartnerDeskService,
     PartnerChargesService,
+    PartnerVaultService,
     PartnerPatientsService,
     PartnerTimelineService,
     PartnerNotesService,
