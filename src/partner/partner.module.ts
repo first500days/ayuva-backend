@@ -73,6 +73,15 @@ import { PartnerLetterheadService } from './documents/partner-letterhead.service
 import { PartnerLetterheadController } from './documents/partner-letterhead.controller';
 import { PartnerRxPadService } from './clinical/partner-rx-pad.service';
 import { PartnerDeskService } from './clinical/partner-desk.service';
+import { PartnerChargesService } from './hospital/partner-charges.service';
+import {
+  PartnerServicePrice,
+  PartnerServicePriceSchema,
+} from './hospital/schemas/service-price.schema';
+import {
+  PartnerAdmissionCharge,
+  PartnerAdmissionChargeSchema,
+} from './hospital/schemas/admission-charge.schema';
 import {
   PartnerCounter,
   PartnerCounterSchema,
@@ -313,6 +322,8 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
       { name: PartnerAdmission.name, schema: PartnerAdmissionSchema },
       { name: InsuranceClaim.name, schema: InsuranceClaimSchema },
       { name: PartnerBillPayment.name, schema: PartnerBillPaymentSchema },
+      { name: PartnerServicePrice.name, schema: PartnerServicePriceSchema },
+      { name: PartnerAdmissionCharge.name, schema: PartnerAdmissionChargeSchema },
       { name: StockItem.name, schema: StockItemSchema },
       { name: StockMove.name, schema: StockMoveSchema },
       { name: Dispense.name, schema: DispenseSchema },
@@ -387,6 +398,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerLetterheadService,
     PartnerRxPadService,
     PartnerDeskService,
+    PartnerChargesService,
     PartnerPatientsService,
     PartnerTimelineService,
     PartnerNotesService,

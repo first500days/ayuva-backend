@@ -501,6 +501,101 @@ export class PartnerDocumentsService {
       .build();
   }
 
+  /**
+   * Itemised bill for an admission: everything charged, the tax on it, the
+   * desk receipts against it and the balance. "Interim" while admitted.
+   */
+  admissionBillPdf(
+    a: AdmissionDocument,
+    provider: ProviderDocument,
+    brand: DocBrand | undefined,
+    bill: {
+      hospitalNo: string | null;
+      lines: {
+        givenAt: Date;
+        name: string;
+        category: string;
+        quantity: number;
+        unit: string;
+        unitPrice: number;
+        taxPct: number;
+        total: number;
+      }[];
+      subtotal: number;
+      tax: number;
+      total: number;
+      payments: { receiptNo: string; receivedAt: Date; methods: string; total: number }[];
+      paid: number;
+      balance: number;
+    },
+  ): Buffer {
+    const final = !!a.dischargedAt;
+    const rs = (n: number) =>
+      `Rs. ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const pdf = this.head(
+      new PdfBuilder({ title: `Bill ${a.admissionNo}` }),
+      provider,
+      brand,
+      { label: final ? 'Final bill' : 'Interim bill', right: a.admissionNo },
+    ).keyValues(
+      [
+        ['Patient', a.patientName],
+        ['Hospital no.', bill.hospitalNo ?? '—'],
+        ['Admitted', fmtDateTime(a.admittedAt)],
+        ['Discharged', final ? fmtDateTime(a.dischargedAt) : 'Still admitted'],
+        ['Ward / bed', `${a.wardName} / ${a.bedLabel}`],
+        ['Attending doctor', a.attendingName ?? '—'],
+      ],
+      2,
+    );
+    pdf.heading('Services, medicines and products');
+    if (bill.lines.length)
+      pdf.table(
+        [
+          { header: 'Date', width: 0.16 },
+          { header: 'Item', width: 0.34 },
+          { header: 'Qty', width: 0.1, align: 'right' },
+          { header: 'Rate', width: 0.14, align: 'right' },
+          { header: 'GST', width: 0.08, align: 'right' },
+          { header: 'Amount', width: 0.18, align: 'right' },
+        ],
+        bill.lines.map((l) => [
+          fmtDate(l.givenAt),
+          l.name,
+          qtyWithUnit(l.quantity, l.unit),
+          rs(l.unitPrice),
+          `${l.taxPct}%`,
+          rs(l.total),
+        ]),
+      );
+    else pdf.text('Nothing charged yet.', { color: pdf.colors.muted });
+    pdf.keyValues(
+      [
+        ['Subtotal', rs(bill.subtotal)],
+        ['GST', rs(bill.tax)],
+        ['Total', rs(bill.total)],
+        ['Paid', rs(bill.paid)],
+        ['Balance due', rs(bill.balance)],
+      ],
+      1,
+    );
+    if (bill.payments.length) {
+      pdf.heading('Payments received');
+      pdf.table(
+        [
+          { header: 'Receipt', width: 0.28 },
+          { header: 'Date', width: 0.22 },
+          { header: 'Method', width: 0.3 },
+          { header: 'Amount', width: 0.2, align: 'right' },
+        ],
+        bill.payments.map((p) => [p.receiptNo, fmtDate(p.receivedAt), p.methods, rs(p.total)]),
+      );
+    }
+    return this.foot(pdf, provider)
+      .footer('Issued by the treating hospital via Ayuva Partner Portal.')
+      .build();
+  }
+
   referralLetterPdf(
     r: ReferralDocument,
     provider: ProviderDocument,
@@ -636,6 +731,13 @@ export class PartnerDocumentsService {
 }
 
 const OUTLINE: Rgb = [0.6, 0.65, 0.68];
+
+/** "3 days", "2 vials", "1 day"; plain "2" for items sold "each". */
+function qtyWithUnit(quantity: number, unit: string): string {
+  const word = unit?.replace(/^per\s+/i, '').trim();
+  if (!word || word === 'each') return String(quantity);
+  return `${quantity} ${quantity === 1 || word.endsWith('s') ? word : `${word}s`}`;
+}
 
 function hexRgb(hex: string): Rgb {
   const v = /^#?([0-9a-f]{6})$/i.exec(hex)?.[1] ?? '111827';

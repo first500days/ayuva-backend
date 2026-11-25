@@ -57,6 +57,13 @@ import { PartnerIntakeService } from './clinical/partner-intake.service';
 import { PlanUpdatesService } from '../core/plans/plan-updates.service';
 import { DeskRegisterDto, IntakeScanDto } from './clinical/dto/intake.dto';
 import { PartnerDeskService } from './clinical/partner-desk.service';
+import { PartnerChargesService } from './hospital/partner-charges.service';
+import {
+  AddChargeDto,
+  CreateServicePriceDto,
+  UpdateServicePriceDto,
+  VoidChargeDto,
+} from './hospital/dto/charges.dto';
 import { Types } from 'mongoose';
 import { PartnerTimelineService } from './clinical/partner-timeline.service';
 import { PartnerNotesService } from './clinical/partner-notes.service';
@@ -1288,6 +1295,7 @@ export class PartnerHospitalController {
     private readonly analytics: PartnerAnalyticsService,
     private readonly billPayments: PartnerBillPaymentsService,
     private readonly readinessSvc: PartnerDischargeReadinessService,
+    private readonly charges: PartnerChargesService,
   ) {}
 
   @Get('wards')
@@ -1359,8 +1367,91 @@ export class PartnerHospitalController {
 
   @Get('admissions')
   @RequirePerm(Perm.WARDS_VIEW)
-  admissions(@PartnerCtx() a: PartnerActor, @Query() q: AdmissionsQueryDto) {
-    return this.wards.listAdmissions(a, q);
+  async admissions(
+    @PartnerCtx() a: PartnerActor,
+    @Query() q: AdmissionsQueryDto,
+  ) {
+    const rows = await this.wards.listAdmissions(a, q);
+    // The running bill per admission, for the "Unpaid balance" badge.
+    const bills = await this.charges.balances(
+      a,
+      rows.map((r) => r.id),
+    );
+    return rows.map((r) => ({ ...r, billing: bills.get(r.id) ?? null }));
+  }
+
+  // ── Price list and admission charges (permissions checked in the service:
+  //    ward staff or billing see and add; only admins edit prices) ──────────
+
+  @Get('service-prices')
+  @ApiOperation({ summary: "The hospital's price list (add ?all=1 for hidden items)" })
+  prices(@PartnerCtx() a: PartnerActor, @Query('all') all?: string) {
+    return this.charges.prices(a, all === '1');
+  }
+
+  @Post('service-prices')
+  @RequirePerm(Perm.ORG_SETTINGS)
+  createPrice(@PartnerCtx() a: PartnerActor, @Body() dto: CreateServicePriceDto) {
+    return this.charges.createPrice(a, dto);
+  }
+
+  @Patch('service-prices/:id')
+  @RequirePerm(Perm.ORG_SETTINGS)
+  updatePrice(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: UpdateServicePriceDto,
+  ) {
+    return this.charges.updatePrice(a, id, dto);
+  }
+
+  @Get('admissions/:id/charges')
+  @ApiOperation({
+    summary: 'The running bill: charges, GST, desk receipts and the balance (never blocks discharge)',
+  })
+  admissionBill(@PartnerCtx() a: PartnerActor, @Param('id') id: string) {
+    return this.charges.bill(a, id);
+  }
+
+  @Post('admissions/:id/charges')
+  addCharge(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: AddChargeDto,
+  ) {
+    return this.charges.addCharge(a, id, dto);
+  }
+
+  @Post('charges/:id/void')
+  @HttpCode(200)
+  voidCharge(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Body() dto: VoidChargeDto,
+  ) {
+    return this.charges.voidCharge(a, id, dto);
+  }
+
+  @Get('admissions/:id/bill.pdf')
+  async billPdf(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } = await this.charges.billPdf(a, id);
+    sendFile(res, buffer, fileName);
+  }
+
+  @Get('admissions/:id/summary.pdf')
+  @RequirePerm(Perm.WARDS_VIEW)
+  @ApiOperation({ summary: 'Print the discharge summary (any discharged admission, walk-ins too)' })
+  async dischargeSummaryPdf(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } = await this.charges.dischargeSummaryPdf(a, id);
+    sendFile(res, buffer, fileName);
   }
 
   @Get('admissions/readiness')
