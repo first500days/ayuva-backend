@@ -50,27 +50,74 @@ describe('literature search', () => {
     expect(hit.links.fullText).toBeNull(); // subscription only
   });
 
-  it('retries once when the service is briefly unavailable', async () => {
-    let calls = 0;
-    const fake = (() => {
-      calls++;
-      if (calls === 1)
+  it('keeps abstract section headings readable', () => {
+    const hit = mapResult({
+      abstractText:
+        '<h4>Rationale</h4>Diabetes is a risk factor.<h4>Objectives</h4><p>To assess DPP-4 inhibitors.</p>',
+    });
+    expect(hit.abstract).toBe(
+      'Rationale: Diabetes is a risk factor. Objectives: To assess DPP-4 inhibitors.',
+    );
+  });
+
+  it('falls back to PubMed when Europe PMC is unavailable', async () => {
+    const seen: string[] = [];
+    const fake: typeof fetch = (input) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const host = new URL(url).hostname;
+      seen.push(host + new URL(url).pathname);
+      if (host === 'www.ebi.ac.uk')
         return Promise.resolve(new Response('busy', { status: 503 }));
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({
-            hitCount: 1,
-            nextCursorMark: '*',
-            resultList: { result: [{ id: '1', title: 'T' }] },
+      if (url.includes('esearch'))
+        return Promise.resolve(
+          Response.json({
+            esearchresult: { count: '507', idlist: ['42813456'] },
           }),
-          { status: 200 },
-        ),
+        );
+      return Promise.resolve(
+        Response.json({
+          result: {
+            uids: ['42813456'],
+            '42813456': {
+              uid: '42813456',
+              title: 'Systemic azoles for asthma with fungal sensitisation.',
+              source: 'Cochrane Database Syst Rev',
+              pubdate: '2026 Sep 30',
+              volume: '9',
+              issue: '9',
+              pages: 'CD016394',
+              authors: [{ name: 'Fukuda Y' }, { name: 'Homma T' }],
+              articleids: [
+                { idtype: 'pubmed', value: '42813456' },
+                { idtype: 'pmc', value: 'PMC13625169' },
+                { idtype: 'doi', value: '10.1002/14651858.CD016394' },
+              ],
+            },
+          },
+        }),
       );
-    }) as typeof fetch;
-    const out = await searchLiterature('x', 'all', undefined, fake);
-    expect(calls).toBe(2);
-    expect(out.results).toHaveLength(1);
-    expect(out.nextCursor).toBeNull();
+    };
+    const out = await searchLiterature(
+      'asthma fallback',
+      'cochrane',
+      undefined,
+      fake,
+    );
+    expect(seen[0]).toContain('ebi.ac.uk');
+    expect(out.source).toBe('pubmed');
+    expect(out.hitCount).toBe(507);
+    expect(out.nextCursor).toBe('pm:10');
+    expect(out.results[0]).toMatchObject({
+      title: 'Systemic azoles for asthma with fungal sensitisation',
+      authors: 'Fukuda Y, Homma T',
+      journal: 'Cochrane Database Syst Rev',
+      year: '2026',
+      doi: '10.1002/14651858.CD016394',
+      openAccess: true,
+    });
+    expect(out.results[0].links.fullText).toBe(
+      'https://pmc.ncbi.nlm.nih.gov/articles/PMC13625169/',
+    );
   });
 });
 

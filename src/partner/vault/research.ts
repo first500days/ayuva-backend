@@ -8,14 +8,19 @@ import type { ResearchFilter } from './dto/vault.dto';
  */
 const EPMC = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search';
 const PAGE_SIZE = 10;
-// The service is free and its answers vary from under a second to ~20 s.
-const TIMEOUT_MS = 25_000;
+// Europe PMC is free and its answers vary from under a second to timing out;
+// after 12 s the search falls back to PubMed's own E-utilities.
+const EPMC_TIMEOUT_MS = 12_000;
+const PUBMED_TIMEOUT_MS = 10_000;
+const NCBI = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils';
 const CACHE_MS = 5 * 60_000;
 const cache = new Map<string, { at: number; value: SearchResult }>();
-type SearchResult = {
+export type SearchResult = {
   hitCount: number;
   nextCursor: string | null;
   results: ResearchHit[];
+  /** Which service answered: PubMed listings have no abstracts. */
+  source: 'europepmc' | 'pubmed';
 };
 
 const FILTER_QUERY: Record<ResearchFilter, string> = {
@@ -76,10 +81,14 @@ export interface EpmcResult {
   };
 }
 
+/** Abstract HTML to text: section headings become "Rationale: …", other tags a space. */
 const stripTags = (s: string) =>
   s
-    .replace(/<[^>]+>/g, '')
+    .replace(/<\/h\d>/gi, ': ')
+    .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
+    .replace(/\s+([:.,;])/g, '$1')
+    .replace(/::/g, ':')
     .trim();
 
 export function mapResult(r: EpmcResult) {
@@ -125,10 +134,156 @@ export function mapResult(r: EpmcResult) {
 }
 export type ResearchHit = ReturnType<typeof mapResult>;
 
+const PUBMED_FILTER: Record<ResearchFilter, string> = {
+  all: '',
+  pubmed: '',
+  cochrane: '"Cochrane Database Syst Rev"[Journal]',
+  guidelines: '(guideline[pt] OR practice guideline[pt])',
+  reviews: 'review[pt]',
+  open: 'free full text[sb]',
+};
+
+/** The fields of a PubMed esummary record this page uses. */
+interface PubmedSummary {
+  uid?: string;
+  title?: string;
+  source?: string;
+  pubdate?: string;
+  volume?: string;
+  issue?: string;
+  pages?: string;
+  pubtype?: string[];
+  authors?: { name?: string }[];
+  articleids?: { idtype?: string; value?: string }[];
+}
+
+export function mapPubmed(r: PubmedSummary): ResearchHit {
+  const id = (t: string) =>
+    r.articleids?.find((a) => a.idtype === t)?.value ?? '';
+  const pmcid = id('pmc');
+  const doi = id('doi');
+  const pmid = r.uid ?? id('pubmed');
+  return {
+    id: `MED:${pmid}`,
+    title: stripTags(r.title ?? '').replace(/\.$/, ''),
+    authors: (r.authors ?? [])
+      .map((a) => a.name)
+      .filter(Boolean)
+      .join(', '),
+    journal: r.source ?? '',
+    year: (r.pubdate ?? '').slice(0, 4),
+    volume: r.volume ?? '',
+    issue: r.issue ?? '',
+    pages: r.pages ?? '',
+    doi,
+    pmid,
+    pmcid,
+    pubTypes: (r.pubtype ?? []).map((t) => t.toLowerCase()),
+    openAccess: !!pmcid,
+    abstract: '',
+    links: {
+      pubmed: pmid ? `https://pubmed.ncbi.nlm.nih.gov/${pmid}/` : null,
+      doi: doi ? `https://doi.org/${doi}` : null,
+      fullText: pmcid
+        ? `https://pmc.ncbi.nlm.nih.gov/articles/${pmcid}/`
+        : null,
+      europePmc: null,
+    },
+  };
+}
+
+async function getJson<T>(
+  fetchImpl: typeof fetch,
+  url: string,
+  timeoutMs: number,
+): Promise<T> {
+  const res = await fetchImpl(url, {
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'AyuvaPartnerPortal/1.0',
+    },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) throw new Error(`${new URL(url).hostname} ${res.status}`);
+  return (await res.json()) as T;
+}
+
+async function searchEuropePmc(
+  q: string,
+  filter: ResearchFilter,
+  cursor: string | undefined,
+  fetchImpl: typeof fetch,
+): Promise<SearchResult> {
+  const body = await getJson<{
+    hitCount?: number;
+    nextCursorMark?: string;
+    resultList?: { result?: EpmcResult[] };
+  }>(fetchImpl, researchUrl(q, filter, cursor), EPMC_TIMEOUT_MS);
+  const results = (body.resultList?.result ?? []).map(mapResult);
+  const next = body.nextCursorMark;
+  return {
+    hitCount: body.hitCount ?? 0,
+    // The service repeats the cursor on the last page.
+    nextCursor:
+      next && next !== (cursor || '*') && results.length === PAGE_SIZE
+        ? next
+        : null,
+    results,
+    source: 'europepmc',
+  };
+}
+
+/** PubMed's E-utilities: search, then summaries (no abstracts). Cursors are "pm:<offset>". */
+async function searchPubmed(
+  q: string,
+  filter: ResearchFilter,
+  cursor: string | undefined,
+  fetchImpl: typeof fetch,
+): Promise<SearchResult> {
+  const start = cursor?.startsWith('pm:') ? Number(cursor.slice(3)) || 0 : 0;
+  const term = PUBMED_FILTER[filter]
+    ? `(${q.trim()}) AND ${PUBMED_FILTER[filter]}`
+    : q.trim();
+  const common = {
+    db: 'pubmed',
+    retmode: 'json',
+    tool: 'ayuva-partner-portal',
+  };
+  const found = await getJson<{
+    esearchresult?: { count?: string; idlist?: string[] };
+  }>(
+    fetchImpl,
+    `${NCBI}/esearch.fcgi?${new URLSearchParams({ ...common, term, retmax: String(PAGE_SIZE), retstart: String(start), sort: 'relevance' }).toString()}`,
+    PUBMED_TIMEOUT_MS,
+  );
+  const ids = found.esearchresult?.idlist ?? [];
+  const count = Number(found.esearchresult?.count ?? 0);
+  let results: ResearchHit[] = [];
+  if (ids.length) {
+    const sum = await getJson<{
+      result?: Record<string, PubmedSummary> & { uids?: string[] };
+    }>(
+      fetchImpl,
+      `${NCBI}/esummary.fcgi?${new URLSearchParams({ ...common, id: ids.join(',') }).toString()}`,
+      PUBMED_TIMEOUT_MS,
+    );
+    results = ids
+      .map((id) => sum.result?.[id])
+      .filter((r): r is PubmedSummary => !!r)
+      .map(mapPubmed);
+  }
+  return {
+    hitCount: count,
+    nextCursor: start + PAGE_SIZE < count ? `pm:${start + PAGE_SIZE}` : null,
+    results,
+    source: 'pubmed',
+  };
+}
+
 /**
- * Runs the search (25 s timeout). A 5xx "busy" answer is retried once; a
- * timeout is not, so nobody waits close to a minute. Identical searches are
- * served from memory for 5 minutes.
+ * Europe PMC first (abstracts, Cochrane, guidelines); if it fails or takes
+ * longer than 12 s, PubMed's E-utilities answer instead. Identical searches
+ * are served from memory for 5 minutes.
  */
 export async function searchLiterature(
   q: string,
@@ -136,48 +291,23 @@ export async function searchLiterature(
   cursor?: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<SearchResult> {
-  const url = researchUrl(q, filter, cursor);
-  const hit = cache.get(url);
+  const key = `${filter}|${cursor ?? ''}|${q.trim().toLowerCase()}`;
+  const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
-  let last: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let busy = false;
+  let value: SearchResult;
+  if (cursor?.startsWith('pm:'))
+    value = await searchPubmed(q, filter, cursor, fetchImpl);
+  else {
     try {
-      const res = await fetchImpl(url, {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': 'AyuvaPartnerPortal/1.0',
-        },
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      busy = res.status >= 500;
-      if (!res.ok) throw new Error(`Europe PMC ${res.status}`);
-      const body = (await res.json()) as {
-        hitCount?: number;
-        nextCursorMark?: string;
-        resultList?: { result?: EpmcResult[] };
-      };
-      const results = (body.resultList?.result ?? []).map(mapResult);
-      const next = body.nextCursorMark;
-      const value = {
-        hitCount: body.hitCount ?? 0,
-        // The service repeats the cursor on the last page.
-        nextCursor:
-          next && next !== (cursor || '*') && results.length === PAGE_SIZE
-            ? next
-            : null,
-        results,
-      };
-      // Drop the oldest entry (Maps iterate in insertion order).
-      const oldest = cache.keys().next();
-      if (cache.size > 200 && !oldest.done) cache.delete(oldest.value);
-      cache.set(url, { at: Date.now(), value });
-      return value;
-    } catch (err) {
-      last = err;
-      if (!busy) break;
-      if (attempt === 0) await new Promise((r) => setTimeout(r, 800));
+      value = await searchEuropePmc(q, filter, cursor, fetchImpl);
+    } catch {
+      // A later page of a Europe PMC search can't continue in PubMed; start there afresh.
+      value = await searchPubmed(q, filter, undefined, fetchImpl);
     }
   }
-  throw last instanceof Error ? last : new Error('Search failed');
+  // Drop the oldest entry (Maps iterate in insertion order).
+  const oldest = cache.keys().next();
+  if (cache.size > 200 && !oldest.done) cache.delete(oldest.value);
+  cache.set(key, { at: Date.now(), value });
+  return value;
 }
