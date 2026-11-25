@@ -535,12 +535,25 @@ export class PdfBuilder {
     return this;
   }
 
-  /** A signature block: a rule with the signer's details beneath it, right-aligned. */
-  signature(lines: string[]) {
+  /**
+   * A signature block: a rule with the signer's details beneath it,
+   * right-aligned, and the signer's signature image above the rule if given.
+   */
+  signature(lines: string[], image?: PdfJpeg) {
     const w = 220;
     const x = this.margin + this.contentWidth - w;
-    this.ensure(30 + lines.length * 13);
+    const maxH = 44;
+    const imgH = image ? Math.min(maxH, (image.height * 160) / image.width) : 0;
+    this.ensure(30 + imgH + lines.length * 13);
     this.space(18);
+    if (image) {
+      const imgW = (image.width * imgH) / image.height;
+      const id = this.images.push(image);
+      this.raw(
+        `q ${n(imgW)} 0 0 ${n(imgH)} ${n(x)} ${n(PAGE_H - this.y - imgH)} cm /Im${id} Do Q`,
+      );
+      this.y += imgH + 2;
+    }
     this.line(x, PAGE_H - this.y, x + w, PAGE_H - this.y, COLORS.ink, 0.75);
     this.y += 4;
     lines.forEach((l, i) => {

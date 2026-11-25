@@ -71,6 +71,8 @@ import { PartnerSecurityService } from './security/partner-security.service';
 import { PartnerDocumentsService } from './documents/partner-documents.service';
 import { PartnerLetterheadService } from './documents/partner-letterhead.service';
 import { PartnerLetterheadController } from './documents/partner-letterhead.controller';
+import { PartnerRxPadService } from './clinical/partner-rx-pad.service';
+import { PartnerRxPadController } from './clinical/partner-rx-pad.controller';
 import {
   ConsultationNote,
   ConsultationNoteSchema,
@@ -340,6 +342,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerSecurityController,
     PartnerNotifyController,
     PartnerLetterheadController,
+    PartnerRxPadController,
     PartnerClinicalController,
     PartnerReferralsController,
     PartnerPriorAuthController,
@@ -376,6 +379,7 @@ import { PartnerLiveGateway } from './live/partner-live.gateway';
     PartnerSecurityService,
     PartnerDocumentsService,
     PartnerLetterheadService,
+    PartnerRxPadService,
     PartnerPatientsService,
     PartnerTimelineService,
     PartnerNotesService,

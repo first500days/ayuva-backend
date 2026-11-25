@@ -1,4 +1,4 @@
-import { PdfBuilder } from './simple-pdf';
+import { PdfBuilder, parseJpeg } from './simple-pdf';
 
 function parse(buf: Buffer) {
   const s = buf.toString('latin1');
@@ -56,6 +56,26 @@ describe('PdfBuilder', () => {
         '\nendstream',
       );
     }
+  });
+
+  it('draws a signature image above the signature rule', () => {
+    // Smallest JPEG header the parser accepts: SOI + SOF0 (200 x 80, 3 components).
+    const jpeg = parseJpeg(
+      Buffer.from([
+        0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x50, 0x00, 0xc8, 0x03,
+        0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01, 0xff, 0xd9,
+      ]),
+    )!;
+    expect(jpeg).toMatchObject({ width: 200, height: 80, components: 3 });
+    const s = new PdfBuilder()
+      .signature(['Dr. Priya Menon, MBBS, MD', 'Reg. KMC-104233'], jpeg)
+      .build()
+      .toString('latin1');
+    // Height is capped at 44 pt (so 110 pt wide at this aspect), placed as an XObject.
+    expect(s).toMatch(/q 110 0 0 44 \S+ \S+ cm \/Im1 Do Q/);
+    expect(s).toContain('/XObject << /Im1');
+    expect(s).toContain('/Subtype /Image /Width 200 /Height 80');
+    expect(s).toContain('Dr. Priya Menon, MBBS, MD');
   });
 
   it('escapes PDF string delimiters and maps typographic characters to WinAnsi', () => {

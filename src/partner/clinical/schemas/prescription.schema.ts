@@ -94,6 +94,17 @@ export class Prescription {
   @Prop()
   doctorTitle?: string;
 
+  // Copied from the prescriber's pad when signed (not part of the content hash).
+  @Prop()
+  doctorQualifications?: string;
+
+  @Prop()
+  doctorPadLine?: string;
+
+  // The signature image the prescriber had when signing; later uploads don't change it.
+  @Prop()
+  signatureRef?: string;
+
   @Prop({
     type: SchemaTypes.ObjectId,
     ref: 'User',

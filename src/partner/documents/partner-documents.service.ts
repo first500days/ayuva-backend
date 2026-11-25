@@ -36,6 +36,8 @@ import {
 /** Resolved letterhead assets (the logo is read from storage once per document). */
 export interface DocBrand {
   logo?: PdfJpeg;
+  /** The prescriber's signature image (prescriptions only). */
+  signature?: PdfJpeg;
 }
 
 export interface VaultDelivery {
@@ -97,18 +99,37 @@ export class PartnerDocumentsService {
   ) {}
 
   /** Loads the organisation's logo for its documents; a missing or unreadable logo is skipped. */
-  async brand(provider: ProviderDocument): Promise<DocBrand> {
+  async brand(
+    provider: ProviderDocument,
+    signatureRef?: string,
+  ): Promise<DocBrand> {
+    const out: DocBrand = {};
     const ref = provider.letterhead?.logoRef;
-    if (!ref) return {};
-    try {
-      const logo = parseJpeg(await this.storage.read(ref));
-      return logo ? { logo } : {};
-    } catch (err) {
-      this.logger.warn(
-        `Letterhead logo unreadable for ${provider.id}: ${String(err)}`,
-      );
-      return {};
+    if (ref) {
+      try {
+        const logo = parseJpeg(await this.storage.read(ref));
+        if (logo) out.logo = logo;
+      } catch (err) {
+        this.logger.warn(
+          `Letterhead logo unreadable for ${provider.id}: ${String(err)}`,
+        );
+      }
     }
+    if (signatureRef) {
+      try {
+        const signature = parseJpeg(await this.storage.read(signatureRef));
+        if (signature) out.signature = signature;
+      } catch (err) {
+        // The slip still carries the typed signature lines and the hash.
+        this.logger.warn(`Signature image unreadable: ${String(err)}`);
+      }
+    }
+    return out;
+  }
+
+  /** An encrypted file this service's documents reference (e.g. a signature image). */
+  readFile(ref: string): Promise<Buffer> {
+    return this.storage.read(ref);
   }
 
   async deliverToVault(d: VaultDelivery): Promise<MedicalRecordDocument> {
@@ -169,8 +190,12 @@ export class PartnerDocumentsService {
     rx: PrescriptionDocument,
     provider: ProviderDocument,
     brand?: DocBrand,
+    /** A draft's prescriber pad (signed slips carry their own copy). */
+    draftPad?: { qualifications?: string; line?: string },
   ): Buffer {
     const draft = rx.status === PrescriptionStatus.DRAFT;
+    const qualifications = rx.doctorQualifications ?? draftPad?.qualifications;
+    const padLine = rx.doctorPadLine ?? draftPad?.line;
     const pdf = this.head(
       new PdfBuilder({ title: `Prescription ${rx.rxNumber ?? '(draft)'}` }),
       provider,
@@ -201,12 +226,15 @@ export class PartnerDocumentsService {
         ['Date', fmtDate(rx.signedAt ?? rx.createdAt)],
         [
           'Prescriber',
-          [rx.doctorName, rx.doctorTitle].filter(Boolean).join(', '),
+          [rx.doctorName, qualifications, rx.doctorTitle]
+            .filter(Boolean)
+            .join(', '),
         ],
         ['Registration no.', rx.doctorRegistrationNumber ?? '—'],
       ],
       2,
     );
+    if (padLine) pdf.text(padLine, { size: 8.5, color: pdf.colors.muted });
     if (rx.diagnoses?.length)
       pdf.heading('Diagnosis').text(codedDiagnosisLines(rx.diagnoses));
     if (rx.diagnosis) pdf.heading('Clinical notes').text(rx.diagnosis);
@@ -239,18 +267,21 @@ export class PartnerDocumentsService {
     if (rx.followUpDate)
       pdf.heading('Follow-up').text(`Review on ${fmtDate(rx.followUpDate)}`);
     if (!draft) {
-      pdf.signature([
-        rx.doctorName,
-        rx.doctorRegistrationNumber
-          ? `Reg. ${rx.doctorRegistrationNumber}`
-          : 'Registered medical practitioner',
-        `Digitally signed ${fmtDateTime(rx.signedAt)}`,
-        // Signed through the attested sign-off, which needs an Ayuva-verified registration.
-        ...(rx.attestedAt
-          ? ['Registration verified by Ayuva · prescriber attested']
-          : []),
-        `Verification hash ${rx.signatureHash?.slice(0, 16) ?? ''}`,
-      ]);
+      pdf.signature(
+        [
+          [rx.doctorName, qualifications].filter(Boolean).join(', '),
+          rx.doctorRegistrationNumber
+            ? `Reg. ${rx.doctorRegistrationNumber}`
+            : 'Registered medical practitioner',
+          `Digitally signed ${fmtDateTime(rx.signedAt)}`,
+          // Signed through the attested sign-off, which needs an Ayuva-verified registration.
+          ...(rx.attestedAt
+            ? ['Registration verified by Ayuva · prescriber attested']
+            : []),
+          `Verification hash ${rx.signatureHash?.slice(0, 16) ?? ''}`,
+        ],
+        brand?.signature,
+      );
     }
     return this.foot(pdf, provider)
       .footer(

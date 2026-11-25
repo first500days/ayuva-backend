@@ -645,6 +645,19 @@ export class PartnerClinicalController {
     sendFile(res, buffer, fileName);
   }
 
+  @Get('prescriptions/:id/signature')
+  @RequirePerm(Perm.PATIENTS_VIEW)
+  async rxSignature(
+    @PartnerCtx() a: PartnerActor,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.rx.signatureImage(a, id);
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(buffer);
+  }
+
   @Post('prescriptions')
   @RequirePerm(Perm.CLINICAL_WRITE)
   createRx(@PartnerCtx() a: PartnerActor, @Body() dto: CreatePrescriptionDto) {

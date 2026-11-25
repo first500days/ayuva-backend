@@ -84,6 +84,24 @@ export class MemberSuspension {
 export const MemberSuspensionSchema =
   SchemaFactory.createForClass(MemberSuspension);
 
+/**
+ * How a prescriber's prescriptions are headed and signed: the name and degrees
+ * as printed, optional specialty / hours / contact lines, and a signature image
+ * (an encrypted JPEG; each upload is a new file because signed prescriptions
+ * keep pointing at the one they were signed with).
+ */
+@Schema({ _id: false })
+export class RxPad {
+  @Prop({ trim: true, maxlength: 120 }) printedName?: string;
+  @Prop({ trim: true, maxlength: 160 }) qualifications?: string;
+  @Prop({ trim: true, maxlength: 120 }) specialty?: string;
+  @Prop({ trim: true, maxlength: 160 }) timings?: string;
+  @Prop({ trim: true, maxlength: 160 }) contact?: string;
+  @Prop() signatureRef?: string;
+  @Prop() signatureUpdatedAt?: Date;
+}
+export const RxPadSchema = SchemaFactory.createForClass(RxPad);
+
 export type PartnerMemberDocument = HydratedDocument<PartnerMember>;
 
 /**
@@ -192,6 +210,10 @@ export class PartnerMember {
   // by feature. Belong to the person, so they follow them across devices.
   @Prop({ type: SchemaTypes.Mixed, default: {} })
   preferences: Record<string, unknown>;
+
+  // Prescribers' own prescription header and signature (Settings → Prescription pad).
+  @Prop({ type: RxPadSchema })
+  rxPad?: RxPad;
 
   createdAt?: Date;
   updatedAt?: Date;

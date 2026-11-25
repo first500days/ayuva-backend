@@ -50,6 +50,7 @@ import type { WhatsAppSender } from '../../notifications/sms/whatsapp-sender';
 import { OrgType } from '../rbac/partner-permissions';
 import { LiveBus } from '../../common/live/live-bus.service';
 import { blocksSigning } from './rx-safety';
+import { padLine } from './partner-rx-pad.service';
 import { resolveDiagnosisCodes } from './diagnosis-codes';
 import {
   registrationStateOf,
@@ -245,9 +246,14 @@ export class PartnerPrescriptionsService {
     const toVault = targets.has('vault');
     rx.dispatchTo = [...targets];
     const signedAt = new Date();
-    rx.doctorName = actor.member.fullName;
+    // The prescriber's pad as it is now: later edits don't change this slip.
+    const pad = actor.member.rxPad;
+    rx.doctorName = pad?.printedName?.trim() || actor.member.fullName;
     rx.doctorTitle = actor.member.title;
     rx.doctorRegistrationNumber = regNo;
+    rx.doctorQualifications = pad?.qualifications?.trim() || undefined;
+    rx.doctorPadLine = padLine(pad) || undefined;
+    rx.signatureRef = pad?.signatureRef || undefined;
     rx.rxNumber = await this.newRxNumber(signedAt);
     rx.signedAt = signedAt;
     rx.attestedAt = signedAt;
@@ -260,7 +266,8 @@ export class PartnerPrescriptionsService {
     const pdf = this.documents.prescriptionPdf(
       rx,
       actor.provider,
-      await this.documents.brand(actor.provider),
+      await this.documents.brand(actor.provider, rx.signatureRef),
+      this.draftPad(actor, rx),
     );
     const fileName = `Prescription ${rx.rxNumber} - ${actor.provider.name}.pdf`;
     if (toVault) {
@@ -405,9 +412,31 @@ export class PartnerPrescriptionsService {
       buffer: this.documents.prescriptionPdf(
         rx,
         actor.provider,
-        await this.documents.brand(actor.provider),
+        await this.documents.brand(actor.provider, rx.signatureRef),
+        this.draftPad(actor, rx),
       ),
       fileName: `Prescription ${rx.rxNumber ?? 'draft'}.pdf`,
+    };
+  }
+
+  /** The signature image a signed prescription was signed with. */
+  async signatureImage(actor: PartnerActor, id: string): Promise<Buffer> {
+    const rx = await this.loadReadable(actor, id);
+    if (rx.status === PrescriptionStatus.DRAFT || !rx.signatureRef)
+      throw new NotFoundException('This prescription has no signature image');
+    return this.documents.readFile(rx.signatureRef);
+  }
+
+  /**
+   * A draft has no snapshot yet, so its PDF shows the author's current pad
+   * (only the author can open a draft). Signed slips print their own copy.
+   */
+  private draftPad(actor: PartnerActor, rx: PrescriptionDocument) {
+    if (rx.status !== PrescriptionStatus.DRAFT) return undefined;
+    const pad = actor.member.rxPad;
+    return {
+      qualifications: pad?.qualifications?.trim() || undefined,
+      line: padLine(pad) || undefined,
     };
   }
 
@@ -579,6 +608,9 @@ export class PartnerPrescriptionsService {
       doctorName: r.doctorName,
       doctorTitle: r.doctorTitle ?? null,
       doctorRegistrationNumber: r.doctorRegistrationNumber ?? null,
+      doctorQualifications: r.doctorQualifications ?? null,
+      doctorPadLine: r.doctorPadLine ?? null,
+      hasSignatureImage: !!r.signatureRef,
       items: r.items.map((i) => ({
         medicine: i.medicine,
         form: i.form ?? '',
