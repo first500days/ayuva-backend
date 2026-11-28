@@ -100,6 +100,30 @@ export class Appointment {
   @Prop()
   department?: string;
 
+  @Prop()
+  itemTitle?: string;
+
+  @Prop()
+  visitType?: string;
+
+  @Prop()
+  address?: string;
+
+  @Prop()
+  preparation?: string;
+
+  @Prop()
+  patientName?: string;
+
+  @Prop()
+  passId?: string;
+
+  @Prop()
+  price?: number;
+
+  @Prop()
+  cashback?: number;
+
   createdAt?: Date;
 }
 

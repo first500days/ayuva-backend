@@ -31,4 +31,28 @@ export class AppointmentResponseDto {
       'When the clinic checked the patient in on the day ("Arrived")',
   })
   arrivedAt?: string | null;
+
+  @ApiPropertyOptional()
+  itemTitle?: string;
+
+  @ApiPropertyOptional()
+  visitType?: string;
+
+  @ApiPropertyOptional()
+  address?: string;
+
+  @ApiPropertyOptional()
+  preparation?: string;
+
+  @ApiPropertyOptional()
+  patientName?: string;
+
+  @ApiPropertyOptional()
+  passId?: string;
+
+  @ApiPropertyOptional()
+  price?: number;
+
+  @ApiPropertyOptional()
+  cashback?: number;
 }

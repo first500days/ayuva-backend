@@ -99,6 +99,14 @@ export class AppointmentsService {
         patientId: userId,
         providerId: dto.providerId,
         slotId: slot.id,
+        itemTitle: dto.itemTitle,
+        visitType: dto.visitType,
+        address: dto.address,
+        preparation: dto.preparation,
+        patientName: dto.patientName,
+        passId: dto.passId,
+        price: dto.price,
+        cashback: dto.cashback,
         // Partners who require approval get a REQUESTED booking to accept/reject (Partner Portal P05).
         status: provider.requiresApproval
           ? AppointmentStatus.REQUESTED
@@ -558,6 +566,14 @@ export class AppointmentsService {
       status: appointment.status,
       reminderEnabled: appointment.reminderEnabled,
       arrivedAt: appointment.arrivedAt?.toISOString() ?? null,
+      itemTitle: appointment.itemTitle,
+      visitType: appointment.visitType,
+      address: appointment.address,
+      preparation: appointment.preparation,
+      patientName: appointment.patientName,
+      passId: appointment.passId,
+      price: appointment.price,
+      cashback: appointment.cashback,
     };
   }
 }
